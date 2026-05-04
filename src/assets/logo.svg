@@ -1,0 +1,23 @@
+﻿<svg width="260" height="90" viewBox="0 0 260 90" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pinGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1A8EE4"/>
+      <stop offset="100%" stop-color="#63B73A"/>
+    </linearGradient>
+    <linearGradient id="toothGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#D8F1FF"/>
+    </linearGradient>
+    <linearGradient id="shineGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <path d="M40 0C58 0 78 20 78 38C78 58 56 86 40 90C24 86 2 58 2 38C2 20 22 0 40 0Z" fill="url(#pinGradient)"/>
+  <ellipse cx="40" cy="30" rx="22" ry="20" fill="rgba(255,255,255,0.18)"/>
+  <path d="M33 18C33 14 37 11 41 11C45 11 49 14 49 18C49 22 45 26 41 31C37 26 33 22 33 18Z" fill="url(#toothGradient)"/>
+  <path d="M41 11C44 11 46 13 46 16C46 19 43 21 43 24C43 27 40 29 40 33C40 29 37 27 37 24C37 21 39 19 39 16C39 13 40 11 41 11Z" fill="#1A8EE4"/>
+  <ellipse cx="42" cy="12" rx="10" ry="4" fill="url(#shineGradient)" opacity="0.8"/>
+  <text x="94" y="34" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700" fill="#1F2B3A">dr Rosa</text>
+  <text x="94" y="62" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800" fill="#1A8EE4">Bašić</text>
+</svg>

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dr Rosa Dental Dashboard</title>
+  <link rel="stylesheet" href="../styles/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        <div>
+          <p class="eyebrow">Stomatološka ordinacija</p>
+          <h1>Dr Rosa Bašić</h1>
+        </div>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <a href="new-entry.html" class="primary-btn">Novi unos</a>
+        <button id="logout-btn" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Odjava</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero-card">
+        <div>
+          <p class="eyebrow">Pacijent evidencija</p>
+          <h2>Moderna klinika za stomatologiju</h2>
+          <p>Pregledajte glavne podatke, termine i radne nalaze u jednom mjestu. Dizajniran s bojama logoa Dr Rosa.</p>
+        </div>
+        <div class="hero-stats">
+          <div>
+            <span>142</span>
+            <p>Aktivnih pacijenata</p>
+          </div>
+          <div>
+            <span>28</span>
+            <p>Zakazanih termina</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="cards-grid" aria-label="Key metrics">
+        <article class="stat-card gradient-green">
+          <h3>Pacijenti</h3>
+          <p class="stat-number">142</p>
+          <p>Sve evidentirane osobe u bazi.</p>
+        </article>
+        <article class="stat-card gradient-blue">
+          <h3>Termini</h3>
+          <p class="stat-number">28</p>
+          <p>Predstojeći pregledi i zahvati.</p>
+        </article>
+        <article class="stat-card gradient-green-dark">
+          <h3>Procedura</h3>
+          <p class="stat-number">56</p>
+          <p>Otvoreni radni nalogi i zahvati.</p>
+        </article>
+        <a href="all-records.html?filter=debtors" class="stat-card-link">
+          <article class="stat-card gradient-orange">
+            <h3>Dužnici</h3>
+            <p class="stat-number" id="debtors-count">0</p>
+            <p>Pacijenti s dugovanjima</p>
+          </article>
+        </a>
+      </section>
+
+      <section class="list-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Evidencija pacijenata</p>
+            <h2>Najnoviji unos</h2>
+          </div>
+          <a href="all-records.html" class="secondary-btn">Pogledaj sve</a>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Pacijent</th>
+                <th>Zadnji posjet</th>
+                <th>Postupak</th>
+                <th>Doktor</th>
+                <th>Status</th>
+                <th>Poseta</th>
+                <th>Napomena</th>
+                <th>Detalji</th>
+              </tr>
+            </thead>
+            <tbody id="record-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="insight-panel">
+        <div>
+          <h3>Brza analiza</h3>
+          <p>Ovaj modul je spreman za povezivanje s Vašim evidencijama iz Excela. Dodajte stvarne podatke kako biste vidjeli detaljne preglede i izvješća.</p>
+        </div>
+        <div class="progress-group">
+          <div>
+            <span>Redovni pregledi</span>
+            <div class="progress-track"><div class="progress-fill" style="width: 78%"></div></div>
+          </div>
+          <div>
+            <span>Usluge u planu</span>
+            <div class="progress-track"><div class="progress-fill blue" style="width: 64%"></div></div>
+          </div>
+          <div>
+            <span>Zadovoljstvo pacijenata</span>
+            <div class="progress-track"><div class="progress-fill" style="width: 91%"></div></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../scripts/api.js"></script>
+  <script src="../scripts/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Novi unos | Dr Rosa</title>
+  <link rel="stylesheet" href="../styles/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        <div>
+          <p class="eyebrow">Novi unos pacijenta</p>
+          <h1>Dodaj zapis</h1>
+        </div>
+      </div>
+      <nav>
+        <a href="index.html">Dashboard</a>
+        <a id="new-patient-link" href="new-patient.html">Novi pacijent</a>
+        <a href="all-records.html">Kompletna evidencija</a>
+        <button id="logout-btn" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Odjava</button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="teeth-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Zubi</p>
+            <h2>Mapa zuba (FDI brojevanje)</h2>
+          </div>
+        </div>
+
+        <div class="ortomapa-container">
+          <svg class="ortomapa" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="gradient-treated" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#63b73a;stop-opacity:1" />
+                <stop offset="100%" style="stop-color:#1891f0;stop-opacity:1" />
+              </linearGradient>
+            </defs>
+            
+            <!-- Gornji levi zubi (21-28) -->
+            <circle class="tooth-circle" cx="280" cy="80" data-tooth="21" r="20"></circle>
+            <text x="280" y="87" class="tooth-number">21</text>
+            <circle class="tooth-circle" cx="250" cy="70" data-tooth="22" r="20"></circle>
+            <text x="250" y="77" class="tooth-number">22</text>
+            <circle class="tooth-circle" cx="220" cy="75" data-tooth="23" r="20"></circle>
+            <text x="220" y="82" class="tooth-number">23</text>
+            <circle class="tooth-circle" cx="190" cy="95" data-tooth="24" r="20"></circle>
+            <text x="190" y="102" class="tooth-number">24</text>
+            <circle class="tooth-circle" cx="165" cy="125" data-tooth="25" r="20"></circle>
+            <text x="165" y="132" class="tooth-number">25</text>
+            <circle class="tooth-circle" cx="150" cy="160" data-tooth="26" r="20"></circle>
+            <text x="150" y="167" class="tooth-number">26</text>
+            <circle class="tooth-circle" cx="145" cy="195" data-tooth="27" r="20"></circle>
+            <text x="145" y="202" class="tooth-number">27</text>
+            <circle class="tooth-circle" cx="155" cy="225" data-tooth="28" r="20"></circle>
+            <text x="155" y="232" class="tooth-number">28</text>
+
+            <!-- Gornji desni zubi (11-18) -->
+            <circle class="tooth-circle" cx="320" cy="80" data-tooth="11" r="20"></circle>
+            <text x="320" y="87" class="tooth-number">11</text>
+            <circle class="tooth-circle" cx="350" cy="70" data-tooth="12" r="20"></circle>
+            <text x="350" y="77" class="tooth-number">12</text>
+            <circle class="tooth-circle" cx="380" cy="75" data-tooth="13" r="20"></circle>
+            <text x="380" y="82" class="tooth-number">13</text>
+            <circle class="tooth-circle" cx="410" cy="95" data-tooth="14" r="20"></circle>
+            <text x="410" y="102" class="tooth-number">14</text>
+            <circle class="tooth-circle" cx="435" cy="125" data-tooth="15" r="20"></circle>
+            <text x="435" y="132" class="tooth-number">15</text>
+            <circle class="tooth-circle" cx="450" cy="160" data-tooth="16" r="20"></circle>
+            <text x="450" y="167" class="tooth-number">16</text>
+            <circle class="tooth-circle" cx="455" cy="195" data-tooth="17" r="20"></circle>
+            <text x="455" y="202" class="tooth-number">17</text>
+            <circle class="tooth-circle" cx="445" cy="225" data-tooth="18" r="20"></circle>
+            <text x="445" y="232" class="tooth-number">18</text>
+
+            <!-- Donji desni zubi (41-48) -->
+            <circle class="tooth-circle" cx="280" cy="520" data-tooth="41" r="20"></circle>
+            <text x="280" y="527" class="tooth-number">41</text>
+            <circle class="tooth-circle" cx="250" cy="530" data-tooth="42" r="20"></circle>
+            <text x="250" y="537" class="tooth-number">42</text>
+            <circle class="tooth-circle" cx="220" cy="525" data-tooth="43" r="20"></circle>
+            <text x="220" y="532" class="tooth-number">43</text>
+            <circle class="tooth-circle" cx="190" cy="505" data-tooth="44" r="20"></circle>
+            <text x="190" y="512" class="tooth-number">44</text>
+            <circle class="tooth-circle" cx="165" cy="475" data-tooth="45" r="20"></circle>
+            <text x="165" y="482" class="tooth-number">45</text>
+            <circle class="tooth-circle" cx="150" cy="440" data-tooth="46" r="20"></circle>
+            <text x="150" y="447" class="tooth-number">46</text>
+            <circle class="tooth-circle" cx="145" cy="405" data-tooth="47" r="20"></circle>
+            <text x="145" y="412" class="tooth-number">47</text>
+            <circle class="tooth-circle" cx="155" cy="375" data-tooth="48" r="20"></circle>
+            <text x="155" y="382" class="tooth-number">48</text>
+
+            <!-- Donji levi zubi (31-38) -->
+            <circle class="tooth-circle" cx="320" cy="520" data-tooth="31" r="20"></circle>
+            <text x="320" y="527" class="tooth-number">31</text>
+            <circle class="tooth-circle" cx="350" cy="530" data-tooth="32" r="20"></circle>
+            <text x="350" y="537" class="tooth-number">32</text>
+            <circle class="tooth-circle" cx="380" cy="525" data-tooth="33" r="20"></circle>
+            <text x="380" y="532" class="tooth-number">33</text>
+            <circle class="tooth-circle" cx="410" cy="505" data-tooth="34" r="20"></circle>
+            <text x="410" y="512" class="tooth-number">34</text>
+            <circle class="tooth-circle" cx="435" cy="475" data-tooth="35" r="20"></circle>
+            <text x="435" y="482" class="tooth-number">35</text>
+            <circle class="tooth-circle" cx="450" cy="440" data-tooth="36" r="20"></circle>
+            <text x="450" y="447" class="tooth-number">36</text>
+            <circle class="tooth-circle" cx="455" cy="405" data-tooth="37" r="20"></circle>
+            <text x="455" y="412" class="tooth-number">37</text>
+            <circle class="tooth-circle" cx="445" cy="375" data-tooth="38" r="20"></circle>
+            <text x="445" y="382" class="tooth-number">38</text>
+
+            <!-- Oznake za kvadrante -->
+            <text x="150" y="120" class="quadrant-label">Gornji levi</text>
+            <text x="420" y="120" class="quadrant-label">Gornji desni</text>
+            <text x="150" y="520" class="quadrant-label">Donji levi</text>
+            <text x="420" y="520" class="quadrant-label">Donji desni</text>
+          </svg>
+        </div>
+
+        <div id="tooth-treatment-panel" class="tooth-panel" style="display: none;">
+          <div class="panel-header">
+            <h3>Zub <span id="selected-tooth">-</span></h3>
+            <button id="close-panel" class="close-btn">×</button>
+          </div>
+          <div class="panel-content">
+            <div class="form-group">
+              <label for="treatment-type">Vrsta tretmana</label>
+              <select id="treatment-type">
+                <option value="">Odaberi tretman</option>
+                <option value="Kontrola">Kontrola</option>
+                <option value="Čišćenje">Čišćenje</option>
+                <option value="Plomba">Plomba</option>
+                <option value="Koren">Endodontija (koren)</option>
+                <option value="Krunica">Krunica</option>
+                <option value="Most">Most</option>
+                <option value="Implant">Implant</option>
+                <option value="Vađenje">Vađenje</option>
+                <option value="Ortodontija">Ortodontija</option>
+                <option value="Bleaching">Izbeljivanje</option>
+                <option value="Parodontologija">Parodontologija</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="treatment-status">Status</label>
+              <select id="treatment-status">
+                <option value="Planirano">Planirano</option>
+                <option value="U tijeku">U tijeku</option>
+                <option value="Završeno">Završeno</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="treatment-note">Napomena</label>
+              <textarea id="treatment-note" rows="3"></textarea>
+            </div>
+            <div class="panel-actions">
+              <button id="save-treatment" class="primary-btn">Sačuvaj tretman</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="teeth-summary" class="teeth-summary"></div>
+      </section>
+
+      <main class="form-page">
+      <section class="form-card">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Forma</p>
+            <h2>Dodaj novog pacijenta</h2>
+          </div>
+        </div>
+
+        <div class="form-alert" aria-live="polite"></div>
+
+        <form id="new-entry-form">
+          <div class="input-grid">
+            <label>
+              Ime i prezime
+              <input type="text" id="patient-name" name="patient" placeholder="Ana Kovač" list="existing-patients" required />
+              <datalist id="existing-patients"></datalist>
+            </label>
+            <label>
+              Zadnji posjet
+              <input type="date" id="last-visit" name="lastVisit" required />
+            </label>
+            <label>
+              Postupak
+              <select id="procedure" name="procedure" required>
+                <option value="">Odaberi postupak</option>
+                <option value="Kontrola">Kontrola</option>
+                <option value="Čišćenje">Čišćenje</option>
+                <option value="Kontrola i čišćenje">Kontrola i čišćenje</option>
+                <option value="Plomba">Plomba</option>
+                <option value="Endodontija">Endodontija (koren)</option>
+                <option value="Krunica">Krunica</option>
+                <option value="Most">Most</option>
+                <option value="Implant">Implant</option>
+                <option value="Vađenje">Vađenje</option>
+                <option value="Ortodontija">Ortodontija</option>
+                <option value="Izbeljivanje">Izbeljivanje</option>
+                <option value="Parodontologija">Parodontologija</option>
+              </select>
+            </label>
+            <label>
+              Doktor
+              <select id="doctor" name="doctor" required>
+                <option value="Dr Rosa">Dr Rosa</option>
+                <option value="Dr Novak">Dr Novak</option>
+                <option value="Dr Horvat">Dr Horvat</option>
+              </select>
+            </label>
+            <label>
+              Status
+              <select id="status" name="status" required>
+                <option value="Zakazano">Zakazano</option>
+                <option value="U tijeku">U tijeku</option>
+                <option value="Završeno">Završeno</option>
+                <option value="Otkazano">Otkazano</option>
+              </select>
+            </label>
+            <label>
+              Plaćanje
+              <select id="payment-status" name="paymentStatus" required>
+                <option value="Plaćeno">Plaćeno</option>
+                <option value="Dugovanje">Dugovanje</option>
+                <option value="Delimično">Delimično</option>
+              </select>
+            </label>
+            <label>
+              Iznos duga
+              <input id="amount-due" name="amountDue" type="number" min="0" step="0.01" placeholder="0.00" />
+            </label>
+            <label class="full-width">
+              Napomena
+              <textarea id="note" name="note" rows="4" placeholder="Follow-up za 2 tjedna"></textarea>
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="primary-btn">Spremi unos</button>
+            <a class="secondary-btn" href="index.html">Otkaži</a>
+          </div>
+        </form>
+      </section>
+
+      <aside class="summary-panel">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Pregled</p>
+            <h2>Brzi pregled</h2>
+          </div>
+        </div>
+
+        <div class="preview-card">
+          <p class="preview-label">Pacijent</p>
+          <h3 id="preview-name">-</h3>
+          <p class="preview-label">Zadnji posjet</p>
+          <p id="preview-visit">-</p>
+          <p class="preview-label">Postupak</p>
+          <p id="preview-procedure">-</p>
+          <p class="preview-label">Status</p>
+          <p id="preview-status">Zakazano</p>
+          <p class="preview-label">Plaćanje</p>
+          <p id="preview-payment-status">Plaćeno</p>
+          <p class="preview-label">Iznos duga</p>
+          <p id="preview-amount-due">0.00</p>
+          <p class="preview-label">Napomena</p>
+          <p id="preview-note">-</p>
+        </div>
+
+        <div class="card info-card">
+          <h3>UX podrška</h3>
+          <ul>
+            <li>Validacija obaveznih polja</li>
+            <li>Brzi pregled prije spremanja</li>
+            <li>Povratak na dashboard nakon unosa</li>
+            <li>Odabir postojećeg pacijenta iz liste</li>
+          </ul>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script src="../scripts/api.js"></script>
+  <script src="../scripts/new-entry.js"></script>
+</body>
+</html>

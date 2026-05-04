@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login | Dr Rosa</title>
+  <link rel="stylesheet" href="../styles/styles.css" />
+  <style>
+    .login-container {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+    }
+
+    .login-card {
+      background: white;
+      border-radius: 12px;
+      padding: 40px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .login-card h1 {
+      text-align: center;
+      margin-bottom: 10px;
+      color: #1a1a1a;
+    }
+
+    .login-card p {
+      text-align: center;
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 0.95rem;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: #333;
+      font-weight: 500;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 1rem;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .form-group select {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 1rem;
+    }
+
+    .login-btn {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .login-btn:hover {
+      transform: translateY(-2px);
+    }
+
+    .login-btn:active {
+      transform: translateY(0);
+    }
+
+    .demo-creds {
+      margin-top: 30px;
+      padding-top: 30px;
+      border-top: 1px solid #eee;
+      font-size: 0.85rem;
+      color: #666;
+    }
+
+    .demo-creds strong {
+      display: block;
+      margin-bottom: 10px;
+      color: #333;
+    }
+
+    .demo-item {
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+
+    .error-msg {
+      color: #dc3545;
+      margin-bottom: 20px;
+      padding: 12px;
+      background-color: #f8d7da;
+      border: 1px solid #f5c6cb;
+      border-radius: 6px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <img src="../assets/logo.svg" alt="Dr Rosa Logo" style="height: 60px; margin: 0 auto 20px; display: block;" />
+      <h1>Dr Rosa Ordinacija</h1>
+      <p>Sistem upravljanja pacijentima</p>
+
+      <div class="error-msg" id="error-msg"></div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" placeholder="vas@email.com" required />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Lozinka</label>
+          <input type="password" id="password" name="password" placeholder="••••••••" required />
+        </div>
+
+        <div class="form-group">
+          <label for="role">Uloga</label>
+          <select id="role" name="role" required>
+            <option value="staff">Zaposlenik</option>
+            <option value="director">Direktor Ordinacije</option>
+          </select>
+        </div>
+
+        <button type="submit" class="login-btn">Prijavi se</button>
+      </form>
+
+      <div class="demo-creds">
+        <strong>Demo Kredencijali:</strong>
+        <div class="demo-item">
+          <strong>Direktor:</strong><br>
+          Email: director@drosa.com<br>
+          Lozinka: password123
+        </div>
+        <div class="demo-item">
+          <strong>Zaposlenik:</strong><br>
+          Email: staff@drosa.com<br>
+          Lozinka: password123
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../scripts/api.js"></script>
+  <script src="../scripts/login.js"></script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pacijent Dashboard | Dr Rosa</title>
+  <link rel="stylesheet" href="../styles/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        <div>
+          <p class="eyebrow">Pacijent Dashboard</p>
+          <h1 id="patient-name-title">Detalji pacijenta</h1>
+        </div>
+      </div>
+      <nav>
+        <a href="index.html">Dashboard</a>
+        <a href="new-entry.html">Novi unos</a>
+        <a href="all-records.html">Kompletna evidencija</a>
+        <button id="logout-btn" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Odjava</button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero-card">
+        <div>
+          <p class="eyebrow">Pacijent</p>
+          <h2 id="patient-summary-title">Detalji i historija</h2>
+          <p id="patient-summary-description">Pregledajte sve tretmane, naplate i dugovanja ovog pacijenta.</p>
+        </div>
+        <div class="hero-stats" id="patient-summary-cards"></div>
+        <div class="hero-actions">
+          <a id="new-entry-for-patient" href="new-entry.html" class="primary-btn">Novi unos za ovog pacijenta</a>
+        </div>
+      </section>
+
+      <section class="list-section" id="patient-info-section" style="display:none;">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Podaci o pacijentu</p>
+            <h2>Kontakt i medicinski podaci</h2>
+          </div>
+        </div>
+        <div class="info-card" id="patient-info"></div>
+      </section>
+
+      <section class="list-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Pregled</p>
+            <h2>Sve zapise pacijenta</h2>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Postupak</th>
+                <th>Doktor</th>
+                <th>Status</th>
+                <th>Plaćanje</th>
+                <th>Dugovanje</th>
+                <th>Napomena</th>
+              </tr>
+            </thead>
+            <tbody id="patient-records-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="list-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Tretmani zuba</p>
+            <h2>Detaljna historija rada po zubima</h2>
+          </div>
+        </div>
+        <div class="info-card" id="treatment-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../scripts/api.js"></script>
+  <script src="../scripts/patient-dashboard.js"></script>
+</body>
+</html>

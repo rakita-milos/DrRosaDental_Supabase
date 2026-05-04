@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Novi pacijent - Dr Rosa</title>
+  <link rel="stylesheet" href="../styles/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        <div>
+          <p class="eyebrow">Stomatološka ordinacija</p>
+          <h1>Dr Rosa Bašić</h1>
+        </div>
+      </div>
+      <nav>
+        <a href="index.html">Dashboard</a>
+        <a href="new-entry.html">Novi unos</a>
+        <a href="all-records.html">Kompletna evidencija</a>
+        <button id="logout-btn" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Odjava</button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="form-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Pacijent</p>
+            <h2>Unos novog pacijenta</h2>
+          </div>
+        </div>
+
+        <form id="patient-form" class="form-card">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="first-name">Ime</label>
+              <input id="first-name" type="text" required />
+            </div>
+            <div class="form-group">
+              <label for="last-name">Prezime</label>
+              <input id="last-name" type="text" required />
+            </div>
+            <div class="form-group">
+              <label for="birth-date">Datum rođenja</label>
+              <input id="birth-date" type="date" required />
+            </div>
+            <div class="form-group">
+              <label for="gender">Pol</label>
+              <select id="gender" required>
+                <option value="">Odaberi</option>
+                <option value="Muški">Muški</option>
+                <option value="Ženski">Ženski</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="address">Adresa</label>
+              <input id="address" type="text" />
+            </div>
+            <div class="form-group">
+              <label for="phone">Telefon</label>
+              <input id="phone" type="tel" />
+            </div>
+            <div class="form-group">
+              <label for="email">Email</label>
+              <input id="email" type="email" />
+            </div>
+            <div class="form-group">
+              <label for="emergency-contact">Kontakt u hitnim slučajevima</label>
+              <input id="emergency-contact" type="text" />
+            </div>
+            <div class="form-group full-width">
+              <label for="allergies">Alergije</label>
+              <textarea id="allergies" rows="3"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label for="medical-history">Medicinska istorija</label>
+              <textarea id="medical-history" rows="3"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label for="current-medications">Trenutni lekovi</label>
+              <textarea id="current-medications" rows="3"></textarea>
+            </div>
+            <div class="form-group full-width">
+              <label for="previous-treatments">Prethodni stomatološki tretmani</label>
+              <textarea id="previous-treatments" rows="3"></textarea>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="primary-btn">Sačuvaj pacijenta</button>
+            <button type="button" id="cancel-btn" class="secondary-btn">Otkaži</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+  <script src="../scripts/api.js"></script>
+  <script src="../scripts/new-patient.js"></script>
+</body>
+</html>

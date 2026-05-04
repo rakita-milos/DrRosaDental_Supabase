@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sve evidencije | Dr Rosa</title>
+  <link rel="stylesheet" href="../styles/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        <div>
+          <p class="eyebrow">Sve evidencije</p>
+          <h1>Pregled svih zapisa</h1>
+        </div>
+      </div>
+      <nav>
+        <a href="index.html">Dashboard</a>
+        <a href="new-entry.html">Novi unos</a>
+        <a href="new-patient.html">Novi pacijent</a>
+        <button id="logout-btn" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Odjava</button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero-card">
+        <div>
+          <p class="eyebrow">Kompletna evidencija</p>
+          <h2>Pretražite sve pacijente i termine</h2>
+          <p>Funkcionalnost omogućuje filtriranje, pretraživanje i pregled statusa svih zapisa iz sustava.</p>
+        </div>
+        <div class="hero-stats" id="summary-cards"></div>
+      </section>
+
+      <section class="list-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Filter</p>
+            <h2>Brza pretraga</h2>
+          </div>
+          <div class="filter-actions">
+            <input id="search-input" type="search" placeholder="Traži pacijenta ili postupak" />
+            <select id="status-filter">
+              <option value="">Svi statusi</option>
+              <option value="Zakazano">Zakazano</option>
+              <option value="U tijeku">U tijeku</option>
+              <option value="Završeno">Završeno</option>
+              <option value="Otkazano">Otkazano</option>
+            </select>
+            <select id="doctor-filter">
+              <option value="">Svi doktori</option>
+              <option value="Dr Rosa">Dr Rosa</option>
+              <option value="Dr Novak">Dr Novak</option>
+              <option value="Dr Horvat">Dr Horvat</option>
+            </select>
+            <input id="date-filter" type="date" placeholder="Odaberi datum" />
+            <select id="period-filter">
+              <option value="">Svi periodi</option>
+              <option value="day">Danas</option>
+              <option value="week">Ova nedelja</option>
+              <option value="month">Ovaj mesec</option>
+            </select>
+            <select id="payment-filter">
+              <option value="">Sva plaćanja</option>
+              <option value="Plaćeno">Plaćeno</option>
+              <option value="Dugovanje">Dugovanje</option>
+              <option value="Delimično">Delimično</option>
+              <option value="debtors">Dužnici</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Pacijent</th>
+                <th>Zadnji posjet</th>
+                <th>Ukupno poseta</th>
+                <th>Status</th>
+                <th>Plaćanje</th>
+                <th>Dugovanje</th>
+                <th>Detalji</th>
+              </tr>
+            </thead>
+            <tbody id="all-records-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../scripts/api.js"></script>
+  <script src="../scripts/all-records.js"></script>
+</body>
+</html>

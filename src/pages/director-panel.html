@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Director Panel | Dr Rosa</title>
+  <link rel="stylesheet" href="../styles/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        <div>
+          <p class="eyebrow">Direktor Panel</p>
+          <h1>Dr Rosa Ordinacija</h1>
+        </div>
+      </div>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <a href="index.html" class="secondary-btn">Dashboard</a>
+        <a href="all-records.html" class="secondary-btn">Evidencija</a>
+        <button id="logout-btn" class="secondary-btn" style="background: #e74c3c; color: white;">Odjava</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero-card">
+        <div>
+          <p class="eyebrow">Direktor</p>
+          <h2>Analitika i izvještaji</h2>
+          <p>Upravljajte financijama, pacijentima i doktorima unutar istog dizajna kao ostatak aplikacije.</p>
+        </div>
+        <div class="hero-stats">
+          <div>
+            <span id="user-name">-</span>
+            <p>Ulogovani direktor</p>
+          </div>
+          <div>
+            <span>4</span>
+            <p>Izvještaja</p>
+          </div>
+          <div>
+            <span>Brz pristup</span>
+            <p>Finansije i analiza</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="cards-grid" id="reports-grid">
+        <article class="stat-card gradient-blue" onclick="showReport('financial-report')" style="cursor:pointer;">
+          <h3>Finansijski Izvještaj</h3>
+          <p>Analiza prihoda, naplate i dugovanja.</p>
+        </article>
+        <article class="stat-card gradient-green" onclick="showReport('patients-report')" style="cursor:pointer;">
+          <h3>Pacijenti</h3>
+          <p>Pregled rasta, retencije i dugovanja.</p>
+        </article>
+        <article class="stat-card gradient-green-dark" onclick="showReport('doctors-report')" style="cursor:pointer;">
+          <h3>Doktori</h3>
+          <p>Produktivnost i opterećenje doktora.</p>
+        </article>
+        <article class="stat-card gradient-orange" onclick="showReport('procedures-report')" style="cursor:pointer;">
+          <h3>Postupci</h3>
+          <p>Raspodjela usluga i prosječna naplata.</p>
+        </article>
+      </section>
+
+      <section class="list-section report-content" id="financial-report">
+        <button class="secondary-btn" onclick="showReports()">← Nazad na izvještaje</button>
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Finansije</p>
+            <h2>Finansijski Izvještaj</h2>
+          </div>
+        </div>
+
+        <div class="cards-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+          <article class="stat-card gradient-blue">
+            <h3>Ukupan Prihod</h3>
+            <p class="stat-number" id="total-revenue">0.00 €</p>
+          </article>
+          <article class="stat-card gradient-green">
+            <h3>Ukupno Dugovanja</h3>
+            <p class="stat-number" id="total-debt">0.00 €</p>
+          </article>
+          <article class="stat-card gradient-orange">
+            <h3>Naplaćeno</h3>
+            <p class="stat-number" id="paid-percentage">0%</p>
+          </article>
+        </div>
+
+        <div class="list-section">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Status naplate</p>
+              <h2>Pregled po pacijentima</h2>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pacijent</th>
+                  <th>Broj Pregleda</th>
+                  <th>Ukupan Iznos</th>
+                  <th>Plaćeno</th>
+                  <th>Dugovanje</th>
+                  <th>Procenat</th>
+                </tr>
+              </thead>
+              <tbody id="payment-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="list-section report-content" id="patients-report">
+        <button class="secondary-btn" onclick="showReports()">← Nazad na izvještaje</button>
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Pacijenti</p>
+            <h2>Izvještaj o Pacijentima</h2>
+          </div>
+        </div>
+
+        <div class="cards-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+          <article class="stat-card gradient-blue">
+            <h3>Ukupno Pacijenata</h3>
+            <p class="stat-number" id="total-patients">0</p>
+          </article>
+          <article class="stat-card gradient-green">
+            <h3>Redovnih Pacijenata</h3>
+            <p class="stat-number" id="regular-patients">0</p>
+          </article>
+          <article class="stat-card gradient-orange">
+            <h3>Novih Pacijenata</h3>
+            <p class="stat-number" id="new-patients">0</p>
+          </article>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Pacijent</th>
+                <th>Broj Posjeta</th>
+                <th>Zadnja Posjeta</th>
+                <th>Status</th>
+                <th>Dugovanje</th>
+              </tr>
+            </thead>
+            <tbody id="patients-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="list-section report-content" id="doctors-report">
+        <button class="secondary-btn" onclick="showReports()">← Nazad na izvještaje</button>
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Doktori</p>
+            <h2>Izvještaj o Doktorima</h2>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Doktor</th>
+                <th>Broj Pregleda</th>
+                <th>Broj Pacijenata</th>
+                <th>Procenat Ukupnog Rada</th>
+              </tr>
+            </thead>
+            <tbody id="doctors-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="list-section report-content" id="procedures-report">
+        <button class="secondary-btn" onclick="showReports()">← Nazad na izvještaje</button>
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Postupci</p>
+            <h2>Izvještaj o Postupcima</h2>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Postupak</th>
+                <th>Broj Izvršenih</th>
+                <th>Procenat</th>
+                <th>Prosječna Naplata</th>
+              </tr>
+            </thead>
+            <tbody id="procedures-table"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../scripts/api.js"></script>
+  <script src="../scripts/director-reports.js"></script>
+</body>
+</html>
