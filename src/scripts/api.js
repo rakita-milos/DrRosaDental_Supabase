@@ -76,6 +76,8 @@
       visits: Number(row.visits || 1),
       paymentStatus: row.payment_status || row.paymentStatus || "Placeno",
       amountDue: Number(row.amount_due ?? row.amountDue ?? 0),
+      currency: row.currency || row.paymentCurrency || "EUR",
+      shift: row.shift || "Prva smena",
       treatments: row.treatments || {}
     };
   }
@@ -162,7 +164,9 @@
         status: record.status,
         notes: record.note,
         amount: record.amountDue,
+        currency: record.currency,
         payment_status: record.paymentStatus,
+        shift: record.shift,
         treatments: record.treatments
       })
     });

@@ -21,7 +21,7 @@
         <a id="director-panel-link" href="director-panel.html" style="display: none;">Direktor panel</a>
         <a id="new-patient-link" href="new-patient.html">Novi pacijent</a>
         <a href="all-records.html">Kompletna evidencija</a>
-        <button id="logout-btn" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Odjava</button>
+        <button id="logout-btn" type="button">Odjava</button>
       </nav>
     </header>
 
@@ -35,91 +35,62 @@
         </div>
 
         <div class="ortomapa-container">
-          <svg class="ortomapa" viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg">
+          <svg class="ortomapa natural-tooth-map" viewBox="0 0 760 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Interaktivna FDI mapa zuba">
             <defs>
               <linearGradient id="gradient-treated" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" style="stop-color:#63b73a;stop-opacity:1" />
                 <stop offset="100%" style="stop-color:#1891f0;stop-opacity:1" />
               </linearGradient>
+              <linearGradient id="tooth-natural" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+                <stop offset="100%" style="stop-color:#eef6fb;stop-opacity:1" />
+              </linearGradient>
             </defs>
-            
-            <!-- Gornji levi zubi (21-28) -->
-            <circle class="tooth-circle" cx="280" cy="80" data-tooth="21" r="20"></circle>
-            <text x="280" y="87" class="tooth-number">21</text>
-            <circle class="tooth-circle" cx="250" cy="70" data-tooth="22" r="20"></circle>
-            <text x="250" y="77" class="tooth-number">22</text>
-            <circle class="tooth-circle" cx="220" cy="75" data-tooth="23" r="20"></circle>
-            <text x="220" y="82" class="tooth-number">23</text>
-            <circle class="tooth-circle" cx="190" cy="95" data-tooth="24" r="20"></circle>
-            <text x="190" y="102" class="tooth-number">24</text>
-            <circle class="tooth-circle" cx="165" cy="125" data-tooth="25" r="20"></circle>
-            <text x="165" y="132" class="tooth-number">25</text>
-            <circle class="tooth-circle" cx="150" cy="160" data-tooth="26" r="20"></circle>
-            <text x="150" y="167" class="tooth-number">26</text>
-            <circle class="tooth-circle" cx="145" cy="195" data-tooth="27" r="20"></circle>
-            <text x="145" y="202" class="tooth-number">27</text>
-            <circle class="tooth-circle" cx="155" cy="225" data-tooth="28" r="20"></circle>
-            <text x="155" y="232" class="tooth-number">28</text>
+            <path class="jaw-guide upper" d="M110 240 C150 72 300 44 380 44 C460 44 610 72 650 240" />
+            <path class="jaw-guide lower" d="M110 320 C150 488 300 516 380 516 C460 516 610 488 650 320" />
+            <line class="jaw-midline" x1="380" y1="54" x2="380" y2="506" />
+            <text x="380" y="28" class="jaw-label">Gornja vilica</text>
+            <text x="380" y="548" class="jaw-label">Donja vilica</text>
+            <text x="210" y="66" class="quadrant-label">Gornji lijevi 21-28</text>
+            <text x="550" y="66" class="quadrant-label">Gornji desni 11-18</text>
+            <text x="210" y="500" class="quadrant-label">Donji desni 41-48</text>
+            <text x="550" y="500" class="quadrant-label">Donji lijevi 31-38</text>
 
-            <!-- Gornji desni zubi (11-18) -->
-            <circle class="tooth-circle" cx="320" cy="80" data-tooth="11" r="20"></circle>
-            <text x="320" y="87" class="tooth-number">11</text>
-            <circle class="tooth-circle" cx="350" cy="70" data-tooth="12" r="20"></circle>
-            <text x="350" y="77" class="tooth-number">12</text>
-            <circle class="tooth-circle" cx="380" cy="75" data-tooth="13" r="20"></circle>
-            <text x="380" y="82" class="tooth-number">13</text>
-            <circle class="tooth-circle" cx="410" cy="95" data-tooth="14" r="20"></circle>
-            <text x="410" y="102" class="tooth-number">14</text>
-            <circle class="tooth-circle" cx="435" cy="125" data-tooth="15" r="20"></circle>
-            <text x="435" y="132" class="tooth-number">15</text>
-            <circle class="tooth-circle" cx="450" cy="160" data-tooth="16" r="20"></circle>
-            <text x="450" y="167" class="tooth-number">16</text>
-            <circle class="tooth-circle" cx="455" cy="195" data-tooth="17" r="20"></circle>
-            <text x="455" y="202" class="tooth-number">17</text>
-            <circle class="tooth-circle" cx="445" cy="225" data-tooth="18" r="20"></circle>
-            <text x="445" y="232" class="tooth-number">18</text>
+            <g class="tooth-node" data-tooth="28" tabindex="0" role="button" aria-label="Zub 28"><ellipse class="tooth-hit" cx="118" cy="229" rx="32" ry="36"/><ellipse class="tooth-surface molar" cx="118" cy="229" rx="25" ry="29"/><path class="tooth-groove" d="M103 229 H133 M118 211 V247"/><text x="118" y="234" class="tooth-number">28</text></g>
+            <g class="tooth-node" data-tooth="27" tabindex="0" role="button" aria-label="Zub 27"><ellipse class="tooth-hit" cx="126" cy="185" rx="34" ry="36"/><ellipse class="tooth-surface molar" cx="126" cy="185" rx="27" ry="30"/><path class="tooth-groove" d="M109 185 H143 M126 166 V204"/><text x="126" y="190" class="tooth-number">27</text></g>
+            <g class="tooth-node" data-tooth="26" tabindex="0" role="button" aria-label="Zub 26"><ellipse class="tooth-hit" cx="146" cy="143" rx="34" ry="36"/><ellipse class="tooth-surface molar" cx="146" cy="143" rx="27" ry="30"/><path class="tooth-groove" d="M129 143 H163 M146 124 V162"/><text x="146" y="148" class="tooth-number">26</text></g>
+            <g class="tooth-node" data-tooth="25" tabindex="0" role="button" aria-label="Zub 25"><ellipse class="tooth-hit" cx="178" cy="108" rx="30" ry="34"/><ellipse class="tooth-surface premolar" cx="178" cy="108" rx="22" ry="27"/><path class="tooth-groove" d="M166 108 H190"/><text x="178" y="113" class="tooth-number">25</text></g>
+            <g class="tooth-node" data-tooth="24" tabindex="0" role="button" aria-label="Zub 24"><ellipse class="tooth-hit" cx="217" cy="83" rx="30" ry="33"/><ellipse class="tooth-surface premolar" cx="217" cy="83" rx="21" ry="26"/><path class="tooth-groove" d="M205 83 H229"/><text x="217" y="88" class="tooth-number">24</text></g>
+            <g class="tooth-node" data-tooth="23" tabindex="0" role="button" aria-label="Zub 23"><ellipse class="tooth-hit" cx="263" cy="67" rx="28" ry="34"/><path class="tooth-surface canine" d="M263 40 C282 54 281 86 263 99 C245 86 244 54 263 40Z"/><text x="263" y="72" class="tooth-number">23</text></g>
+            <g class="tooth-node" data-tooth="22" tabindex="0" role="button" aria-label="Zub 22"><ellipse class="tooth-hit" cx="315" cy="58" rx="26" ry="31"/><path class="tooth-surface incisor" d="M298 36 H332 C336 57 333 78 315 88 C297 78 294 57 298 36Z"/><text x="315" y="63" class="tooth-number">22</text></g>
+            <g class="tooth-node" data-tooth="21" tabindex="0" role="button" aria-label="Zub 21"><ellipse class="tooth-hit" cx="363" cy="56" rx="28" ry="32"/><path class="tooth-surface incisor wide" d="M344 34 H382 C387 56 383 80 363 90 C343 80 339 56 344 34Z"/><text x="363" y="61" class="tooth-number">21</text></g>
 
-            <!-- Donji desni zubi (41-48) -->
-            <circle class="tooth-circle" cx="280" cy="520" data-tooth="41" r="20"></circle>
-            <text x="280" y="527" class="tooth-number">41</text>
-            <circle class="tooth-circle" cx="250" cy="530" data-tooth="42" r="20"></circle>
-            <text x="250" y="537" class="tooth-number">42</text>
-            <circle class="tooth-circle" cx="220" cy="525" data-tooth="43" r="20"></circle>
-            <text x="220" y="532" class="tooth-number">43</text>
-            <circle class="tooth-circle" cx="190" cy="505" data-tooth="44" r="20"></circle>
-            <text x="190" y="512" class="tooth-number">44</text>
-            <circle class="tooth-circle" cx="165" cy="475" data-tooth="45" r="20"></circle>
-            <text x="165" y="482" class="tooth-number">45</text>
-            <circle class="tooth-circle" cx="150" cy="440" data-tooth="46" r="20"></circle>
-            <text x="150" y="447" class="tooth-number">46</text>
-            <circle class="tooth-circle" cx="145" cy="405" data-tooth="47" r="20"></circle>
-            <text x="145" y="412" class="tooth-number">47</text>
-            <circle class="tooth-circle" cx="155" cy="375" data-tooth="48" r="20"></circle>
-            <text x="155" y="382" class="tooth-number">48</text>
+            <g class="tooth-node" data-tooth="11" tabindex="0" role="button" aria-label="Zub 11"><ellipse class="tooth-hit" cx="397" cy="56" rx="28" ry="32"/><path class="tooth-surface incisor wide" d="M378 34 H416 C421 56 417 80 397 90 C377 80 373 56 378 34Z"/><text x="397" y="61" class="tooth-number">11</text></g>
+            <g class="tooth-node" data-tooth="12" tabindex="0" role="button" aria-label="Zub 12"><ellipse class="tooth-hit" cx="445" cy="58" rx="26" ry="31"/><path class="tooth-surface incisor" d="M428 36 H462 C466 57 463 78 445 88 C427 78 424 57 428 36Z"/><text x="445" y="63" class="tooth-number">12</text></g>
+            <g class="tooth-node" data-tooth="13" tabindex="0" role="button" aria-label="Zub 13"><ellipse class="tooth-hit" cx="497" cy="67" rx="28" ry="34"/><path class="tooth-surface canine" d="M497 40 C516 54 515 86 497 99 C479 86 478 54 497 40Z"/><text x="497" y="72" class="tooth-number">13</text></g>
+            <g class="tooth-node" data-tooth="14" tabindex="0" role="button" aria-label="Zub 14"><ellipse class="tooth-hit" cx="543" cy="83" rx="30" ry="33"/><ellipse class="tooth-surface premolar" cx="543" cy="83" rx="21" ry="26"/><path class="tooth-groove" d="M531 83 H555"/><text x="543" y="88" class="tooth-number">14</text></g>
+            <g class="tooth-node" data-tooth="15" tabindex="0" role="button" aria-label="Zub 15"><ellipse class="tooth-hit" cx="582" cy="108" rx="30" ry="34"/><ellipse class="tooth-surface premolar" cx="582" cy="108" rx="22" ry="27"/><path class="tooth-groove" d="M570 108 H594"/><text x="582" y="113" class="tooth-number">15</text></g>
+            <g class="tooth-node" data-tooth="16" tabindex="0" role="button" aria-label="Zub 16"><ellipse class="tooth-hit" cx="614" cy="143" rx="34" ry="36"/><ellipse class="tooth-surface molar" cx="614" cy="143" rx="27" ry="30"/><path class="tooth-groove" d="M597 143 H631 M614 124 V162"/><text x="614" y="148" class="tooth-number">16</text></g>
+            <g class="tooth-node" data-tooth="17" tabindex="0" role="button" aria-label="Zub 17"><ellipse class="tooth-hit" cx="634" cy="185" rx="34" ry="36"/><ellipse class="tooth-surface molar" cx="634" cy="185" rx="27" ry="30"/><path class="tooth-groove" d="M617 185 H651 M634 166 V204"/><text x="634" y="190" class="tooth-number">17</text></g>
+            <g class="tooth-node" data-tooth="18" tabindex="0" role="button" aria-label="Zub 18"><ellipse class="tooth-hit" cx="642" cy="229" rx="32" ry="36"/><ellipse class="tooth-surface molar" cx="642" cy="229" rx="25" ry="29"/><path class="tooth-groove" d="M627 229 H657 M642 211 V247"/><text x="642" y="234" class="tooth-number">18</text></g>
 
-            <!-- Donji levi zubi (31-38) -->
-            <circle class="tooth-circle" cx="320" cy="520" data-tooth="31" r="20"></circle>
-            <text x="320" y="527" class="tooth-number">31</text>
-            <circle class="tooth-circle" cx="350" cy="530" data-tooth="32" r="20"></circle>
-            <text x="350" y="537" class="tooth-number">32</text>
-            <circle class="tooth-circle" cx="380" cy="525" data-tooth="33" r="20"></circle>
-            <text x="380" y="532" class="tooth-number">33</text>
-            <circle class="tooth-circle" cx="410" cy="505" data-tooth="34" r="20"></circle>
-            <text x="410" y="512" class="tooth-number">34</text>
-            <circle class="tooth-circle" cx="435" cy="475" data-tooth="35" r="20"></circle>
-            <text x="435" y="482" class="tooth-number">35</text>
-            <circle class="tooth-circle" cx="450" cy="440" data-tooth="36" r="20"></circle>
-            <text x="450" y="447" class="tooth-number">36</text>
-            <circle class="tooth-circle" cx="455" cy="405" data-tooth="37" r="20"></circle>
-            <text x="455" y="412" class="tooth-number">37</text>
-            <circle class="tooth-circle" cx="445" cy="375" data-tooth="38" r="20"></circle>
-            <text x="445" y="382" class="tooth-number">38</text>
+            <g class="tooth-node" data-tooth="48" tabindex="0" role="button" aria-label="Zub 48"><ellipse class="tooth-hit" cx="118" cy="331" rx="32" ry="36"/><ellipse class="tooth-surface molar" cx="118" cy="331" rx="25" ry="29"/><path class="tooth-groove" d="M103 331 H133 M118 313 V349"/><text x="118" y="336" class="tooth-number">48</text></g>
+            <g class="tooth-node" data-tooth="47" tabindex="0" role="button" aria-label="Zub 47"><ellipse class="tooth-hit" cx="126" cy="375" rx="34" ry="36"/><ellipse class="tooth-surface molar" cx="126" cy="375" rx="27" ry="30"/><path class="tooth-groove" d="M109 375 H143 M126 356 V394"/><text x="126" y="380" class="tooth-number">47</text></g>
+            <g class="tooth-node" data-tooth="46" tabindex="0" role="button" aria-label="Zub 46"><ellipse class="tooth-hit" cx="146" cy="417" rx="34" ry="36"/><ellipse class="tooth-surface molar" cx="146" cy="417" rx="27" ry="30"/><path class="tooth-groove" d="M129 417 H163 M146 398 V436"/><text x="146" y="422" class="tooth-number">46</text></g>
+            <g class="tooth-node" data-tooth="45" tabindex="0" role="button" aria-label="Zub 45"><ellipse class="tooth-hit" cx="178" cy="452" rx="30" ry="34"/><ellipse class="tooth-surface premolar" cx="178" cy="452" rx="22" ry="27"/><path class="tooth-groove" d="M166 452 H190"/><text x="178" y="457" class="tooth-number">45</text></g>
+            <g class="tooth-node" data-tooth="44" tabindex="0" role="button" aria-label="Zub 44"><ellipse class="tooth-hit" cx="217" cy="477" rx="30" ry="33"/><ellipse class="tooth-surface premolar" cx="217" cy="477" rx="21" ry="26"/><path class="tooth-groove" d="M205 477 H229"/><text x="217" y="482" class="tooth-number">44</text></g>
+            <g class="tooth-node" data-tooth="43" tabindex="0" role="button" aria-label="Zub 43"><ellipse class="tooth-hit" cx="263" cy="493" rx="28" ry="34"/><path class="tooth-surface canine" d="M263 520 C282 506 281 474 263 461 C245 474 244 506 263 520Z"/><text x="263" y="498" class="tooth-number">43</text></g>
+            <g class="tooth-node" data-tooth="42" tabindex="0" role="button" aria-label="Zub 42"><ellipse class="tooth-hit" cx="315" cy="502" rx="24" ry="30"/><path class="tooth-surface incisor" d="M300 523 H330 C334 502 331 483 315 473 C299 483 296 502 300 523Z"/><text x="315" y="507" class="tooth-number">42</text></g>
+            <g class="tooth-node" data-tooth="41" tabindex="0" role="button" aria-label="Zub 41"><ellipse class="tooth-hit" cx="363" cy="504" rx="24" ry="30"/><path class="tooth-surface incisor" d="M348 525 H378 C382 504 379 485 363 475 C347 485 344 504 348 525Z"/><text x="363" y="509" class="tooth-number">41</text></g>
 
-            <!-- Oznake za kvadrante -->
-            <text x="150" y="120" class="quadrant-label">Gornji levi</text>
-            <text x="420" y="120" class="quadrant-label">Gornji desni</text>
-            <text x="150" y="520" class="quadrant-label">Donji levi</text>
-            <text x="420" y="520" class="quadrant-label">Donji desni</text>
+            <g class="tooth-node" data-tooth="31" tabindex="0" role="button" aria-label="Zub 31"><ellipse class="tooth-hit" cx="397" cy="504" rx="24" ry="30"/><path class="tooth-surface incisor" d="M382 525 H412 C416 504 413 485 397 475 C381 485 378 504 382 525Z"/><text x="397" y="509" class="tooth-number">31</text></g>
+            <g class="tooth-node" data-tooth="32" tabindex="0" role="button" aria-label="Zub 32"><ellipse class="tooth-hit" cx="445" cy="502" rx="24" ry="30"/><path class="tooth-surface incisor" d="M430 523 H460 C464 502 461 483 445 473 C429 483 426 502 430 523Z"/><text x="445" y="507" class="tooth-number">32</text></g>
+            <g class="tooth-node" data-tooth="33" tabindex="0" role="button" aria-label="Zub 33"><ellipse class="tooth-hit" cx="497" cy="493" rx="28" ry="34"/><path class="tooth-surface canine" d="M497 520 C516 506 515 474 497 461 C479 474 478 506 497 520Z"/><text x="497" y="498" class="tooth-number">33</text></g>
+            <g class="tooth-node" data-tooth="34" tabindex="0" role="button" aria-label="Zub 34"><ellipse class="tooth-hit" cx="543" cy="477" rx="30" ry="33"/><ellipse class="tooth-surface premolar" cx="543" cy="477" rx="21" ry="26"/><path class="tooth-groove" d="M531 477 H555"/><text x="543" y="482" class="tooth-number">34</text></g>
+            <g class="tooth-node" data-tooth="35" tabindex="0" role="button" aria-label="Zub 35"><ellipse class="tooth-hit" cx="582" cy="452" rx="30" ry="34"/><ellipse class="tooth-surface premolar" cx="582" cy="452" rx="22" ry="27"/><path class="tooth-groove" d="M570 452 H594"/><text x="582" y="457" class="tooth-number">35</text></g>
+            <g class="tooth-node" data-tooth="36" tabindex="0" role="button" aria-label="Zub 36"><ellipse class="tooth-hit" cx="614" cy="417" rx="34" ry="36"/><ellipse class="tooth-surface molar" cx="614" cy="417" rx="27" ry="30"/><path class="tooth-groove" d="M597 417 H631 M614 398 V436"/><text x="614" y="422" class="tooth-number">36</text></g>
+            <g class="tooth-node" data-tooth="37" tabindex="0" role="button" aria-label="Zub 37"><ellipse class="tooth-hit" cx="634" cy="375" rx="34" ry="36"/><ellipse class="tooth-surface molar" cx="634" cy="375" rx="27" ry="30"/><path class="tooth-groove" d="M617 375 H651 M634 356 V394"/><text x="634" y="380" class="tooth-number">37</text></g>
+            <g class="tooth-node" data-tooth="38" tabindex="0" role="button" aria-label="Zub 38"><ellipse class="tooth-hit" cx="642" cy="331" rx="32" ry="36"/><ellipse class="tooth-surface molar" cx="642" cy="331" rx="25" ry="29"/><path class="tooth-groove" d="M627 331 H657 M642 313 V349"/><text x="642" y="336" class="tooth-number">38</text></g>
           </svg>
         </div>
 
@@ -233,6 +204,20 @@
               </select>
             </label>
             <label>
+              Valuta
+              <select id="currency" name="currency" required>
+                <option value="EUR">EUR</option>
+                <option value="RSD">RSD</option>
+              </select>
+            </label>
+            <label>
+              Smena
+              <select id="shift" name="shift" required>
+                <option value="Prva smena">Prva smena</option>
+                <option value="Druga smena">Druga smena</option>
+              </select>
+            </label>
+            <label>
               Iznos duga
               <input id="amount-due" name="amountDue" type="number" min="0" step="0.01" placeholder="0.00" />
             </label>
@@ -270,6 +255,10 @@
           <p id="preview-payment-status">Plaćeno</p>
           <p class="preview-label">Iznos duga</p>
           <p id="preview-amount-due">0.00</p>
+          <p class="preview-label">Valuta</p>
+          <p id="preview-currency">EUR</p>
+          <p class="preview-label">Smena</p>
+          <p id="preview-shift">Prva smena</p>
           <p class="preview-label">Napomena</p>
           <p id="preview-note">-</p>
         </div>

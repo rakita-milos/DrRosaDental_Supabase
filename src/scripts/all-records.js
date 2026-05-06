@@ -53,6 +53,16 @@ function fold(value) {
     .toLowerCase();
 }
 
+function addCurrencyAmount(target, currency, amount) {
+  const key = currency || "EUR";
+  target[key] = (target[key] || 0) + Number(amount || 0);
+}
+
+function formatCurrencyAmounts(amounts) {
+  const entries = Object.entries(amounts).filter(([, amount]) => amount > 0);
+  return entries.length ? entries.map(([currency, amount]) => `${amount.toFixed(2)} ${currency}`).join(" / ") : "0.00";
+}
+
 function renderSummary(records) {
   const patientMap = {};
   records.forEach((record) => {
@@ -87,13 +97,18 @@ function renderRecords(records) {
         lastVisit: record.lastVisit,
         visits: 0,
         hasDebt: false,
-        totalDebt: 0
+        totalDebt: {},
+        currencies: new Set(),
+        shifts: new Map()
       };
     }
     patientMap[record.patient].visits += 1;
+    patientMap[record.patient].currencies.add(record.currency || "EUR");
+    const shift = record.shift || "Prva smena";
+    patientMap[record.patient].shifts.set(shift, (patientMap[record.patient].shifts.get(shift) || 0) + 1);
     if (isDebt(record)) {
       patientMap[record.patient].hasDebt = true;
-      patientMap[record.patient].totalDebt += Number(record.amountDue || 0);
+      addCurrencyAmount(patientMap[record.patient].totalDebt, record.currency || "EUR", record.amountDue || 0);
     }
     if (new Date(record.lastVisit) > new Date(patientMap[record.patient].lastVisit)) {
       patientMap[record.patient].lastVisit = record.lastVisit;
@@ -106,11 +121,13 @@ function renderRecords(records) {
     formatDate(patient.lastVisit),
     patient.visits,
     patient.hasDebt ? "Dugovanje" : "Placeno",
-    `${patient.totalDebt.toFixed(2)} EUR`
+    Array.from(patient.currencies).join(" / "),
+    Array.from(patient.shifts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "-",
+    formatCurrencyAmounts(patient.totalDebt)
   ]);
 
   if (uniquePatients.length === 0) {
-    body.innerHTML = `<tr><td colspan="7" class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9" class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</td></tr>`;
     return;
   }
 
@@ -124,7 +141,9 @@ function renderRecords(records) {
       window.DrRosaSecurity.cell(patient.visits),
       window.DrRosaSecurity.cell("-"),
       window.DrRosaSecurity.cell(paymentStatus, paymentClass),
-      window.DrRosaSecurity.cell(`${patient.totalDebt.toFixed(2)} EUR`)
+      window.DrRosaSecurity.cell(Array.from(patient.currencies).join(" / ")),
+      window.DrRosaSecurity.cell(Array.from(patient.shifts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "-"),
+      window.DrRosaSecurity.cell(formatCurrencyAmounts(patient.totalDebt))
     );
     const actionCell = document.createElement("td");
     const link = document.createElement("a");
@@ -178,7 +197,7 @@ function refresh() {
 
 function exportFiltered(format) {
   const title = "Filtrirana evidencija pacijenata";
-  const headers = ["Pacijent", "Zadnji posjet", "Ukupno poseta", "Placanje", "Dugovanje"];
+  const headers = ["Pacijent", "Zadnji posjet", "Ukupno poseta", "Placanje", "Valuta", "Smena", "Dugovanje"];
   if (format === "excel") {
     window.DrRosaExport.exportExcel(title, headers, currentExportRows);
     return;

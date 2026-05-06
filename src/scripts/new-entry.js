@@ -32,6 +32,8 @@ const previewElements = {
   status: document.getElementById("preview-status"),
   paymentStatus: document.getElementById("preview-payment-status"),
   amountDue: document.getElementById("preview-amount-due"),
+  currency: document.getElementById("preview-currency"),
+  shift: document.getElementById("preview-shift"),
   note: document.getElementById("preview-note")
 };
 
@@ -43,6 +45,8 @@ const inputs = {
   status: document.getElementById("status"),
   paymentStatus: document.getElementById("payment-status"),
   amountDue: document.getElementById("amount-due"),
+  currency: document.getElementById("currency"),
+  shift: document.getElementById("shift"),
   note: document.getElementById("note")
 };
 
@@ -80,6 +84,8 @@ function updatePreview() {
   previewElements.status.textContent = inputs.status.value;
   previewElements.paymentStatus.textContent = inputs.paymentStatus.value;
   previewElements.amountDue.textContent = Number(inputs.amountDue.value || 0).toFixed(2);
+  previewElements.currency.textContent = inputs.currency.value;
+  previewElements.shift.textContent = inputs.shift.value;
   previewElements.note.textContent = inputs.note.value.trim() || "-";
 }
 
@@ -119,15 +125,26 @@ const treatmentStatus = document.getElementById("treatment-status");
 const treatmentNote = document.getElementById("treatment-note");
 const teethSummary = document.getElementById("teeth-summary");
 
-document.querySelectorAll(".tooth-circle").forEach(circle => {
-  circle.addEventListener("click", () => {
-    selectedTooth = circle.dataset.tooth;
-    selectedToothSpan.textContent = selectedTooth;
-    const current = teethTreatments[selectedTooth];
-    treatmentType.value = current?.type || "";
-    treatmentStatus.value = current?.status || "Planirano";
-    treatmentNote.value = current?.note || "";
-    teethPanel.style.display = "block";
+function openToothPanel(toothNode) {
+  selectedTooth = toothNode.dataset.tooth;
+  selectedToothSpan.textContent = selectedTooth;
+  const current = teethTreatments[selectedTooth];
+  treatmentType.value = current?.type || "";
+  treatmentStatus.value = current?.status || "Planirano";
+  treatmentNote.value = current?.note || "";
+  teethPanel.style.display = "block";
+}
+
+document.querySelectorAll(".tooth-node").forEach(toothNode => {
+  toothNode.addEventListener("click", () => {
+    openToothPanel(toothNode);
+  });
+
+  toothNode.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openToothPanel(toothNode);
+    }
   });
 });
 
@@ -148,7 +165,7 @@ saveTreatmentBtn.addEventListener("click", () => {
     note: treatmentNote.value
   };
 
-  document.querySelector(`[data-tooth="${selectedTooth}"]`).classList.add("treated");
+  document.querySelector(`.tooth-node[data-tooth="${selectedTooth}"]`).classList.add("treated");
   teethPanel.style.display = "none";
   updateTeethSummary();
   selectedTooth = null;
@@ -175,7 +192,7 @@ function updateTeethSummary() {
     btn.addEventListener("click", () => {
       const tooth = btn.dataset.tooth;
       delete teethTreatments[tooth];
-      document.querySelector(`[data-tooth="${tooth}"]`).classList.remove("treated");
+      document.querySelector(`.tooth-node[data-tooth="${tooth}"]`).classList.remove("treated");
       updateTeethSummary();
     });
   });
@@ -215,6 +232,8 @@ form.addEventListener("submit", async (event) => {
     status: inputs.status.value,
     paymentStatus: inputs.paymentStatus.value,
     amountDue: Number(inputs.amountDue.value || 0),
+    currency: inputs.currency.value,
+    shift: inputs.shift.value,
     note: inputs.note.value.trim() || "-",
     treatments: teethTreatments
   };
@@ -224,7 +243,7 @@ form.addEventListener("submit", async (event) => {
     showAlert("Unos je spremljen! Vratite se na dashboard da ga pregledate.");
     form.reset();
     teethTreatments = {};
-    document.querySelectorAll(".tooth-circle").forEach(circle => circle.classList.remove("treated"));
+    document.querySelectorAll(".tooth-node").forEach(tooth => tooth.classList.remove("treated"));
     updateTeethSummary();
     updatePreview();
   } catch (error) {

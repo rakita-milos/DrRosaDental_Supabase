@@ -20,18 +20,18 @@
         <a href="index.html">Dashboard</a>
         <a href="new-entry.html">Novi unos</a>
         <a href="new-patient.html">Novi pacijent</a>
-        <button id="logout-btn" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">Odjava</button>
+        <button id="logout-btn" type="button">Odjava</button>
       </nav>
     </header>
 
     <main>
-      <section class="hero-card">
+      <section class="hero-card all-records-hero">
         <div>
           <p class="eyebrow">Kompletna evidencija</p>
           <h2>Pretražite sve pacijente i termine</h2>
           <p>Funkcionalnost omogućuje filtriranje, pretraživanje i pregled statusa svih zapisa iz sustava.</p>
         </div>
-        <div class="hero-stats" id="summary-cards"></div>
+        <div class="hero-stats all-records-summary" id="summary-cards"></div>
       </section>
 
       <section class="list-section">
@@ -85,6 +85,8 @@
                 <th>Ukupno poseta</th>
                 <th>Status</th>
                 <th>Plaćanje</th>
+                <th>Valuta</th>
+                <th>Smena</th>
                 <th>Dugovanje</th>
                 <th>Detalji</th>
               </tr>

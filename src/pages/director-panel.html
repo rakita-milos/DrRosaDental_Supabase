@@ -12,15 +12,14 @@
       <div class="brand">
         <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
         <div>
-          <p class="eyebrow">Direktor Panel</p>
-          <h1>Dr Rosa Ordinacija</h1>
+          <h1>Direktor panel</h1>
         </div>
       </div>
-      <div style="display: flex; gap: 10px; align-items: center;">
+      <nav class="topbar-actions" aria-label="Glavna navigacija">
         <a href="index.html" class="secondary-btn">Dashboard</a>
         <a href="all-records.html" class="secondary-btn">Evidencija</a>
-        <button id="logout-btn" class="secondary-btn" style="background: #e74c3c; color: white;">Odjava</button>
-      </div>
+        <button id="logout-btn" class="secondary-btn" type="button">Odjava</button>
+      </nav>
     </header>
 
     <main>
@@ -30,43 +29,29 @@
           <h2>Analitika i izvještaji</h2>
           <p>Upravljajte financijama, pacijentima i doktorima unutar istog dizajna kao ostatak aplikacije.</p>
         </div>
-        <div class="hero-stats">
-          <div>
-            <span id="user-name">-</span>
-            <p>Ulogovani direktor</p>
-          </div>
-          <div>
-            <span>4</span>
-            <p>Izvještaja</p>
-          </div>
-          <div>
-            <span>Brz pristup</span>
-            <p>Finansije i analiza</p>
-          </div>
-        </div>
       </section>
 
       <section class="cards-grid" id="reports-grid">
-        <article class="stat-card gradient-blue" onclick="showReport('financial-report')" style="cursor:pointer;">
+        <article class="stat-card gradient-blue" data-report-id="financial-report" style="cursor:pointer;">
           <h3>Finansijski Izvještaj</h3>
           <p>Analiza prihoda, naplate i dugovanja.</p>
         </article>
-        <article class="stat-card gradient-green" onclick="showReport('patients-report')" style="cursor:pointer;">
+        <article class="stat-card gradient-green" data-report-id="patients-report" style="cursor:pointer;">
           <h3>Pacijenti</h3>
           <p>Pregled rasta, retencije i dugovanja.</p>
         </article>
-        <article class="stat-card gradient-green-dark" onclick="showReport('doctors-report')" style="cursor:pointer;">
+        <article class="stat-card gradient-green-dark" data-report-id="doctors-report" style="cursor:pointer;">
           <h3>Doktori</h3>
           <p>Produktivnost i opterećenje doktora.</p>
         </article>
-        <article class="stat-card gradient-orange" onclick="showReport('procedures-report')" style="cursor:pointer;">
+        <article class="stat-card gradient-orange" data-report-id="procedures-report" style="cursor:pointer;">
           <h3>Postupci</h3>
           <p>Raspodjela usluga i prosječna naplata.</p>
         </article>
       </section>
 
       <section class="list-section report-content" id="financial-report">
-        <button class="secondary-btn" onclick="showReports()">← Nazad na izvještaje</button>
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izvještaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Finansije</p>
@@ -116,7 +101,7 @@
       </section>
 
       <section class="list-section report-content" id="patients-report">
-        <button class="secondary-btn" onclick="showReports()">← Nazad na izvještaje</button>
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izvještaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Pacijenti</p>
@@ -156,7 +141,7 @@
       </section>
 
       <section class="list-section report-content" id="doctors-report">
-        <button class="secondary-btn" onclick="showReports()">← Nazad na izvještaje</button>
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izvještaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Doktori</p>
@@ -180,7 +165,7 @@
       </section>
 
       <section class="list-section report-content" id="procedures-report">
-        <button class="secondary-btn" onclick="showReports()">← Nazad na izvještaje</button>
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izvještaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Postupci</p>

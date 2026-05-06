@@ -35,6 +35,20 @@ function isDebt(record) {
   return Number(record.amountDue || 0) > 0 && ["dugovanje", "delimicno"].includes(payment);
 }
 
+function formatMoney(amount, currency = "EUR") {
+  return `${Number(amount || 0).toFixed(2)} ${currency}`;
+}
+
+function formatDebtTotals(records) {
+  const totals = records.reduce((acc, record) => {
+    const currency = record.currency || "EUR";
+    acc[currency] = (acc[currency] || 0) + Number(record.amountDue || 0);
+    return acc;
+  }, {});
+  const entries = Object.entries(totals).filter(([, amount]) => amount > 0);
+  return entries.length ? entries.map(([currency, amount]) => formatMoney(amount, currency)).join(" / ") : "0.00";
+}
+
 const patientName = getQueryParam("patient");
 const title = document.getElementById("patient-name-title");
 const summaryCards = document.getElementById("patient-summary-cards");
@@ -76,7 +90,6 @@ function renderEmpty(message) {
   const patientDetails = patients.find(patient => patientFullName(patient) === patientName);
 
   const totalVisits = patientRecords.length;
-  const totalDue = patientRecords.reduce((sum, record) => sum + Number(record.amountDue || 0), 0);
   const dueRecords = patientRecords.filter(isDebt);
   const lastVisit = patientRecords.map(record => record.lastVisit).filter(Boolean).sort().pop();
 
@@ -84,7 +97,7 @@ function renderEmpty(message) {
     <div class="hero-stats-card"><p class="eyebrow">Ukupno poseta</p><span>${totalVisits}</span></div>
     <div class="hero-stats-card"><p class="eyebrow">Zadnja poseta</p><span>${formatDate(lastVisit)}</span></div>
     <div class="hero-stats-card"><p class="eyebrow">Dugovanja</p><span>${dueRecords.length}</span></div>
-    <div class="hero-stats-card"><p class="eyebrow">Iznos duga</p><span>${totalDue.toFixed(2)} EUR</span></div>
+    <div class="hero-stats-card"><p class="eyebrow">Iznos duga</p><span>${formatDebtTotals(dueRecords)}</span></div>
   `;
 
   if (patientDetails) {
@@ -113,7 +126,8 @@ function renderEmpty(message) {
       <td>${escapeHtml(record.doctor)}</td>
       <td>${escapeHtml(record.status)}</td>
       <td>${escapeHtml(record.paymentStatus || "-")}</td>
-      <td>${Number(record.amountDue || 0).toFixed(2)} EUR</td>
+      <td>${escapeHtml(record.shift || "-")}</td>
+      <td>${formatMoney(record.amountDue, record.currency)}</td>
       <td>${escapeHtml(record.note || "-")}</td>
     </tr>
   `).join("");

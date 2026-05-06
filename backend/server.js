@@ -29,6 +29,7 @@ db.exec('PRAGMA journal_mode = WAL');
 const schema = fs.readFileSync(path.join(__dirname, 'database.sql'), 'utf8');
 db.exec(schema);
 
+applyMigrations();
 seedDatabase();
 
 app.disable('x-powered-by');
@@ -129,6 +130,17 @@ function seedDatabase() {
   rotateDefaultPasswords();
 }
 
+function applyMigrations() {
+  ensureColumn('visit_records', 'shift', "TEXT NOT NULL DEFAULT 'Prva smena'");
+  ensureColumn('payments', 'currency', "TEXT NOT NULL DEFAULT 'EUR'");
+}
+
+function ensureColumn(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (columns.some(existing => existing.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
 function isStrongInitialPassword(value) {
   return typeof value === 'string' && value.length >= 12 && value !== 'password123';
 }
@@ -182,6 +194,17 @@ function normalizePaymentStatus(value) {
   if (raw.includes('delimi') || raw.includes('delimi')) return 'Delimicno';
   if (raw.includes('dug')) return 'Dugovanje';
   return 'Dugovanje';
+}
+
+function normalizeCurrency(value) {
+  const raw = String(value || '').toUpperCase();
+  return raw === 'RSD' || raw.includes('DIN') ? 'RSD' : 'EUR';
+}
+
+function normalizeShift(value) {
+  const raw = String(value || '').toLowerCase();
+  if (raw.includes('drug') || raw.includes('2')) return 'Druga smena';
+  return 'Prva smena';
 }
 
 function normalizeStatus(value) {
@@ -373,12 +396,14 @@ app.get('/api/records', authenticateToken, (_req, res) => {
         vr.visit_date,
         vr.procedure,
         vr.status,
+        vr.shift,
         p.id as patient_id,
         p.first_name,
         p.last_name,
         d.id as doctor_id,
         d.name as doctor_name,
         COALESCE(pay.amount, 0) as amount_due,
+        COALESCE(pay.currency, 'EUR') as currency,
         pay.payment_status,
         vr.notes
       FROM visit_records vr
@@ -417,26 +442,28 @@ function insertRecordTransaction(record) {
   const patientId = positiveInteger(record.patient_id);
   const doctorId = positiveInteger(record.doctor_id);
   const visitResult = db.prepare(`
-    INSERT INTO visit_records (patient_id, doctor_id, visit_date, procedure, status, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO visit_records (patient_id, doctor_id, visit_date, procedure, status, shift, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     patientId,
     doctorId,
     cleanText(record.visit_date, { max: 20, required: true }),
     cleanText(record.procedure, { max: 255, required: true }),
     normalizeStatus(record.status),
+    normalizeShift(record.shift),
     cleanText(record.notes, { max: 2000 })
   );
 
   const visitId = visitResult.lastInsertRowid;
 
   db.prepare(`
-    INSERT INTO payments (visit_record_id, patient_id, amount, payment_status)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO payments (visit_record_id, patient_id, amount, currency, payment_status)
+    VALUES (?, ?, ?, ?, ?)
   `).run(
     visitId,
     patientId,
     Math.max(0, Number(record.amount || 0)),
+    normalizeCurrency(record.currency),
     normalizePaymentStatus(record.payment_status)
   );
 
@@ -502,9 +529,9 @@ app.put('/api/records/:id', authenticateToken, (req, res) => {
 
     db.prepare(`
       UPDATE visit_records
-      SET procedure = ?, status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+      SET procedure = ?, status = ?, shift = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(procedure, normalizeStatus(data.status), cleanText(data.notes, { max: 2000 }), req.params.id);
+    `).run(procedure, normalizeStatus(data.status), normalizeShift(data.shift), cleanText(data.notes, { max: 2000 }), req.params.id);
 
     res.json({ id: Number(req.params.id), message: 'Record updated successfully' });
   } catch (error) {
@@ -639,6 +666,14 @@ app.get('/api/health', (_req, res) => {
     database: 'sqlite',
     timestamp: new Date().toISOString()
   });
+});
+
+// ============ STATIC FRONTEND ============
+
+const frontendRoot = path.resolve(__dirname, '..');
+app.use('/src', express.static(path.join(frontendRoot, 'src')));
+app.get(['/', '/index.html'], (_req, res) => {
+  res.sendFile(path.join(frontendRoot, 'index.html'));
 });
 
 // ============ ERROR HANDLING ============

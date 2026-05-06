@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "backup": "node scripts/backup-sqlite.js"
+    "backup": "node scripts/backup-sqlite.js",
+    "seed:demo": "node scripts/seed-demo-data.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

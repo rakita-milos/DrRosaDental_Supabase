@@ -12,12 +12,12 @@ Dr Rosa web aplikacija sada ima **kompletnu director-only sekciju** sa role-base
 
 #### Direktor (Director Access)
 - **Email:** `director@drosa.com`
-- **Lozinka:** `director123`
+- **Lozinka:** vrijednost iz `backend/.env` -> `INITIAL_DIRECTOR_PASSWORD`
 - **Pristup:** Director Panel sa svim izvještajima
 
 #### Zaposlenik (Staff Access)
 - **Email:** `staff@drosa.com`
-- **Lozinka:** `staff123`
+- **Lozinka:** vrijednost iz `backend/.env` -> `INITIAL_STAFF_PASSWORD`
 - **Pristup:** Samo glavni dashboard, unos novih pacijenata i zapisa
 
 ### Kako se Prijatelj

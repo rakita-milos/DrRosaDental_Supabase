@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS visit_records (
   visit_date TEXT NOT NULL,
   procedure TEXT NOT NULL,
   status TEXT NOT NULL,
+  shift TEXT NOT NULL DEFAULT 'Prva smena',
   notes TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS payments (
   visit_record_id INTEGER NOT NULL REFERENCES visit_records(id) ON DELETE CASCADE,
   patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
   amount REAL NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'EUR',
   payment_status TEXT NOT NULL,
   payment_method TEXT,
   payment_date TEXT,

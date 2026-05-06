@@ -9,7 +9,6 @@ async function checkDirectorAccess() {
     return null;
   }
 
-  document.getElementById("user-name").textContent = session.name || session.email;
   document.getElementById("logout-btn").addEventListener("click", () => {
     window.DrRosaApi.clearSession();
     window.location.href = "login.html";
@@ -26,6 +25,16 @@ function formatDate(dateString) {
 function isDebt(record) {
   const payment = String(record.paymentStatus || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   return ["dugovanje", "delimicno"].includes(payment) || Number(record.amountDue || 0) > 0;
+}
+
+function addCurrencyAmount(target, currency, amount) {
+  const key = currency || "EUR";
+  target[key] = (target[key] || 0) + Number(amount || 0);
+}
+
+function formatCurrencyAmounts(amounts) {
+  const entries = Object.entries(amounts).filter(([, amount]) => amount > 0);
+  return entries.length ? entries.map(([currency, amount]) => `${amount.toFixed(2)} ${currency}`).join(" / ") : "0.00";
 }
 
 function showReports() {
@@ -56,12 +65,24 @@ function initializeReports() {
   ];
 
   document.getElementById("reports-grid").innerHTML = reports.map(report => `
-    <button class="report-card report-card-${report.tone}" type="button" onclick="showReport('${report.id}')">
+    <button class="report-card report-card-${report.tone}" type="button" data-report-id="${report.id}">
       <span class="report-icon">${report.icon}</span>
       <span class="report-title">${report.title}</span>
       <span class="report-description">${report.description}</span>
     </button>
   `).join("");
+}
+
+function initializeReportNavigation() {
+  document.getElementById("reports-grid").addEventListener("click", event => {
+    const card = event.target.closest("[data-report-id]");
+    if (!card) return;
+    showReport(card.dataset.reportId);
+  });
+
+  document.querySelectorAll(".back-to-reports").forEach(button => {
+    button.addEventListener("click", showReports);
+  });
 }
 
 function initializeExportActions() {
@@ -101,7 +122,7 @@ async function getReport(type) {
 
 async function loadFinancialReport() {
   const apiReport = await getReport("financial");
-  if (apiReport) {
+  if (apiReport && cachedRecords.length === 0) {
     document.getElementById("total-revenue").textContent = `${Number(apiReport.totalRevenue || 0).toFixed(2)} EUR`;
     document.getElementById("total-debt").textContent = `${Number(apiReport.totalDebt || 0).toFixed(2)} EUR`;
     document.getElementById("paid-percentage").textContent = `${apiReport.paymentPercentage || 0}%`;
@@ -110,39 +131,47 @@ async function loadFinancialReport() {
   const patientPayments = {};
   cachedRecords.forEach(record => {
     if (!patientPayments[record.patient]) {
-      patientPayments[record.patient] = { visits: 0, amount: 0, paid: 0, debt: 0 };
+      patientPayments[record.patient] = { visits: 0, amount: {}, paid: {}, debt: {}, amountTotal: 0, paidTotal: 0 };
     }
     const amount = Number(record.amountDue || 0);
     const price = amount > 0 ? amount : 50;
+    const currency = record.currency || "EUR";
     patientPayments[record.patient].visits += 1;
-    patientPayments[record.patient].amount += price;
+    patientPayments[record.patient].amountTotal += price;
+    addCurrencyAmount(patientPayments[record.patient].amount, currency, price);
     if (isDebt(record)) {
-      patientPayments[record.patient].debt += amount;
+      addCurrencyAmount(patientPayments[record.patient].debt, currency, amount);
     } else {
-      patientPayments[record.patient].paid += price;
+      patientPayments[record.patient].paidTotal += price;
+      addCurrencyAmount(patientPayments[record.patient].paid, currency, price);
     }
   });
 
-  if (!apiReport) {
-    const totalRevenue = Object.values(patientPayments).reduce((sum, data) => sum + data.amount, 0);
-    const totalDebt = Object.values(patientPayments).reduce((sum, data) => sum + data.debt, 0);
-    const totalPaid = Object.values(patientPayments).reduce((sum, data) => sum + data.paid, 0);
-    document.getElementById("total-revenue").textContent = `${totalRevenue.toFixed(2)} EUR`;
-    document.getElementById("total-debt").textContent = `${totalDebt.toFixed(2)} EUR`;
-    document.getElementById("paid-percentage").textContent = `${totalRevenue ? ((totalPaid / totalRevenue) * 100).toFixed(1) : 0}%`;
-  }
+  const totalRevenueByCurrency = {};
+  const totalDebtByCurrency = {};
+  let totalRevenueComparable = 0;
+  let totalPaidComparable = 0;
+  Object.values(patientPayments).forEach(data => {
+    Object.entries(data.amount).forEach(([currency, amount]) => addCurrencyAmount(totalRevenueByCurrency, currency, amount));
+    Object.entries(data.debt).forEach(([currency, amount]) => addCurrencyAmount(totalDebtByCurrency, currency, amount));
+    totalRevenueComparable += data.amountTotal;
+    totalPaidComparable += data.paidTotal;
+  });
+  document.getElementById("total-revenue").textContent = formatCurrencyAmounts(totalRevenueByCurrency);
+  document.getElementById("total-debt").textContent = formatCurrencyAmounts(totalDebtByCurrency);
+  document.getElementById("paid-percentage").textContent = `${totalRevenueComparable ? ((totalPaidComparable / totalRevenueComparable) * 100).toFixed(1) : 0}%`;
 
   document.getElementById("payment-table").innerHTML = Object.entries(patientPayments).map(([patient, data]) => {
-    const percentage = data.amount > 0 ? ((data.paid / data.amount) * 100).toFixed(0) : 0;
-    return `<tr><td>${escapeHtml(patient)}</td><td>${data.visits}</td><td>${data.amount.toFixed(2)} EUR</td><td>${data.paid.toFixed(2)} EUR</td><td>${data.debt.toFixed(2)} EUR</td><td>${percentage}%</td></tr>`;
+    const percentage = data.amountTotal > 0 ? ((data.paidTotal / data.amountTotal) * 100).toFixed(0) : 0;
+    return `<tr><td>${escapeHtml(patient)}</td><td>${data.visits}</td><td>${formatCurrencyAmounts(data.amount)}</td><td>${formatCurrencyAmounts(data.paid)}</td><td>${formatCurrencyAmounts(data.debt)}</td><td>${percentage}%</td></tr>`;
   }).join("");
 
   currentReportExport = {
     title: "Finansijski izvjestaj",
     headers: ["Pacijent", "Broj pregleda", "Ukupan iznos", "Placeno", "Dugovanje", "Procenat"],
     rows: Object.entries(patientPayments).map(([patient, data]) => {
-      const percentage = data.amount > 0 ? ((data.paid / data.amount) * 100).toFixed(0) : 0;
-      return [patient, data.visits, `${data.amount.toFixed(2)} EUR`, `${data.paid.toFixed(2)} EUR`, `${data.debt.toFixed(2)} EUR`, `${percentage}%`];
+      const percentage = data.amountTotal > 0 ? ((data.paidTotal / data.amountTotal) * 100).toFixed(0) : 0;
+      return [patient, data.visits, formatCurrencyAmounts(data.amount), formatCurrencyAmounts(data.paid), formatCurrencyAmounts(data.debt), `${percentage}%`];
     })
   };
 }
@@ -151,9 +180,12 @@ async function loadPatientsReport() {
   const apiReport = await getReport("patients");
   const patientMap = {};
   cachedRecords.forEach(record => {
-    if (!patientMap[record.patient]) patientMap[record.patient] = { visits: 0, lastVisit: record.lastVisit, debt: 0 };
+    if (!patientMap[record.patient]) patientMap[record.patient] = { visits: 0, lastVisit: record.lastVisit, debt: {}, debtTotal: 0 };
     patientMap[record.patient].visits += 1;
-    if (isDebt(record)) patientMap[record.patient].debt += Number(record.amountDue || 0);
+    if (isDebt(record)) {
+      patientMap[record.patient].debtTotal += Number(record.amountDue || 0);
+      addCurrencyAmount(patientMap[record.patient].debt, record.currency || "EUR", record.amountDue || 0);
+    }
     if (new Date(record.lastVisit) > new Date(patientMap[record.patient].lastVisit)) patientMap[record.patient].lastVisit = record.lastVisit;
   });
 
@@ -166,7 +198,7 @@ async function loadPatientsReport() {
   document.getElementById("new-patients").textContent = apiReport?.new ?? newPatients;
 
   document.getElementById("patients-table").innerHTML = patients.map(([patient, data]) => `
-    <tr><td>${escapeHtml(patient)}</td><td>${data.visits}</td><td>${formatDate(data.lastVisit)}</td><td>${data.debt > 0 ? "Dugovanje" : "Placeno"}</td><td>${data.debt.toFixed(2)} EUR</td></tr>
+    <tr><td>${escapeHtml(patient)}</td><td>${data.visits}</td><td>${formatDate(data.lastVisit)}</td><td>${data.debtTotal > 0 ? "Dugovanje" : "Placeno"}</td><td>${formatCurrencyAmounts(data.debt)}</td></tr>
   `).join("");
 
   currentReportExport = {
@@ -176,8 +208,8 @@ async function loadPatientsReport() {
       patient,
       data.visits,
       formatDate(data.lastVisit),
-      data.debt > 0 ? "Dugovanje" : "Placeno",
-      `${data.debt.toFixed(2)} EUR`
+      data.debtTotal > 0 ? "Dugovanje" : "Placeno",
+      formatCurrencyAmounts(data.debt)
     ])
   };
 }
@@ -238,6 +270,7 @@ async function loadProceduresReport() {
 (async function init() {
   if (!await checkDirectorAccess()) return;
   initializeReports();
+  initializeReportNavigation();
   initializeExportActions();
   try {
     cachedRecords = await window.DrRosaApi.getRecords();

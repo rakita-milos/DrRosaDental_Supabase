@@ -68,13 +68,13 @@ Navigate to: `http://localhost:8000/src/pages/login.html`
 
 **Director Access:**
 - Email: `director@drosa.com`
-- Password: `director123`
+- Password: value from `backend/.env` -> `INITIAL_DIRECTOR_PASSWORD`
 - Role: Direktor Ordinacije
 - Access: Director panel with all reports
 
 **Staff Access:**
 - Email: `staff@drosa.com`
-- Password: `staff123`
+- Password: value from `backend/.env` -> `INITIAL_STAFF_PASSWORD`
 - Role: Zaposlenik
 - Access: Patient dashboard, new entries, records
 
