@@ -48,7 +48,8 @@
       font-weight: 500;
     }
 
-    .form-group input {
+    .form-group input,
+    .form-group select {
       width: 100%;
       padding: 12px;
       border: 1px solid #ddd;
@@ -57,18 +58,11 @@
       transition: border-color 0.2s;
     }
 
-    .form-group input:focus {
+    .form-group input:focus,
+    .form-group select:focus {
       outline: none;
       border-color: #667eea;
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-
-    .form-group select {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      font-size: 1rem;
     }
 
     .login-btn {
@@ -90,25 +84,6 @@
 
     .login-btn:active {
       transform: translateY(0);
-    }
-
-    .demo-creds {
-      margin-top: 30px;
-      padding-top: 30px;
-      border-top: 1px solid #eee;
-      font-size: 0.85rem;
-      color: #666;
-    }
-
-    .demo-creds strong {
-      display: block;
-      margin-bottom: 10px;
-      color: #333;
-    }
-
-    .demo-item {
-      margin-bottom: 10px;
-      line-height: 1.4;
     }
 
     .error-msg {
@@ -134,12 +109,7 @@
       <form id="login-form">
         <div class="form-group">
           <label for="email">Email</label>
-          <input type="email" id="email" name="email" placeholder="vas@email.com" required />
-        </div>
-
-        <div class="form-group">
-          <label for="password">Lozinka</label>
-          <input type="password" id="password" name="password" placeholder="••••••••" required />
+          <input type="email" id="email" name="email" placeholder="vas@email.com" required autocomplete="username" />
         </div>
 
         <div class="form-group">
@@ -150,22 +120,13 @@
           </select>
         </div>
 
+        <div class="form-group">
+          <label for="password">Lozinka</label>
+          <input type="password" id="password" name="password" placeholder="Unesite lozinku" required autocomplete="current-password" />
+        </div>
+
         <button type="submit" class="login-btn">Prijavi se</button>
       </form>
-
-      <div class="demo-creds">
-        <strong>Demo Kredencijali:</strong>
-        <div class="demo-item">
-          <strong>Direktor:</strong><br>
-          Email: director@drosa.com<br>
-          Lozinka: password123
-        </div>
-        <div class="demo-item">
-          <strong>Zaposlenik:</strong><br>
-          Email: staff@drosa.com<br>
-          Lozinka: password123
-        </div>
-      </div>
     </div>
   </div>
 

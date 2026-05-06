@@ -5,6 +5,11 @@ async function requireAccess() {
     return false;
   }
 
+  const directorPanelLink = document.getElementById("director-panel-link");
+  if (directorPanelLink && session.role === "director") {
+    directorPanelLink.style.display = "";
+  }
+
   const logoutBtn = document.getElementById("logout-btn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", (event) => {
@@ -19,6 +24,7 @@ async function requireAccess() {
 
 const form = document.getElementById("new-entry-form");
 const alertBox = document.querySelector(".form-alert");
+const escapeHtml = window.DrRosaSecurity.escapeHtml;
 const previewElements = {
   name: document.getElementById("preview-name"),
   visit: document.getElementById("preview-visit"),
@@ -101,7 +107,7 @@ function populatePatientList() {
 
 function populateDoctors() {
   if (!doctors.length) return;
-  inputs.doctor.innerHTML = doctors.map(doctor => `<option value="${doctor.name}">${doctor.name}</option>`).join("");
+  inputs.doctor.innerHTML = doctors.map(doctor => `<option value="${escapeHtml(doctor.name)}">${escapeHtml(doctor.name)}</option>`).join("");
 }
 
 const teethPanel = document.getElementById("tooth-treatment-panel");
@@ -158,10 +164,10 @@ function updateTeethSummary() {
   teethSummary.innerHTML = `<h4>Tretmani zuba:</h4>${treatments.map(([tooth, treatment]) => `
     <div class="treatment-item">
       <div>
-        <strong>Zub ${tooth}:</strong> ${treatment.type}
-        <span style="color: #5b6c7d;">(${treatment.status})</span>
+        <strong>Zub ${escapeHtml(tooth)}:</strong> ${escapeHtml(treatment.type)}
+        <span style="color: #5b6c7d;">(${escapeHtml(treatment.status)})</span>
       </div>
-      <button type="button" class="remove-treatment" data-tooth="${tooth}" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 18px;">x</button>
+      <button type="button" class="remove-treatment" data-tooth="${escapeHtml(tooth)}" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 18px;">x</button>
     </div>
   `).join("")}`;
 

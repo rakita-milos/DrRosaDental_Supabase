@@ -1,284 +1,69 @@
-# 🚀 Backend Setup Guide - Brza Instalacija
+# Backend Setup Guide - Produkcija
 
-## Korak 1: SQLite konfiguracija
+Ova instalacija je podesena za ordinaciju: aplikacija moze biti na serveru, a SQLite baza na USB disku.
 
-Backend sada koristi SQLite. Baza je jedan fajl i putanja se podesava u `backend\.env`:
+## 1. Konfigurisi `backend\.env`
 
-```env
-SQLITE_DB_PATH=./data/drosa.sqlite
-SQLITE_BACKUP_DIR=./backups
-```
-
-Ako zelis bazu na USB-u, koristi apsolutnu putanju, na primer:
+Primer za Windows server i USB disk na slovu `E:`:
 
 ```env
+NODE_ENV=production
+PORT=3000
+JWT_SECRET=promeni-ovo-u-jedinstven-tajni-kljuc-od-minimum-32-karaktera
+CORS_ORIGIN=https://adresa-vaseg-frontenda.example
 SQLITE_DB_PATH=E:\DrRosaData\drosa.sqlite
 SQLITE_BACKUP_DIR=E:\DrRosaData\backups
+INITIAL_DIRECTOR_PASSWORD=postavi-jaku-direktor-lozinku
+INITIAL_STAFF_PASSWORD=postavi-jaku-staff-lozinku
 ```
 
-Server automatski pravi folder, bazu, tabele i demo naloge pri prvom pokretanju.
+Pravila:
+- `JWT_SECRET` mora biti jedinstven i dug najmanje 32 karaktera.
+- `INITIAL_DIRECTOR_PASSWORD` i `INITIAL_STAFF_PASSWORD` moraju biti dugi najmanje 12 karaktera i koriste se samo kada je baza prazna.
+- `CORS_ORIGIN` mora biti tacna adresa frontenda. Za vise adresa koristi zarez.
+- USB treba da ima stalno isto slovo diska. Na Windows-u ga podesi kroz Disk Management.
 
-Demo nalozi:
+## 2. Instaliraj dependency-je
 
-```text
-director@drosa.com / password123
-staff@drosa.com / password123
+```powershell
+cd C:\Users\milos\DrRosaWebApp\backend
+npm.cmd install
 ```
 
-Za backup baze:
+## 3. Pokreni backend
+
+```powershell
+cd C:\Users\milos\DrRosaWebApp\backend
+npm.cmd start
+```
+
+Prvi login koristi:
+- `director@drosa.com` i lozinku iz `INITIAL_DIRECTOR_PASSWORD`
+- `staff@drosa.com` i lozinku iz `INITIAL_STAFF_PASSWORD`
+
+Posle prvog uspesnog starta, cuvaj `.env` samo na serveru i ne deli ga. Ako pravis novu praznu bazu, ponovo podesi inicijalne lozinke.
+
+## 4. Backup baze
 
 ```powershell
 cd C:\Users\milos\DrRosaWebApp\backend
 npm.cmd run backup
 ```
 
----
+Pre vadjenja USB-a zaustavi backend servis da SQLite fajl ne ostane otvoren.
 
-## Staro PostgreSQL uputstvo
-
-Sekcija ispod je zastarela i ostaje samo kao istorijska referenca.
-
-## Korak 1: PostgreSQL Instalacija
-
-### Na Windows:
-1. Preuzmi [PostgreSQL](https://www.postgresql.org/download/windows/)
-2. Pokreni installer, prosledi do kraja
-3. Zapamti password za `postgres` korisnika (npr: `postgres`)
-4. Prihvati default port: **5432**
-
-### Provjera instalacije:
-Otvori PowerShell/CMD i pokušaj:
-```powershell
-psql -U postgres
-```
-
-Ako radi, unesi: `\q` za izlazak
-
----
-
-## Korak 2: Kreiraj Bazu Podataka
-
-U PowerShell/CMD kao Administrator:
-
-```powershell
-# Kreiraj novu bazu
-createdb -U postgres drosa_clinic
-
-# Provjera da li je kreirana
-psql -U postgres -l | findstr drosa_clinic
-```
-
----
-
-## Korak 3: Popuni Shemu
-
-```powershell
-# Prijeđi u backend direktorij
-cd C:\Users\milos\DrRosaWebApp\backend
-
-# Učitaj SQL shemu
-psql -U postgres -d drosa_clinic -f database.sql
-```
-
-**Trebao bi vidjeti:**
-```
-CREATE TABLE
-CREATE INDEX
-INSERT 0 3
-INSERT 0 2
-```
-
-Provjera podataka:
-```powershell
-psql -U postgres -d drosa_clinic -c "SELECT * FROM users;"
-```
-
----
-
-## Korak 4: Node.js & Dependencije
-
-### Instalacija Node.js:
-Preuzmi [Node.js LTS](https://nodejs.org/) i instaliraj
-
-Provjera:
-```powershell
-node --version
-npm --version
-```
-
-### Instalacija dependencija:
-```powershell
-cd C:\Users\milos\DrRosaWebApp\backend
-npm install
-```
-
-Trebao bi vidjeti `added XX packages` bez grešaka.
-
----
-
-## Korak 5: Konfiguraj .env
-
-Uredi `backend\.env` sa tvojim PostgreSQL passwordom:
-
-```
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=postgres          # 👈 ZAMIJENI sa tvojim passwordom
-DB_NAME=drosa_clinic
-PORT=3000
-JWT_SECRET=your-secret-key-change-in-production
-```
-
----
-
-## Korak 6: Pokreni Server
-
-```powershell
-# Za development (auto-reload)
-npm run dev
-
-# Ili obična verzija
-npm start
-```
-
-**Trebao bi vidjeti:**
-```
-✓ Database connected successfully
-🏥 Dr Rosa Backend API running on http://localhost:3000
-```
-
----
-
-## 🧪 Testiranje API-ja
-
-### 1. Test Login (sa Postman ili curl)
+## 5. Brzi API test
 
 ```powershell
 curl -X POST http://localhost:3000/api/auth/login `
   -H "Content-Type: application/json" `
-  -d '{"email":"director@drosa.com","password":"password123"}'
+  -d '{"email":"director@drosa.com","password":"vasa-direktor-lozinka","role":"director"}'
 ```
 
-Trebao bi vidjeti `token` u odgovoru.
-
-### 2. Test Pacijenata
+Zatim testiraj health endpoint:
 
 ```powershell
-# Zamijeni TOKEN sa stvarnim tokenom iz login odgovora
-curl -X GET http://localhost:3000/api/patients `
-  -H "Authorization: Bearer TOKEN"
+curl http://localhost:3000/api/health
 ```
 
----
-
-## 🔗 Frontend Integracija
-
-### Update login.js:
-```javascript
-// Stara verzija: localStorage
-// Nova verzija: API
-
-async function handleLogin(event) {
-  event.preventDefault();
-  const email = document.getElementById('email').value;
-  const password = document.getElementById('password').value;
-
-  try {
-    const response = await fetch('http://localhost:3000/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      localStorage.setItem('drrosa-token', data.token);
-      localStorage.setItem('drrosa-user', JSON.stringify(data.user));
-      
-      // Redirect based on role
-      if (data.user.role === 'director') {
-        window.location.href = 'director-panel.html';
-      } else {
-        window.location.href = 'index.html';
-      }
-    } else {
-      alert('Pogrešan email ili password');
-    }
-  } catch (error) {
-    console.error('Login error:', error);
-    alert('Greška pri logiranju');
-  }
-}
-```
-
----
-
-## 🆘 Problemi i Rješenja
-
-### Problem: "psql is not recognized"
-**Rješenje:** Dodaj PostgreSQL u PATH
-- Windows: Pretraži "Environment Variables" → Edit System Environment Variables
-- Path → New: `C:\Program Files\PostgreSQL\15\bin` (verzija može varirati)
-- Restart PowerShell
-
-### Problem: "connect ECONNREFUSED"
-**Rješenje:** PostgreSQL nije pokrenut
-```powershell
-# Windows - pokreni PostgreSQL servis
-Get-Service postgresql-x64-15 | Start-Service
-
-# ili koristi Services.msc i pronađi PostgreSQL
-```
-
-### Problem: "password authentication failed"
-**Rješenje:** Pogrešan password u `.env`
-- Resetiraj password:
-```powershell
-psql -U postgres -c "ALTER USER postgres PASSWORD 'nova-lozinka';"
-```
-- Ažuriraj `.env`
-
-### Problem: "npm install greške"
-**Rješenje:** Obriši node_modules i pokušaj ponovno
-```powershell
-Remove-Item -Recurse -Force node_modules
-Remove-Item package-lock.json
-npm install
-```
-
----
-
-## ✅ Provjera Instalacije
-
-Sve bi trebalo biti OK ako vidiš:
-
-```powershell
-✓ Database connected successfully
-🏥 Dr Rosa Backend API running on http://localhost:3000
-```
-
-I ako login vraća token:
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIs...",
-  "user": {
-    "id": 1,
-    "email": "director@drosa.com",
-    "name": "Dr Rosa Bašić",
-    "role": "director"
-  }
-}
-```
-
----
-
-## 📚 Dalje Korake:
-
-1. ✅ Backend je running
-2. ⏭️ Update frontend da koristi API umjesto localStorage
-3. ⏭️ Test login/logout flow sa API-jem
-4. ⏭️ Test director reports sa API-jem
-5. ⏭️ Deploy na produkciju
-
-Pitanja? Provjerite `backend/README.md` za detalje API-ja.
+Health odgovor ne prikazuje putanju baze.

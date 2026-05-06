@@ -190,6 +190,92 @@ main {
   gap: 18px;
 }
 
+#reports-grid {
+  align-items: stretch;
+}
+
+.report-card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-height: 176px;
+  padding: 24px;
+  overflow: hidden;
+  text-align: left;
+  border: 1px solid rgba(215, 224, 235, 0.95);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  color: #17212b;
+  box-shadow: 0 16px 34px rgba(15, 44, 84, 0.08);
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.report-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  background: var(--report-accent, #1891f0);
+}
+
+.report-card:hover,
+.report-card:focus-visible {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--report-accent, #1891f0) 45%, #d7e0eb);
+  box-shadow: 0 22px 46px rgba(15, 44, 84, 0.14);
+}
+
+.report-card:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--report-accent, #1891f0) 25%, transparent);
+  outline-offset: 3px;
+}
+
+.report-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--report-accent, #1891f0) 12%, white);
+  color: var(--report-accent, #1891f0);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.report-title {
+  display: block;
+  color: #17212b;
+  font-size: 1.12rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.report-description {
+  display: block;
+  color: #5b6c7d;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.report-card-blue {
+  --report-accent: #1a8ee4;
+}
+
+.report-card-green {
+  --report-accent: #4b9d39;
+}
+
+.report-card-teal {
+  --report-accent: #158b8b;
+}
+
+.report-card-orange {
+  --report-accent: #e8751a;
+}
+
 .stat-card {
   padding: 26px;
   min-height: 160px;
@@ -695,6 +781,18 @@ td:nth-child(5) {
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+}
+
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.export-actions .secondary-btn {
+  padding: 10px 18px;
+  font-weight: 700;
 }
 
 .filter-actions input,

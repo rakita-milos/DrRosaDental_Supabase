@@ -40,6 +40,10 @@
             <p class="eyebrow">Filter</p>
             <h2>Brza pretraga</h2>
           </div>
+          <div class="export-actions">
+            <button id="export-excel-btn" class="secondary-btn" type="button">Excel</button>
+            <button id="export-pdf-btn" class="secondary-btn" type="button">PDF</button>
+          </div>
           <div class="filter-actions">
             <input id="search-input" type="search" placeholder="Traži pacijenta ili postupak" />
             <select id="status-filter">
@@ -93,6 +97,7 @@
   </div>
 
   <script src="../scripts/api.js"></script>
+  <script src="../scripts/export-utils.js"></script>
   <script src="../scripts/all-records.js"></script>
 </body>
 </html>

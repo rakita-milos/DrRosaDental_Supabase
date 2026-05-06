@@ -1,4 +1,6 @@
 let cachedRecords = [];
+let currentReportExport = { title: "Direktor izvjestaj", headers: [], rows: [] };
+const escapeHtml = window.DrRosaSecurity.escapeHtml;
 
 async function checkDirectorAccess() {
   const session = await window.DrRosaApi.verifySession("director");
@@ -47,19 +49,44 @@ window.showReport = showReport;
 
 function initializeReports() {
   const reports = [
-    { id: "financial-report", icon: "$", title: "Finansijski Izvjestaj", description: "Analiza prihoda, naplate i dugovanja" },
-    { id: "patients-report", icon: "P", title: "Pacijenti", description: "Statistika o pacijentima i posjete" },
-    { id: "doctors-report", icon: "D", title: "Doktori", description: "Produktivnost i opterecenje doktora" },
-    { id: "procedures-report", icon: "Z", title: "Postupci", description: "Raspodjela i ucestalost postupaka" }
+    { id: "financial-report", tone: "blue", icon: "EUR", title: "Finansijski Izvjestaj", description: "Prihodi, naplata i dugovanja" },
+    { id: "patients-report", tone: "green", icon: "PAC", title: "Pacijenti", description: "Rast, retencija i statusi pacijenata" },
+    { id: "doctors-report", tone: "teal", icon: "DR", title: "Doktori", description: "Produktivnost i opterecenje tima" },
+    { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosjecna naplata" }
   ];
 
   document.getElementById("reports-grid").innerHTML = reports.map(report => `
-    <div class="report-card" onclick="showReport('${report.id}')">
-      <div class="report-icon">${report.icon}</div>
-      <h3>${report.title}</h3>
-      <p>${report.description}</p>
-    </div>
+    <button class="report-card report-card-${report.tone}" type="button" onclick="showReport('${report.id}')">
+      <span class="report-icon">${report.icon}</span>
+      <span class="report-title">${report.title}</span>
+      <span class="report-description">${report.description}</span>
+    </button>
   `).join("");
+}
+
+function initializeExportActions() {
+  document.querySelectorAll(".report-content > .section-header").forEach(header => {
+    if (header.querySelector(".export-actions")) return;
+    const actions = document.createElement("div");
+    actions.className = "export-actions";
+    actions.innerHTML = `
+      <button class="secondary-btn export-report-excel" type="button">Excel</button>
+      <button class="secondary-btn export-report-pdf" type="button">PDF</button>
+    `;
+    header.appendChild(actions);
+  });
+
+  document.querySelectorAll(".export-report-excel").forEach(button => {
+    button.addEventListener("click", () => {
+      window.DrRosaExport.exportExcel(currentReportExport.title, currentReportExport.headers, currentReportExport.rows);
+    });
+  });
+
+  document.querySelectorAll(".export-report-pdf").forEach(button => {
+    button.addEventListener("click", () => {
+      window.DrRosaExport.exportPdf(currentReportExport.title, currentReportExport.headers, currentReportExport.rows);
+    });
+  });
 }
 
 async function getReport(type) {
@@ -107,8 +134,17 @@ async function loadFinancialReport() {
 
   document.getElementById("payment-table").innerHTML = Object.entries(patientPayments).map(([patient, data]) => {
     const percentage = data.amount > 0 ? ((data.paid / data.amount) * 100).toFixed(0) : 0;
-    return `<tr><td>${patient}</td><td>${data.visits}</td><td>${data.amount.toFixed(2)} EUR</td><td>${data.paid.toFixed(2)} EUR</td><td>${data.debt.toFixed(2)} EUR</td><td>${percentage}%</td></tr>`;
+    return `<tr><td>${escapeHtml(patient)}</td><td>${data.visits}</td><td>${data.amount.toFixed(2)} EUR</td><td>${data.paid.toFixed(2)} EUR</td><td>${data.debt.toFixed(2)} EUR</td><td>${percentage}%</td></tr>`;
   }).join("");
+
+  currentReportExport = {
+    title: "Finansijski izvjestaj",
+    headers: ["Pacijent", "Broj pregleda", "Ukupan iznos", "Placeno", "Dugovanje", "Procenat"],
+    rows: Object.entries(patientPayments).map(([patient, data]) => {
+      const percentage = data.amount > 0 ? ((data.paid / data.amount) * 100).toFixed(0) : 0;
+      return [patient, data.visits, `${data.amount.toFixed(2)} EUR`, `${data.paid.toFixed(2)} EUR`, `${data.debt.toFixed(2)} EUR`, `${percentage}%`];
+    })
+  };
 }
 
 async function loadPatientsReport() {
@@ -130,8 +166,20 @@ async function loadPatientsReport() {
   document.getElementById("new-patients").textContent = apiReport?.new ?? newPatients;
 
   document.getElementById("patients-table").innerHTML = patients.map(([patient, data]) => `
-    <tr><td>${patient}</td><td>${data.visits}</td><td>${formatDate(data.lastVisit)}</td><td>${data.debt > 0 ? "Dugovanje" : "Placeno"}</td><td>${data.debt.toFixed(2)} EUR</td></tr>
+    <tr><td>${escapeHtml(patient)}</td><td>${data.visits}</td><td>${formatDate(data.lastVisit)}</td><td>${data.debt > 0 ? "Dugovanje" : "Placeno"}</td><td>${data.debt.toFixed(2)} EUR</td></tr>
   `).join("");
+
+  currentReportExport = {
+    title: "Izvjestaj o pacijentima",
+    headers: ["Pacijent", "Broj posjeta", "Zadnja posjeta", "Status", "Dugovanje"],
+    rows: patients.map(([patient, data]) => [
+      patient,
+      data.visits,
+      formatDate(data.lastVisit),
+      data.debt > 0 ? "Dugovanje" : "Placeno",
+      `${data.debt.toFixed(2)} EUR`
+    ])
+  };
 }
 
 async function loadDoctorsReport() {
@@ -142,8 +190,19 @@ async function loadDoctorsReport() {
   }, {})).map(([doctor, visits]) => ({ doctor, visits, percentage: cachedRecords.length ? (visits / cachedRecords.length) * 100 : 0 }));
 
   document.getElementById("doctors-table").innerHTML = rows.map(row => `
-    <tr><td>${row.doctor}</td><td>${row.visits}</td><td>-</td><td>${Number(row.percentage || 0).toFixed(1)}%</td></tr>
+    <tr><td>${escapeHtml(row.doctor)}</td><td>${row.visits}</td><td>-</td><td>${Number(row.percentage || 0).toFixed(1)}%</td></tr>
   `).join("");
+
+  currentReportExport = {
+    title: "Izvjestaj o doktorima",
+    headers: ["Doktor", "Broj pregleda", "Broj pacijenata", "Procenat ukupnog rada"],
+    rows: rows.map(row => [
+      row.doctor,
+      row.visits,
+      "-",
+      `${Number(row.percentage || 0).toFixed(1)}%`
+    ])
+  };
 }
 
 async function loadProceduresReport() {
@@ -161,13 +220,25 @@ async function loadProceduresReport() {
   }));
 
   document.getElementById("procedures-table").innerHTML = rows.map(row => `
-    <tr><td>${row.procedure}</td><td>${row.count}</td><td>${Number(row.percentage || 0).toFixed(1)}%</td><td>${Number(row.avgCost || 0).toFixed(2)} EUR</td></tr>
+    <tr><td>${escapeHtml(row.procedure)}</td><td>${row.count}</td><td>${Number(row.percentage || 0).toFixed(1)}%</td><td>${Number(row.avgCost || 0).toFixed(2)} EUR</td></tr>
   `).join("");
+
+  currentReportExport = {
+    title: "Izvjestaj o postupcima",
+    headers: ["Postupak", "Broj izvrsenih", "Procenat", "Prosjecna naplata"],
+    rows: rows.map(row => [
+      row.procedure,
+      row.count,
+      `${Number(row.percentage || 0).toFixed(1)}%`,
+      `${Number(row.avgCost || 0).toFixed(2)} EUR`
+    ])
+  };
 }
 
 (async function init() {
   if (!await checkDirectorAccess()) return;
   initializeReports();
+  initializeExportActions();
   try {
     cachedRecords = await window.DrRosaApi.getRecords();
   } catch (error) {

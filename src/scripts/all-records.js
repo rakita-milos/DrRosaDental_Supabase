@@ -26,8 +26,11 @@ const dateFilter = document.getElementById("date-filter");
 const periodFilter = document.getElementById("period-filter");
 const procedureFilter = document.getElementById("procedure-filter");
 const paymentFilter = document.getElementById("payment-filter");
+const exportExcelBtn = document.getElementById("export-excel-btn");
+const exportPdfBtn = document.getElementById("export-pdf-btn");
 
 let allRecords = [];
+let currentExportRows = [];
 
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get("filter") === "debtors" && paymentFilter) {
@@ -98,6 +101,14 @@ function renderRecords(records) {
   });
 
   const uniquePatients = Object.values(patientMap);
+  currentExportRows = uniquePatients.map(patient => [
+    patient.patient,
+    formatDate(patient.lastVisit),
+    patient.visits,
+    patient.hasDebt ? "Dugovanje" : "Placeno",
+    `${patient.totalDebt.toFixed(2)} EUR`
+  ]);
+
   if (uniquePatients.length === 0) {
     body.innerHTML = `<tr><td colspan="7" class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</td></tr>`;
     return;
@@ -107,15 +118,21 @@ function renderRecords(records) {
     const paymentStatus = patient.hasDebt ? "Dugovanje" : "Placeno";
     const paymentClass = patient.hasDebt ? "status-dugovanje" : "status-placeno";
     const row = document.createElement("tr");
-    row.innerHTML = `
-      <td>${patient.patient}</td>
-      <td>${formatDate(patient.lastVisit)}</td>
-      <td>${patient.visits}</td>
-      <td>-</td>
-      <td class="${paymentClass}">${paymentStatus}</td>
-      <td>${patient.totalDebt.toFixed(2)} EUR</td>
-      <td><a href="patient-dashboard.html?patient=${encodeURIComponent(patient.patient)}" class="secondary-btn">Otvori</a></td>
-    `;
+    row.append(
+      window.DrRosaSecurity.cell(patient.patient),
+      window.DrRosaSecurity.cell(formatDate(patient.lastVisit)),
+      window.DrRosaSecurity.cell(patient.visits),
+      window.DrRosaSecurity.cell("-"),
+      window.DrRosaSecurity.cell(paymentStatus, paymentClass),
+      window.DrRosaSecurity.cell(`${patient.totalDebt.toFixed(2)} EUR`)
+    );
+    const actionCell = document.createElement("td");
+    const link = document.createElement("a");
+    link.href = `patient-dashboard.html?patient=${encodeURIComponent(patient.patient)}`;
+    link.className = "secondary-btn";
+    link.textContent = "Otvori";
+    actionCell.appendChild(link);
+    row.appendChild(actionCell);
     body.appendChild(row);
   });
 }
@@ -159,9 +176,22 @@ function refresh() {
   renderRecords(filtered);
 }
 
+function exportFiltered(format) {
+  const title = "Filtrirana evidencija pacijenata";
+  const headers = ["Pacijent", "Zadnji posjet", "Ukupno poseta", "Placanje", "Dugovanje"];
+  if (format === "excel") {
+    window.DrRosaExport.exportExcel(title, headers, currentExportRows);
+    return;
+  }
+  window.DrRosaExport.exportPdf(title, headers, currentExportRows);
+}
+
 [searchInput, statusFilter, doctorFilter, dateFilter, periodFilter, procedureFilter, paymentFilter]
   .filter(Boolean)
   .forEach(input => input.addEventListener(input.type === "search" ? "input" : "change", refresh));
+
+exportExcelBtn?.addEventListener("click", () => exportFiltered("excel"));
+exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
 
 (async function init() {
   if (!await requireAccess()) return;

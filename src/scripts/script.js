@@ -5,6 +5,11 @@ async function requireAccess(requiredRole) {
     return null;
   }
 
+  const directorPanelLink = document.getElementById("director-panel-link");
+  if (directorPanelLink && session.role === "director") {
+    directorPanelLink.style.display = "";
+  }
+
   const logoutBtn = document.getElementById("logout-btn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", (event) => {
@@ -46,16 +51,22 @@ function renderRecords(records) {
     const statusClass = `status-${String(record.status || "").toLowerCase().replace(/\s+/g, "-")}`;
     const patientLink = `patient-dashboard.html?patient=${encodeURIComponent(record.patient)}`;
     const row = document.createElement("tr");
-    row.innerHTML = `
-      <td>${record.patient}</td>
-      <td>${formatDate(record.lastVisit)}</td>
-      <td>${record.procedure}</td>
-      <td>${record.doctor}</td>
-      <td class="${statusClass}">${record.status}</td>
-      <td>${record.visits || 1}</td>
-      <td>${record.note || "-"}</td>
-      <td><a href="${patientLink}" class="secondary-btn">Otvori</a></td>
-    `;
+    row.append(
+      window.DrRosaSecurity.cell(record.patient),
+      window.DrRosaSecurity.cell(formatDate(record.lastVisit)),
+      window.DrRosaSecurity.cell(record.procedure),
+      window.DrRosaSecurity.cell(record.doctor),
+      window.DrRosaSecurity.cell(record.status, statusClass),
+      window.DrRosaSecurity.cell(record.visits || 1),
+      window.DrRosaSecurity.cell(record.note || "-")
+    );
+    const actionCell = document.createElement("td");
+    const link = document.createElement("a");
+    link.href = patientLink;
+    link.className = "secondary-btn";
+    link.textContent = "Otvori";
+    actionCell.appendChild(link);
+    row.appendChild(actionCell);
     tableBody.appendChild(row);
   });
 }

@@ -1,5 +1,5 @@
 (function () {
-  const API_BASE = "http://localhost:3000/api";
+  const API_BASE = window.DRROSA_API_BASE || "http://localhost:3000/api";
 
   const defaultRecords = [
     { patient: "Ana Kovac", lastVisit: "2026-04-28", procedure: "Kontrola i ciscenje", status: "Zakazano", note: "Follow-up za 2 tjedna", doctor: "Dr Rosa", visits: 1, paymentStatus: "Placeno", amountDue: 0 },
@@ -8,11 +8,6 @@
     { patient: "Luka Horvat", lastVisit: "2026-04-30", procedure: "Most", status: "Zakazano", note: "Potrebna dodatna anamneza", doctor: "Dr Rosa", visits: 1, paymentStatus: "Placeno", amountDue: 0 },
     { patient: "Petar Juric", lastVisit: "2026-04-25", procedure: "Endodontija", status: "U tijeku", note: "Drugi termin zahtjevan", doctor: "Dr Novak", visits: 2, paymentStatus: "Dugovanje", amountDue: 200 }
   ];
-
-  const demoUsers = {
-    "director@drosa.com": { password: "password123", role: "director", name: "Dr Rosa Basic" },
-    "staff@drosa.com": { password: "password123", role: "staff", name: "Ana - Medicinska sestra" }
-  };
 
   function getToken() {
     return localStorage.getItem("drrosa-token");
@@ -23,7 +18,7 @@
   }
 
   function setSession(data) {
-    localStorage.setItem("drrosa-token", data.token || "");
+    localStorage.setItem("drrosa-token", data.token);
     localStorage.setItem("drrosa-session", JSON.stringify({
       ...(data.user || data),
       loginTime: new Date().toISOString()
@@ -94,32 +89,19 @@
     return JSON.parse(localStorage.getItem("drrosa-patients") || "[]");
   }
 
-  async function login(email, password, selectedRole) {
-    try {
-      const data = await request("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ email, password })
-      });
-      if (selectedRole && data.user.role !== selectedRole) {
-        throw new Error("Odabrana uloga ne odgovara vasem nalogu");
-      }
-      setSession(data);
-      return data.user;
-    } catch (error) {
-      const user = demoUsers[email];
-      if (!user || user.password !== password || user.role !== selectedRole) {
-        throw error;
-      }
-      setSession({ token: "", user: { email, name: user.name, role: user.role, demo: true } });
-      return user;
-    }
+  async function login(email, password, role) {
+    const data = await request("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password, role })
+    });
+    setSession(data);
+    return data.user;
   }
 
   async function verifySession(requiredRole) {
     const session = getSession();
     if (!session) return null;
     if (requiredRole && session.role !== requiredRole) return null;
-    if (!getToken()) return session;
     try {
       const data = await request("/auth/verify", { method: "POST" });
       if (requiredRole && data.user.role !== requiredRole) return null;
@@ -132,7 +114,6 @@
   }
 
   async function getPatients() {
-    if (!getToken()) return getLocalPatients();
     const patients = await request("/patients");
     return patients.map(patient => ({
       ...patient,
@@ -145,12 +126,6 @@
   }
 
   async function createPatient(patient) {
-    if (!getToken()) {
-      const patients = getLocalPatients();
-      patients.push({ ...patient, id: Date.now().toString(), createdAt: new Date().toISOString() });
-      localStorage.setItem("drrosa-patients", JSON.stringify(patients));
-      return patient;
-    }
     return request("/patients", {
       method: "POST",
       body: JSON.stringify({
@@ -168,31 +143,15 @@
   }
 
   async function getDoctors() {
-    if (!getToken()) {
-      return [
-        { id: 1, name: "Dr Rosa" },
-        { id: 2, name: "Dr Novak" },
-        { id: 3, name: "Dr Horvat" }
-      ];
-    }
     return request("/doctors");
   }
 
   async function getRecords() {
-    if (!getToken()) return getLocalRecords();
     const records = await request("/records");
     return records.map(normalizeRecord);
   }
 
   async function createRecord(record) {
-    if (!getToken()) {
-      const existing = JSON.parse(localStorage.getItem("drrosa-records") || "[]");
-      const visits = existing.filter(item => item.patient === record.patient).length + 1;
-      existing.unshift({ ...record, visits, createdAt: new Date().toISOString() });
-      localStorage.setItem("drrosa-records", JSON.stringify(existing));
-      return record;
-    }
-
     return request("/records", {
       method: "POST",
       body: JSON.stringify({
@@ -227,4 +186,22 @@
     normalizeRecord,
     getLocalRecords
   };
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function cell(value, className) {
+    const td = document.createElement("td");
+    if (className) td.className = className;
+    td.textContent = value ?? "-";
+    return td;
+  }
+
+  window.DrRosaSecurity = { escapeHtml, cell };
 })();

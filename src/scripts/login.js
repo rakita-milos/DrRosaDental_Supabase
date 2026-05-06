@@ -16,7 +16,7 @@ form.addEventListener("submit", async (event) => {
     const user = await window.DrRosaApi.login(email, password, selectedRole);
     window.location.href = user.role === "director" ? "director-panel.html" : "index.html";
   } catch (error) {
-    showError(error.message || "Pogresan email ili lozinka");
+    showError(error.message || "Pogresan email, uloga ili lozinka");
   } finally {
     submitButton.disabled = false;
     submitButton.textContent = "Prijavi se";

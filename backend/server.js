@@ -5,13 +5,19 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { DatabaseSync } = require('node:sqlite');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (!JWT_SECRET || JWT_SECRET.length < 32 || JWT_SECRET === 'your-secret-key-change-in-production') {
+  throw new Error('Set JWT_SECRET in backend/.env to a unique value with at least 32 characters.');
+}
 
 const dbPath = path.resolve(__dirname, process.env.SQLITE_DB_PATH || './data/drosa.sqlite');
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -25,8 +31,71 @@ db.exec(schema);
 
 seedDatabase();
 
-app.use(cors());
-app.use(express.json());
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'", ...allowedCorsOrigins()],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'none'"]
+    }
+  },
+  hsts: isProduction
+}));
+app.use(cors({
+  origin(origin, callback) {
+    const allowed = allowedCorsOrigins();
+    if (!origin || allowed.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error('CORS origin not allowed'));
+  }
+}));
+app.use(express.json({ limit: '256kb' }));
+
+function allowedCorsOrigins() {
+  const configured = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || 'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500';
+  return configured
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+}
+
+function createRateLimiter({ windowMs, max, message }) {
+  const hits = new Map();
+
+  return (req, res, next) => {
+    const key = `${req.ip}:${req.path}`;
+    const now = Date.now();
+    const entry = hits.get(key) || { count: 0, resetAt: now + windowMs };
+
+    if (entry.resetAt <= now) {
+      entry.count = 0;
+      entry.resetAt = now + windowMs;
+    }
+
+    entry.count += 1;
+    hits.set(key, entry);
+
+    if (entry.count > max) {
+      return res.status(429).json({ error: message });
+    }
+
+    next();
+  };
+}
+
+const loginLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  message: 'Too many login attempts. Try again later.'
+});
 
 function seedDatabase() {
   const doctorCount = db.prepare('SELECT COUNT(*) as count FROM doctors').get().count;
@@ -42,14 +111,47 @@ function seedDatabase() {
 
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
   if (userCount === 0) {
-    const hash = bcrypt.hashSync('password123', 10);
+    const directorPassword = process.env.INITIAL_DIRECTOR_PASSWORD;
+    const staffPassword = process.env.INITIAL_STAFF_PASSWORD;
+
+    if (!isStrongInitialPassword(directorPassword) || !isStrongInitialPassword(staffPassword)) {
+      throw new Error('Set INITIAL_DIRECTOR_PASSWORD and INITIAL_STAFF_PASSWORD to unique values with at least 12 characters.');
+    }
+
     const insertUser = db.prepare(`
       INSERT INTO users (email, password_hash, name, role)
       VALUES (?, ?, ?, ?)
     `);
-    insertUser.run('director@drosa.com', hash, 'Dr Rosa Basic', 'director');
-    insertUser.run('staff@drosa.com', hash, 'Ana - Medicinska sestra', 'staff');
+    insertUser.run('director@drosa.com', bcrypt.hashSync(directorPassword, 12), 'Dr Rosa Basic', 'director');
+    insertUser.run('staff@drosa.com', bcrypt.hashSync(staffPassword, 12), 'Ana - Medicinska sestra', 'staff');
   }
+
+  rotateDefaultPasswords();
+}
+
+function isStrongInitialPassword(value) {
+  return typeof value === 'string' && value.length >= 12 && value !== 'password123';
+}
+
+function rotateDefaultPasswords() {
+  const users = db.prepare('SELECT id, email, password_hash, role FROM users').all();
+  const weakUsers = users.filter(user => bcrypt.compareSync('password123', user.password_hash));
+
+  if (weakUsers.length === 0) return;
+
+  const replacements = {
+    director: process.env.INITIAL_DIRECTOR_PASSWORD,
+    staff: process.env.INITIAL_STAFF_PASSWORD
+  };
+
+  const updatePassword = db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+  weakUsers.forEach(user => {
+    const replacement = replacements[user.role];
+    if (!isStrongInitialPassword(replacement)) {
+      throw new Error(`User ${user.email} still has the old default password. Set INITIAL_${user.role.toUpperCase()}_PASSWORD to rotate it.`);
+    }
+    updatePassword.run(bcrypt.hashSync(replacement, 12), user.id);
+  });
 }
 
 function authenticateToken(req, res, next) {
@@ -98,11 +200,32 @@ function nullable(value) {
   return value === undefined ? null : value;
 }
 
+function cleanText(value, { max = 255, required = false } = {}) {
+  if (value === undefined || value === null) {
+    return required ? '' : null;
+  }
+  const cleaned = String(value)
+    .replace(/[<>]/g, '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+  return required ? cleaned : cleaned || null;
+}
+
+function positiveInteger(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
+}
+
 // ============ AUTHENTICATION ENDPOINTS ============
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', loginLimiter, (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = cleanText(req.body.email, { max: 255, required: true }).toLowerCase();
+    const password = String(req.body.password || '');
+    const selectedRole = cleanText(req.body.role, { max: 32 });
+
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password required' });
     }
@@ -110,6 +233,10 @@ app.post('/api/auth/login', (req, res) => {
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
       return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    if (selectedRole && user.role !== selectedRole) {
+      return res.status(403).json({ error: 'Selected role does not match this account' });
     }
 
     const token = jwt.sign(
@@ -162,17 +289,15 @@ app.get('/api/patients/:id', authenticateToken, (req, res) => {
 
 app.post('/api/patients', authenticateToken, (req, res) => {
   try {
-    const {
-      first_name,
-      last_name,
-      date_of_birth,
-      gender,
-      email,
-      phone,
-      address,
-      emergency_contact,
-      medical_history
-    } = req.body;
+    const first_name = cleanText(req.body.first_name, { max: 80, required: true });
+    const last_name = cleanText(req.body.last_name, { max: 80, required: true });
+    const date_of_birth = cleanText(req.body.date_of_birth, { max: 20 });
+    const gender = cleanText(req.body.gender, { max: 30 });
+    const email = cleanText(req.body.email, { max: 255 });
+    const phone = cleanText(req.body.phone, { max: 50 });
+    const address = cleanText(req.body.address, { max: 255 });
+    const emergency_contact = cleanText(req.body.emergency_contact, { max: 255 });
+    const medical_history = cleanText(req.body.medical_history, { max: 2000 });
 
     if (!first_name || !last_name) {
       return res.status(400).json({ error: 'First name and last name required' });
@@ -212,16 +337,22 @@ app.put('/api/patients/:id', authenticateToken, (req, res) => {
     if (!current) return res.status(404).json({ error: 'Patient not found' });
 
     const data = { ...current, ...req.body };
+    const firstName = cleanText(data.first_name, { max: 80, required: true });
+    const lastName = cleanText(data.last_name, { max: 80, required: true });
+    if (!firstName || !lastName) {
+      return res.status(400).json({ error: 'First name and last name required' });
+    }
+
     db.prepare(`
       UPDATE patients
       SET first_name = ?, last_name = ?, email = ?, phone = ?, address = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
-      data.first_name,
-      data.last_name,
-      nullable(data.email),
-      nullable(data.phone),
-      nullable(data.address),
+      firstName,
+      lastName,
+      cleanText(data.email, { max: 255 }),
+      cleanText(data.phone, { max: 50 }),
+      cleanText(data.address, { max: 255 }),
       req.params.id
     );
 
@@ -283,16 +414,18 @@ app.get('/api/records', authenticateToken, (_req, res) => {
 function insertRecordTransaction(record) {
   db.exec('BEGIN');
   try {
+  const patientId = positiveInteger(record.patient_id);
+  const doctorId = positiveInteger(record.doctor_id);
   const visitResult = db.prepare(`
     INSERT INTO visit_records (patient_id, doctor_id, visit_date, procedure, status, notes)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(
-    record.patient_id,
-    record.doctor_id,
-    record.visit_date,
-    record.procedure,
+    patientId,
+    doctorId,
+    cleanText(record.visit_date, { max: 20, required: true }),
+    cleanText(record.procedure, { max: 255, required: true }),
     normalizeStatus(record.status),
-    nullable(record.notes)
+    cleanText(record.notes, { max: 2000 })
   );
 
   const visitId = visitResult.lastInsertRowid;
@@ -302,8 +435,8 @@ function insertRecordTransaction(record) {
     VALUES (?, ?, ?, ?)
   `).run(
     visitId,
-    record.patient_id,
-    Number(record.amount || 0),
+    patientId,
+    Math.max(0, Number(record.amount || 0)),
     normalizePaymentStatus(record.payment_status)
   );
 
@@ -316,10 +449,10 @@ function insertRecordTransaction(record) {
     Object.entries(record.treatments).forEach(([toothNumber, treatment]) => {
       insertTreatment.run(
         visitId,
-        toothNumber,
-        treatment.type,
-        treatment.status || 'Planirano',
-        nullable(treatment.note)
+        cleanText(toothNumber, { max: 10 }),
+        cleanText(treatment.type, { max: 255, required: true }),
+        normalizeStatus(treatment.status || 'Planirano'),
+        cleanText(treatment.note, { max: 1000 })
       );
     });
   }
@@ -334,7 +467,10 @@ function insertRecordTransaction(record) {
 
 app.post('/api/records', authenticateToken, (req, res) => {
   try {
-    const { patient_id, doctor_id, visit_date, procedure } = req.body;
+    const patient_id = positiveInteger(req.body.patient_id);
+    const doctor_id = positiveInteger(req.body.doctor_id);
+    const visit_date = cleanText(req.body.visit_date, { max: 20, required: true });
+    const procedure = cleanText(req.body.procedure, { max: 255, required: true });
     if (!patient_id || !doctor_id || !visit_date || !procedure) {
       return res.status(400).json({ error: 'Patient, doctor, date and procedure required' });
     }
@@ -345,7 +481,7 @@ app.post('/api/records', authenticateToken, (req, res) => {
       return res.status(404).json({ error: 'Doctor not found' });
     }
 
-    const visitId = insertRecordTransaction(req.body);
+    const visitId = insertRecordTransaction({ ...req.body, patient_id, doctor_id, visit_date, procedure });
     res.status(201).json({ id: visitId, message: 'Record created successfully' });
   } catch (error) {
     console.error('Create record error:', error);
@@ -359,11 +495,16 @@ app.put('/api/records/:id', authenticateToken, (req, res) => {
     if (!current) return res.status(404).json({ error: 'Record not found' });
 
     const data = { ...current, ...req.body };
+    const procedure = cleanText(data.procedure, { max: 255, required: true });
+    if (!procedure) {
+      return res.status(400).json({ error: 'Procedure required' });
+    }
+
     db.prepare(`
       UPDATE visit_records
       SET procedure = ?, status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(data.procedure, normalizeStatus(data.status), nullable(data.notes), req.params.id);
+    `).run(procedure, normalizeStatus(data.status), cleanText(data.notes, { max: 2000 }), req.params.id);
 
     res.json({ id: Number(req.params.id), message: 'Record updated successfully' });
   } catch (error) {
@@ -496,12 +637,20 @@ app.get('/api/health', (_req, res) => {
   res.json({
     status: 'API is running',
     database: 'sqlite',
-    databasePath: dbPath,
     timestamp: new Date().toISOString()
   });
 });
 
 // ============ ERROR HANDLING ============
+
+app.use((err, _req, res, next) => {
+  if (!err) return next();
+  if (err.message === 'CORS origin not allowed') {
+    return res.status(403).json({ error: 'CORS origin not allowed' });
+  }
+  console.error('Unhandled error:', err);
+  return res.status(500).json({ error: 'Server error' });
+});
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
@@ -509,7 +658,7 @@ app.use((_req, res) => {
 
 const server = app.listen(PORT, () => {
   console.log(`Dr Rosa Backend API running on http://localhost:${PORT}`);
-  console.log(`SQLite database: ${dbPath}`);
+  console.log('SQLite database configured');
 });
 
 function shutdown() {

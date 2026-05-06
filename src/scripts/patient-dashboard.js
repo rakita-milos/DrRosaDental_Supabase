@@ -42,6 +42,7 @@ const patientInfoSection = document.getElementById("patient-info-section");
 const patientInfo = document.getElementById("patient-info");
 const recordsBody = document.getElementById("patient-records-body");
 const treatmentList = document.getElementById("treatment-list");
+const escapeHtml = window.DrRosaSecurity.escapeHtml;
 
 function renderEmpty(message) {
   recordsBody.innerHTML = `<tr><td colspan="7" class="empty-row">${message}</td></tr>`;
@@ -89,14 +90,14 @@ function renderEmpty(message) {
   if (patientDetails) {
     patientInfoSection.style.display = "block";
     patientInfo.innerHTML = `
-      <p><strong>Ime:</strong> ${patientFullName(patientDetails)}</p>
+      <p><strong>Ime:</strong> ${escapeHtml(patientFullName(patientDetails))}</p>
       <p><strong>Datum rodjenja:</strong> ${formatDate(patientDetails.birthDate || patientDetails.date_of_birth)}</p>
-      <p><strong>Pol:</strong> ${patientDetails.gender || "-"}</p>
-      <p><strong>Telefon:</strong> ${patientDetails.phone || "-"}</p>
-      <p><strong>Email:</strong> ${patientDetails.email || "-"}</p>
-      <p><strong>Kontakt u hitnim slucajevima:</strong> ${patientDetails.emergencyContact || patientDetails.emergency_contact || "-"}</p>
-      <p><strong>Alergije:</strong> ${patientDetails.allergies || "-"}</p>
-      <p><strong>Medicinska istorija:</strong> ${patientDetails.medicalHistory || patientDetails.medical_history || "-"}</p>
+      <p><strong>Pol:</strong> ${escapeHtml(patientDetails.gender || "-")}</p>
+      <p><strong>Telefon:</strong> ${escapeHtml(patientDetails.phone || "-")}</p>
+      <p><strong>Email:</strong> ${escapeHtml(patientDetails.email || "-")}</p>
+      <p><strong>Kontakt u hitnim slucajevima:</strong> ${escapeHtml(patientDetails.emergencyContact || patientDetails.emergency_contact || "-")}</p>
+      <p><strong>Alergije:</strong> ${escapeHtml(patientDetails.allergies || "-")}</p>
+      <p><strong>Medicinska istorija:</strong> ${escapeHtml(patientDetails.medicalHistory || patientDetails.medical_history || "-")}</p>
     `;
   }
 
@@ -108,12 +109,12 @@ function renderEmpty(message) {
   recordsBody.innerHTML = patientRecords.map(record => `
     <tr>
       <td>${formatDate(record.lastVisit)}</td>
-      <td>${record.procedure}</td>
-      <td>${record.doctor}</td>
-      <td>${record.status}</td>
-      <td>${record.paymentStatus || "-"}</td>
+      <td>${escapeHtml(record.procedure)}</td>
+      <td>${escapeHtml(record.doctor)}</td>
+      <td>${escapeHtml(record.status)}</td>
+      <td>${escapeHtml(record.paymentStatus || "-")}</td>
       <td>${Number(record.amountDue || 0).toFixed(2)} EUR</td>
-      <td>${record.note || "-"}</td>
+      <td>${escapeHtml(record.note || "-")}</td>
     </tr>
   `).join("");
 
@@ -131,10 +132,10 @@ function renderEmpty(message) {
     : treatmentEntries.map(item => `
       <div class="treatment-item">
         <div>
-          <strong>Zub ${item.tooth}</strong> - ${item.type}
-          <span style="color: #5b6c7d;">(${item.status})</span>
-          <div style="margin-top: 6px;">${item.note || "-"}</div>
-          <div style="margin-top: 6px; font-size: 0.9rem; color: #5b6c7d;">${formatDate(item.date)} | ${item.procedure}</div>
+          <strong>Zub ${escapeHtml(item.tooth)}</strong> - ${escapeHtml(item.type)}
+          <span style="color: #5b6c7d;">(${escapeHtml(item.status)})</span>
+          <div style="margin-top: 6px;">${escapeHtml(item.note || "-")}</div>
+          <div style="margin-top: 6px; font-size: 0.9rem; color: #5b6c7d;">${formatDate(item.date)} | ${escapeHtml(item.procedure)}</div>
         </div>
       </div>
     `).join("");
