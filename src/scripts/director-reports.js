@@ -372,6 +372,10 @@ function recordsForMonth(monthIndex, year) {
   });
 }
 
+function daysInMonth(monthIndex, year) {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("sr-RS", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -385,10 +389,11 @@ function headerCell(value, className = "") {
 }
 
 function buildPazariRows(monthIndex, year) {
-  const days = Array.from({ length: 31 }, (_, index) => ({ day: index + 1, firstEur: 0, firstRsd: 0, secondEur: 0, secondRsd: 0, debtEur: 0, debtRsd: 0 }));
+  const dayCount = daysInMonth(monthIndex, year);
+  const days = Array.from({ length: dayCount }, (_, index) => ({ day: index + 1, firstEur: 0, firstRsd: 0, secondEur: 0, secondRsd: 0, debtEur: 0, debtRsd: 0 }));
   recordsForMonth(monthIndex, year).forEach(record => {
     const parts = recordDateParts(record);
-    if (!parts || parts.day < 1 || parts.day > 31) return;
+    if (!parts || parts.day < 1 || parts.day > dayCount) return;
     const row = days[parts.day - 1];
     const amount = recordTotal(record) || Number(record.amountDue || 0);
     const currency = record.currency === "RSD" ? "RSD" : "EUR";
@@ -433,13 +438,14 @@ function renderPazariSheet(monthIndex, year) {
 
 function aggregateCategorySheet(sheet, monthIndex, year) {
   const categories = EXCEL_CATEGORIES[sheet] || [];
-  const rows = Array.from({ length: 31 }, (_, index) => ({
+  const dayCount = daysInMonth(monthIndex, year);
+  const rows = Array.from({ length: dayCount }, (_, index) => ({
     day: index + 1,
     categories: Object.fromEntries(categories.map(category => [category, { count: 0, amount: 0 }]))
   }));
   recordsForMonth(monthIndex, year).forEach(record => {
     const parts = recordDateParts(record);
-    if (!parts || parts.day < 1 || parts.day > 31) return;
+    if (!parts || parts.day < 1 || parts.day > dayCount) return;
     recordTreatmentEntries(record).forEach(entry => {
       const category = categoryForEntry(sheet, entry);
       if (!category) return;
@@ -520,11 +526,9 @@ function updateExcelSummary(monthIndex, year) {
 }
 
 function availableReportYears() {
-  const years = cachedRecords
-    .map(record => recordDateParts(record)?.year)
-    .filter(Boolean);
   const currentYear = new Date().getFullYear();
-  return Array.from(new Set([...years, currentYear])).sort((a, b) => b - a);
+  const endYear = currentYear + 1;
+  return Array.from({ length: endYear - 2020 + 1 }, (_, index) => endYear - index);
 }
 
 function renderExcelSheet() {
