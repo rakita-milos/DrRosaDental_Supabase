@@ -40,6 +40,7 @@ const previewElements = {
 const inputs = {
   patient: document.getElementById("patient-name"),
   lastVisit: document.getElementById("last-visit"),
+  procedureActivity: document.getElementById("procedure-activity"),
   procedure: document.getElementById("procedure"),
   doctor: document.getElementById("doctor"),
   status: document.getElementById("status"),
@@ -55,20 +56,7 @@ let doctors = [];
 let allRecords = [];
 let teethTreatments = {};
 let selectedTeeth = new Set();
-
-const TREATMENT_PRICES = {
-  "Kontrola": 30,
-  "Čišćenje": 50,
-  "Plomba": 60,
-  "Koren": 120,
-  "Krunica": 250,
-  "Most": 450,
-  "Implant": 600,
-  "Vađenje": 50,
-  "Ortodontija": 100,
-  "Bleaching": 150,
-  "Parodontologija": 90
-};
+const procedureCatalog = window.DrRosaProcedureCatalog;
 
 const urlParams = new URLSearchParams(window.location.search);
 const patientParam = urlParams.get("patient");
@@ -93,9 +81,11 @@ function showAlert(message, type = "success") {
 }
 
 function updatePreview() {
+  const procedureText = inputs.procedure.value.trim();
+  const activityText = inputs.procedureActivity.value.trim();
   previewElements.name.textContent = inputs.patient.value.trim() || "-";
   previewElements.visit.textContent = formatDate(inputs.lastVisit.value);
-  previewElements.procedure.textContent = inputs.procedure.value.trim() || (hasToothTreatments() ? "Rad po zubima" : "-");
+  previewElements.procedure.textContent = procedureText ? `${activityText ? `${activityText} / ` : ""}${procedureText}` : (hasToothTreatments() ? "Rad po zubima" : "-");
   previewElements.status.textContent = inputs.status.value;
   previewElements.paymentStatus.textContent = inputs.paymentStatus.value;
   previewElements.amountDue.textContent = Number(inputs.amountDue.value || 0).toFixed(2);
@@ -131,10 +121,28 @@ function populateDoctors() {
   inputs.doctor.innerHTML = doctors.map(doctor => `<option value="${escapeHtml(doctor.name)}">${escapeHtml(doctor.name)}</option>`).join("");
 }
 
+function option(value, label = value) {
+  return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+}
+
+function populateActivitySelect(select, placeholder = "Odaberi delatnost") {
+  if (!select || !procedureCatalog) return;
+  select.innerHTML = option("", placeholder) + procedureCatalog.getActivities().map(activity => option(activity)).join("");
+}
+
+function populateProcedureSelect(activitySelect, procedureSelect, placeholder = "Odaberi postupak") {
+  if (!activitySelect || !procedureSelect || !procedureCatalog) return;
+  const activity = activitySelect.value;
+  const procedures = activity ? procedureCatalog.getProcedures(activity) : [];
+  procedureSelect.innerHTML = option("", activity ? placeholder : "Prvo odaberi delatnost") + procedures.map(procedure => option(procedure)).join("");
+  procedureSelect.disabled = !activity;
+}
+
 const teethPanel = document.getElementById("tooth-treatment-panel");
 const selectedToothSpan = document.getElementById("selected-tooth");
 const closePanel = document.getElementById("close-panel");
 const saveTreatmentBtn = document.getElementById("save-treatment");
+const treatmentActivity = document.getElementById("treatment-activity");
 const treatmentType = document.getElementById("treatment-type");
 const treatmentNote = document.getElementById("treatment-note");
 const treatmentDiscount = document.getElementById("treatment-discount");
@@ -153,7 +161,7 @@ function selectedTeethList() {
 }
 
 function selectedTreatmentPrice() {
-  return TREATMENT_PRICES[treatmentType.value] || 0;
+  return procedureCatalog.getPrice(treatmentType.value);
 }
 
 function treatmentListForTooth(tooth) {
@@ -247,6 +255,8 @@ function refreshSelectedTeethPanel() {
 
   if (teeth.length === 1) {
     const current = treatmentListForTooth(teeth[0]).at(-1);
+    treatmentActivity.value = current?.activity || procedureCatalog.findActivityForProcedure(current?.type) || treatmentActivity.value || "";
+    populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
     treatmentType.value = current?.type || treatmentType.value || "";
     treatmentDiscount.value = current?.discount || "";
     treatmentNote.value = current?.note || "";
@@ -306,6 +316,7 @@ saveTreatmentBtn.addEventListener("click", () => {
     const discount = Math.min(price, Math.max(0, Number(treatmentDiscount.value || 0)));
     if (!Array.isArray(teethTreatments[tooth])) teethTreatments[tooth] = treatmentListForTooth(tooth);
     teethTreatments[tooth].push({
+      activity: treatmentActivity.value,
       type: treatmentType.value,
       note: treatmentNote.value,
       price,
@@ -319,6 +330,10 @@ saveTreatmentBtn.addEventListener("click", () => {
   updateToothHighlights();
 });
 
+treatmentActivity.addEventListener("change", () => {
+  populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
+  updateTreatmentPricePreview();
+});
 treatmentType.addEventListener("change", updateTreatmentPricePreview);
 treatmentDiscount.addEventListener("input", updateTreatmentPricePreview);
 totalDiscount.addEventListener("input", () => {
@@ -329,6 +344,18 @@ totalDiscount.addEventListener("input", () => {
 
 inputs.amountDue.addEventListener("input", () => {
   updateAmountDueLimit();
+  updatePreview();
+});
+
+inputs.procedureActivity.addEventListener("change", () => {
+  populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
+  updatePreview();
+});
+
+inputs.procedure.addEventListener("change", () => {
+  if (!inputs.procedureActivity.value) {
+    inputs.procedureActivity.value = procedureCatalog.findActivityForProcedure(inputs.procedure.value);
+  }
   updatePreview();
 });
 
@@ -413,6 +440,7 @@ function getPatientToothHistory(name) {
       treatmentListForValue(treatments).map(treatment => ({
         tooth,
         type: treatment.type,
+        activity: treatment.activity || procedureCatalog.findActivityForProcedure(treatment.type),
         note: treatment.note,
         price: treatment.price,
         discount: treatment.discount,
@@ -426,16 +454,18 @@ function getPatientToothHistory(name) {
 function updateToothHighlights() {
   const history = getPatientToothHistory(inputs.patient.value.trim());
   const highlightedTeeth = new Set([...Object.keys(teethTreatments), ...history.map(item => item.tooth)]);
-  const extractedTeeth = new Set(history.filter(item => item.type === "Vađenje").map(item => item.tooth));
-  const implantTeeth = new Set(history.filter(item => item.type === "Implant").map(item => item.tooth));
+  const isExtraction = treatment => String(treatment?.type || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("vad");
+  const isImplant = treatment => String(treatment?.type || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("implant");
+  const extractedTeeth = new Set(history.filter(isExtraction).map(item => item.tooth));
+  const implantTeeth = new Set(history.filter(isImplant).map(item => item.tooth));
 
   toothNodes.forEach(tooth => {
     const toothNumber = tooth.dataset.tooth;
     const currentTreatments = treatmentListForTooth(toothNumber);
     tooth.classList.toggle("treated", highlightedTeeth.has(toothNumber));
     tooth.classList.toggle("selected", selectedTeeth.has(toothNumber));
-    tooth.classList.toggle("extracted", extractedTeeth.has(toothNumber) || currentTreatments.some(treatment => treatment.type === "Vađenje"));
-    tooth.classList.toggle("implant", implantTeeth.has(toothNumber) || currentTreatments.some(treatment => treatment.type === "Implant"));
+    tooth.classList.toggle("extracted", extractedTeeth.has(toothNumber) || currentTreatments.some(isExtraction));
+    tooth.classList.toggle("implant", implantTeeth.has(toothNumber) || currentTreatments.some(isImplant));
   });
 }
 
@@ -455,6 +485,7 @@ form.addEventListener("submit", async (event) => {
 
   const patientNameValue = inputs.patient.value.trim();
   const procedureValue = inputs.procedure.value.trim();
+  const procedureActivityValue = inputs.procedureActivity.value.trim() || procedureCatalog.findActivityForProcedure(procedureValue);
   const hasTreatments = hasToothTreatments();
   const finalTotal = currentFinalTotal();
   const amountDueValue = Number(inputs.amountDue.value || 0);
@@ -489,6 +520,7 @@ form.addEventListener("submit", async (event) => {
     doctorId: doctor?.id,
     patient: patientNameValue,
     lastVisit: inputs.lastVisit.value,
+    procedureActivity: procedureActivityValue,
     procedure: procedureValue || currentTreatmentDescription() || "Rad po zubima",
     doctor: inputs.doctor.value,
     status: inputs.status.value,
@@ -507,6 +539,8 @@ form.addEventListener("submit", async (event) => {
     form.reset();
     teethTreatments = {};
     totalDiscount.value = "";
+    populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
+    populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
     allRecords = await window.DrRosaApi.getRecords();
     updateTeethSummary();
     updateToothHighlights();
@@ -529,6 +563,10 @@ form.addEventListener("submit", async (event) => {
     allRecords = loadedRecords;
     populatePatientList();
     populateDoctors();
+    populateActivitySelect(inputs.procedureActivity);
+    populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
+    populateActivitySelect(treatmentActivity);
+    populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
   } catch (error) {
     console.error("Form setup error:", error);
   }

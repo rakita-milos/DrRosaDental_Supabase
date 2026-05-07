@@ -2,6 +2,7 @@ let cachedRecords = [];
 let currentReportExport = { title: "Direktor izvjestaj", headers: [], rows: [] };
 let activeExcelSheet = "PAZARI";
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
+const procedureCatalog = window.DrRosaProcedureCatalog;
 const MONTHS = ["Januar", "Februar", "Mart", "April", "Maj", "Jun", "Jul", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"];
 const EXCEL_SHEETS = ["PAZARI", "Hirurgija", "Protetika", "Ortodoncija", "Troškovi", "Ukupno"];
 const EXCEL_CATEGORIES = {
@@ -251,26 +252,33 @@ async function loadDoctorsReport() {
 async function loadProceduresReport() {
   const apiReport = await getReport("procedures");
   const rows = apiReport || Object.entries(cachedRecords.reduce((acc, record) => {
-    if (!acc[record.procedure]) acc[record.procedure] = { count: 0, totalAmount: 0 };
-    acc[record.procedure].count += 1;
-    acc[record.procedure].totalAmount += Number(record.amountDue || 50);
+    recordTreatmentEntries(record).forEach(entry => {
+      const procedure = entry.type || record.procedure || "Ostalo";
+      const activity = procedureCatalog.findActivityForProcedure(procedure) || "Ostalo";
+      const key = `${activity}|||${procedure}`;
+      if (!acc[key]) acc[key] = { activity, procedure, count: 0, totalAmount: 0 };
+      acc[key].count += 1;
+      acc[key].totalAmount += Number(entry.amount || record.amountDue || 0);
+    });
     return acc;
-  }, {})).map(([procedure, data]) => ({
-    procedure,
+  }, {})).map(([, data]) => ({
+    activity: data.activity,
+    procedure: data.procedure,
     count: data.count,
     percentage: cachedRecords.length ? (data.count / cachedRecords.length) * 100 : 0,
     avgCost: data.count ? data.totalAmount / data.count : 0
-  }));
+  })).sort((a, b) => a.activity.localeCompare(b.activity) || a.procedure.localeCompare(b.procedure));
 
   document.getElementById("procedures-table").innerHTML = rows.map(row => `
-    <tr><td>${escapeHtml(row.procedure)}</td><td>${row.count}</td><td>${Number(row.percentage || 0).toFixed(1)}%</td><td>${Number(row.avgCost || 0).toFixed(2)} EUR</td></tr>
+    <tr><td>${escapeHtml(row.procedure)}</td><td>${escapeHtml(row.activity || procedureCatalog.findActivityForProcedure(row.procedure) || "-")}</td><td>${row.count}</td><td>${Number(row.percentage || 0).toFixed(1)}%</td><td>${Number(row.avgCost || 0).toFixed(2)} EUR</td></tr>
   `).join("");
 
   currentReportExport = {
     title: "Izvjestaj o postupcima",
-    headers: ["Postupak", "Broj izvrsenih", "Procenat", "Prosjecna naplata"],
+    headers: ["Postupak", "Delatnost", "Broj izvrsenih", "Procenat", "Prosjecna naplata"],
     rows: rows.map(row => [
       row.procedure,
+      row.activity || procedureCatalog.findActivityForProcedure(row.procedure) || "-",
       row.count,
       `${Number(row.percentage || 0).toFixed(1)}%`,
       `${Number(row.avgCost || 0).toFixed(2)} EUR`

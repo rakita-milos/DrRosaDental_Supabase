@@ -24,10 +24,12 @@ const statusFilter = document.getElementById("status-filter");
 const doctorFilter = document.getElementById("doctor-filter");
 const dateFilter = document.getElementById("date-filter");
 const periodFilter = document.getElementById("period-filter");
+const activityFilter = document.getElementById("activity-filter");
 const procedureFilter = document.getElementById("procedure-filter");
 const paymentFilter = document.getElementById("payment-filter");
 const exportExcelBtn = document.getElementById("export-excel-btn");
 const exportPdfBtn = document.getElementById("export-pdf-btn");
+const procedureCatalog = window.DrRosaProcedureCatalog;
 
 let allRecords = [];
 let currentExportRows = [];
@@ -61,6 +63,47 @@ function addCurrencyAmount(target, currency, amount) {
 function formatCurrencyAmounts(amounts) {
   const entries = Object.entries(amounts).filter(([, amount]) => amount > 0);
   return entries.length ? entries.map(([currency, amount]) => `${amount.toFixed(2)} ${currency}`).join(" / ") : "0.00";
+}
+
+function option(value, label = value) {
+  return `<option value="${window.DrRosaSecurity.escapeHtml(value)}">${window.DrRosaSecurity.escapeHtml(label)}</option>`;
+}
+
+function populateActivityFilter() {
+  if (!activityFilter || !procedureCatalog) return;
+  activityFilter.innerHTML = option("", "Sve delatnosti") + procedureCatalog.getActivities().map(activity => option(activity)).join("");
+}
+
+function populateProcedureFilter() {
+  if (!procedureFilter || !procedureCatalog) return;
+  const activity = activityFilter?.value || "";
+  const procedures = activity ? procedureCatalog.getProcedures(activity) : [];
+  procedureFilter.innerHTML = option("", activity ? "Svi postupci" : "Prvo odaberi delatnost") + procedures.map(procedure => option(procedure)).join("");
+  procedureFilter.disabled = !activity;
+}
+
+function treatmentListForValue(treatments) {
+  if (!treatments) return [];
+  return Array.isArray(treatments) ? treatments : [treatments];
+}
+
+function recordProcedureValues(record) {
+  const values = [record.procedure];
+  if (record.treatments) {
+    Object.values(record.treatments).forEach(treatments => {
+      treatmentListForValue(treatments).forEach(treatment => values.push(treatment?.type));
+    });
+  }
+  return values.filter(Boolean);
+}
+
+function matchesProcedure(record, procedure) {
+  if (!procedure) return true;
+  const target = fold(procedure);
+  return recordProcedureValues(record).some(value => {
+    const source = fold(value);
+    return source === target || source.includes(target) || target.includes(source);
+  });
 }
 
 function renderSummary(records) {
@@ -174,18 +217,20 @@ function filterRecords(records) {
   const doctor = doctorFilter?.value || "";
   const date = dateFilter?.value || "";
   const period = periodFilter?.value || "";
+  const activity = activityFilter?.value || "";
   const procedure = procedureFilter?.value || "";
   const payment = paymentFilter?.value || "";
 
   return records.filter((record) => {
-    const text = `${record.patient} ${record.procedure} ${record.doctor} ${record.note}`.toLowerCase();
+    const text = `${record.patient} ${recordProcedureValues(record).join(" ")} ${record.doctor} ${record.note}`.toLowerCase();
     const matchesQuery = !query || text.includes(query);
     const matchesStatus = !status || fold(record.status) === fold(status);
     const matchesDoctor = !doctor || fold(record.doctor) === fold(doctor) || fold(record.doctor).includes(fold(doctor));
     const matchesDate = !date || record.lastVisit === date;
-    const matchesProcedure = !procedure || fold(record.procedure) === fold(procedure);
+    const matchesActivity = !activity || procedureCatalog.matchesActivity(record, activity);
+    const matchesProcedureValue = matchesProcedure(record, procedure);
     const matchesPayment = !payment || (payment === "debtors" ? isDebt(record) : fold(record.paymentStatus) === fold(payment));
-    return matchesQuery && matchesStatus && matchesDoctor && matchesDate && matchesProcedure && matchesPayment && matchesPeriod(record.lastVisit, period);
+    return matchesQuery && matchesStatus && matchesDoctor && matchesDate && matchesActivity && matchesProcedureValue && matchesPayment && matchesPeriod(record.lastVisit, period);
   });
 }
 
@@ -209,6 +254,11 @@ function exportFiltered(format) {
   .filter(Boolean)
   .forEach(input => input.addEventListener(input.type === "search" ? "input" : "change", refresh));
 
+activityFilter?.addEventListener("change", () => {
+  populateProcedureFilter();
+  refresh();
+});
+
 exportExcelBtn?.addEventListener("click", () => exportFiltered("excel"));
 exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
 
@@ -220,5 +270,7 @@ exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
     console.error("Records load error:", error);
     allRecords = [];
   }
+  populateActivityFilter();
+  populateProcedureFilter();
   refresh();
 })();

@@ -101,20 +101,15 @@
           </div>
           <div class="panel-content">
             <div class="form-group">
+              <label for="treatment-activity">Osnovna delatnost</label>
+              <select id="treatment-activity">
+                <option value="">Odaberi delatnost</option>
+              </select>
+            </div>
+            <div class="form-group">
               <label for="treatment-type">Šta je odrađeno</label>
-              <select id="treatment-type">
+              <select id="treatment-type" disabled>
                 <option value="">Odaberi tretman</option>
-                <option value="Kontrola">Kontrola</option>
-                <option value="Čišćenje">Čišćenje</option>
-                <option value="Plomba">Plomba</option>
-                <option value="Koren">Endodontija (koren)</option>
-                <option value="Krunica">Krunica</option>
-                <option value="Most">Most</option>
-                <option value="Implant">Implant</option>
-                <option value="Vađenje">Vađenje</option>
-                <option value="Ortodontija">Ortodontija</option>
-                <option value="Bleaching">Izbeljivanje</option>
-                <option value="Parodontologija">Parodontologija</option>
               </select>
             </div>
             <div class="treatment-price-preview" aria-live="polite">
@@ -167,21 +162,15 @@
               <input type="date" id="last-visit" name="lastVisit" required />
             </label>
             <label>
+              Osnovna delatnost
+              <select id="procedure-activity" name="procedureActivity">
+                <option value="">Odaberi delatnost</option>
+              </select>
+            </label>
+            <label>
               Postupak
-              <select id="procedure" name="procedure">
+              <select id="procedure" name="procedure" disabled>
                 <option value="">Odaberi postupak</option>
-                <option value="Kontrola">Kontrola</option>
-                <option value="Čišćenje">Čišćenje</option>
-                <option value="Kontrola i čišćenje">Kontrola i čišćenje</option>
-                <option value="Plomba">Plomba</option>
-                <option value="Endodontija">Endodontija (koren)</option>
-                <option value="Krunica">Krunica</option>
-                <option value="Most">Most</option>
-                <option value="Implant">Implant</option>
-                <option value="Vađenje">Vađenje</option>
-                <option value="Ortodontija">Ortodontija</option>
-                <option value="Izbeljivanje">Izbeljivanje</option>
-                <option value="Parodontologija">Parodontologija</option>
               </select>
             </label>
             <label>
@@ -275,6 +264,7 @@
   </div>
 
   <script src="../scripts/api.js"></script>
+  <script src="../scripts/procedure-catalog.js"></script>
   <script src="../scripts/new-entry.js"></script>
 </body>
 </html>

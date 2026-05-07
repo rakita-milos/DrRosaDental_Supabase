@@ -63,6 +63,12 @@
               <option value="week">Ova nedelja</option>
               <option value="month">Ovaj mesec</option>
             </select>
+            <select id="activity-filter">
+              <option value="">Sve delatnosti</option>
+            </select>
+            <select id="procedure-filter" disabled>
+              <option value="">Prvo odaberi delatnost</option>
+            </select>
             <select id="payment-filter">
               <option value="">Sva plaćanja</option>
               <option value="Plaćeno">Plaćeno</option>
@@ -101,6 +107,7 @@
 
   <script src="../scripts/api.js"></script>
   <script src="../scripts/export-utils.js"></script>
+  <script src="../scripts/procedure-catalog.js"></script>
   <script src="../scripts/all-records.js"></script>
 </body>
 </html>
