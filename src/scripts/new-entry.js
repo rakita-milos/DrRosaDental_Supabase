@@ -60,6 +60,7 @@ const procedureCatalog = window.DrRosaProcedureCatalog;
 
 const urlParams = new URLSearchParams(window.location.search);
 const patientParam = urlParams.get("patient");
+const recordParam = urlParams.get("record");
 if (patientParam) {
   inputs.patient.value = patientParam;
   const newPatientLink = document.getElementById("new-patient-link");
@@ -136,6 +137,41 @@ function populateProcedureSelect(activitySelect, procedureSelect, placeholder = 
   const procedures = activity ? procedureCatalog.getProcedures(activity) : [];
   procedureSelect.innerHTML = option("", activity ? placeholder : "Prvo odaberi delatnost") + procedures.map(procedure => option(procedure)).join("");
   procedureSelect.disabled = !activity;
+}
+
+function setSelectValue(select, value) {
+  if (!select || !value) return;
+  if (!Array.from(select.options).some(item => item.value === value)) {
+    select.appendChild(new Option(value, value));
+  }
+  select.value = value;
+}
+
+function cloneTreatments(treatments) {
+  return JSON.parse(JSON.stringify(treatments || {}));
+}
+
+function openRecordInForm(record) {
+  if (!record) return;
+  inputs.patient.value = record.patient || "";
+  inputs.lastVisit.value = record.lastVisit || "";
+  inputs.procedureActivity.value = record.procedureActivity || procedureCatalog.findActivityForProcedure(record.procedure);
+  populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
+  setSelectValue(inputs.procedure, record.procedure || "");
+  setSelectValue(inputs.doctor, record.doctor || "");
+  setSelectValue(inputs.status, record.status || "");
+  setSelectValue(inputs.paymentStatus, record.paymentStatus || "");
+  inputs.amountDue.value = Number(record.amountDue || 0).toFixed(2);
+  setSelectValue(inputs.currency, record.currency || "EUR");
+  setSelectValue(inputs.shift, record.shift || "");
+  inputs.note.value = record.note === "-" ? "" : (record.note || "");
+  totalDiscount.value = Number(record.totalDiscount || 0) > 0 ? Number(record.totalDiscount || 0).toFixed(2) : "";
+  teethTreatments = cloneTreatments(record.treatments);
+  updateTeethSummary();
+  updateToothHighlights();
+  updateAmountDueLimit();
+  updatePreview();
+  showAlert("Pregled je otvoren sa postojecim podacima.");
 }
 
 const teethPanel = document.getElementById("tooth-treatment-panel");
@@ -573,6 +609,9 @@ form.addEventListener("submit", async (event) => {
     populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
     populateActivitySelect(treatmentActivity);
     populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
+    if (recordParam) {
+      openRecordInForm(allRecords.find(record => String(record.id) === String(recordParam)));
+    }
   } catch (error) {
     console.error("Form setup error:", error);
   }

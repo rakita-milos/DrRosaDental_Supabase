@@ -39,6 +39,12 @@ function formatMoney(amount, currency = "EUR") {
   return `${Number(amount || 0).toFixed(2)} ${currency}`;
 }
 
+function recordDetailsUrl(record) {
+  const params = new URLSearchParams({ patient: record.patient });
+  if (record.id) params.set("record", record.id);
+  return `new-entry.html?${params.toString()}`;
+}
+
 function treatmentListForValue(treatments) {
   if (!treatments) return [];
   return Array.isArray(treatments) ? treatments : [treatments];
@@ -114,7 +120,7 @@ const treatmentList = document.getElementById("treatment-list");
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
 
 function renderEmpty(message) {
-  recordsBody.innerHTML = `<tr><td colspan="9" class="empty-row">${message}</td></tr>`;
+  recordsBody.innerHTML = `<tr><td colspan="10" class="empty-row">${message}</td></tr>`;
   treatmentList.innerHTML = `<p>Nema unesene historije tretmana.</p>`;
 }
 
@@ -185,6 +191,7 @@ function renderEmpty(message) {
       <td>${formatMoney(recordVisitCost(record), record.currency)}</td>
       <td>${formatMoney(record.amountDue, record.currency)}</td>
       <td>${escapeHtml(record.note || "-")}${Number(record.totalDiscount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust na ukupno: ${formatMoney(record.totalDiscount, record.currency)}</div>` : ""}</td>
+      <td><a class="secondary-btn" href="${recordDetailsUrl(record)}">Otvori</a></td>
     </tr>
   `).join("");
 
