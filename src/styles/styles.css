@@ -1150,6 +1150,158 @@ td:nth-child(5) {
   padding-top: 2px;
 }
 
+.excel-report-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.excel-report-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.excel-report-tabs button {
+  border: 1px solid #c9d7e5;
+  border-radius: 10px;
+  background: #fff;
+  color: #1f2b3a;
+  padding: 10px 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.excel-report-tabs button.active,
+.excel-report-tabs button:hover {
+  border-color: #1a8ee4;
+  background: #eaf5ff;
+  color: #1b3c75;
+}
+
+.excel-report-toolbar label {
+  display: grid;
+  gap: 6px;
+  color: #243145;
+  font-weight: 800;
+}
+
+.excel-report-toolbar select {
+  min-width: 180px;
+  padding: 10px 12px;
+  border: 1px solid #c9d7e5;
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+}
+
+.excel-report-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.excel-report-summary article {
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid #d7e0eb;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f9fd 100%);
+}
+
+.excel-report-summary span {
+  color: #5b6c7d;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.excel-report-summary strong {
+  color: #1b3c75;
+  font-size: 1.1rem;
+}
+
+.excel-sheet-wrap {
+  overflow: auto;
+  max-height: 68vh;
+  border: 1px solid #c7d3df;
+  border-radius: 12px;
+  background: white;
+}
+
+.excel-sheet-table {
+  min-width: 980px;
+  width: max-content;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+  line-height: 1.25;
+}
+
+.excel-sheet-table th,
+.excel-sheet-table td {
+  min-width: 76px;
+  padding: 7px 8px;
+  border: 1px solid #9fb2c4;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.excel-sheet-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #eaf2f8;
+  color: #17212b;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.excel-sheet-table .excel-month-title {
+  background: #1b3c75;
+  color: white;
+  font-size: 1rem;
+  text-align: left;
+}
+
+.excel-sheet-table .excel-main-title {
+  background: #cfe7fb;
+  color: #1b3c75;
+}
+
+.excel-sheet-table td:first-child,
+.excel-sheet-table th:first-child,
+.excel-sheet-table td:nth-child(2),
+.excel-sheet-table th:nth-child(2) {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #f8fbff;
+}
+
+.excel-sheet-table td:nth-child(2),
+.excel-sheet-table th:nth-child(2) {
+  left: 76px;
+}
+
+.excel-sheet-table .excel-day {
+  text-align: center;
+  font-weight: 800;
+}
+
+.excel-sheet-table .excel-total,
+.excel-sheet-table .excel-sum-row td {
+  background: #fff7ed;
+  color: #7c2d12;
+  font-weight: 900;
+}
+
 .export-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1218,5 +1370,9 @@ td:nth-child(5) {
 
   .all-records-summary {
     grid-template-columns: 1fr;
+  }
+
+  .excel-report-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

@@ -1,6 +1,15 @@
 let cachedRecords = [];
 let currentReportExport = { title: "Direktor izvjestaj", headers: [], rows: [] };
+let activeExcelSheet = "PAZARI";
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
+const MONTHS = ["Januar", "Februar", "Mart", "April", "Maj", "Jun", "Jul", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"];
+const EXCEL_SHEETS = ["PAZARI", "Hirurgija", "Protetika", "Ortodoncija", "Troškovi", "Ukupno"];
+const EXCEL_CATEGORIES = {
+  Hirurgija: ["Vađenja zuba", "Impakcija umnjaka", "Impakcija očnjaka", "Apikotomija", "Hirurško vađenje", "Kiretaža", "Zatvaranje sinusa", "Frenulum", "Meka tkiva", "Nivelacija grebena", "Zaostali korenovi", "Implant", "Mini implanti", "Operacija"],
+  Protetika: ["Keramička kruna", "Cirkonijum kruna", "Totalna proteza", "Skeletirana proteza", "Parcijalna proteza", "Reparatura proteze", "Privremene krune", "Splintevi", "Nadogradnja", "Atečmeni", "Krunica na implantu", "Podlaganje proteze", "Fasete", "Ostalo"],
+  Ortodoncija: ["Mobilna", "Fiksna", "Pozicioner", "Monoblok", "Ostalo"],
+  Troškovi: ["Doprinosi", "Anastasija plata", "dr Ljilja zarada", "dr Mara zarada", "dr Dunja zarada", "dr Nikola zarada", "dr Jovana", "Nina plata", "Medical", "Dental", "Hirurgija", "Parodontologija", "Ortodoncija", "Služba"]
+};
 
 async function checkDirectorAccess() {
   const session = await window.DrRosaApi.verifySession("director");
@@ -51,6 +60,7 @@ async function showReport(reportId) {
   if (reportId === "patients-report") await loadPatientsReport();
   if (reportId === "doctors-report") await loadDoctorsReport();
   if (reportId === "procedures-report") await loadProceduresReport();
+  if (reportId === "excel-report") loadExcelReport();
 }
 
 window.showReports = showReports;
@@ -61,7 +71,8 @@ function initializeReports() {
     { id: "financial-report", tone: "blue", icon: "EUR", title: "Finansijski Izvjestaj", description: "Prihodi, naplata i dugovanja" },
     { id: "patients-report", tone: "green", icon: "PAC", title: "Pacijenti", description: "Rast, retencija i statusi pacijenata" },
     { id: "doctors-report", tone: "teal", icon: "DR", title: "Doktori", description: "Produktivnost i opterecenje tima" },
-    { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosjecna naplata" }
+    { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosjecna naplata" },
+    { id: "excel-report", tone: "blue", icon: "XLS", title: "Excel izvještaji 2026", description: "PAZARI, hirurgija, protetika, ortodoncija, troškovi i ukupno" }
   ];
 
   document.getElementById("reports-grid").innerHTML = reports.map(report => `
@@ -265,6 +276,264 @@ async function loadProceduresReport() {
       `${Number(row.avgCost || 0).toFixed(2)} EUR`
     ])
   };
+}
+
+function fold(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function recordDateParts(record) {
+  const date = new Date(record.lastVisit);
+  if (Number.isNaN(date.getTime())) return null;
+  return { month: date.getMonth(), day: date.getDate() };
+}
+
+function treatmentListForValue(treatments) {
+  if (!treatments) return [];
+  return Array.isArray(treatments) ? treatments : [treatments];
+}
+
+function recordTreatmentEntries(record) {
+  const entries = [];
+  if (record.treatments) {
+    Object.entries(record.treatments).forEach(([tooth, treatments]) => {
+      treatmentListForValue(treatments).forEach(treatment => {
+        entries.push({
+          tooth,
+          type: treatment.type || record.procedure,
+          amount: Math.max(0, Number(treatment.price || 0) - Number(treatment.discount || 0))
+        });
+      });
+    });
+  }
+
+  if (entries.length === 0) {
+    entries.push({ tooth: "", type: record.procedure, amount: Number(record.amountDue || 0) });
+  }
+
+  return entries;
+}
+
+function recordTotal(record) {
+  const treatmentsTotal = recordTreatmentEntries(record).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  return Math.max(0, treatmentsTotal - Number(record.totalDiscount || 0));
+}
+
+function matchesCategory(text, category) {
+  const source = fold(text);
+  const target = fold(category);
+  if (source.includes(target) || target.includes(source)) return true;
+  if (target.includes("vad") && source.includes("vad")) return true;
+  if (target.includes("implant") && source.includes("implant")) return true;
+  if (target.includes("krun") && source.includes("krun")) return true;
+  if (target.includes("prote") && source.includes("prote")) return true;
+  if (target.includes("fiks") && source.includes("fiks")) return true;
+  if (target.includes("mobil") && source.includes("mobil")) return true;
+  if (target.includes("parodont") && source.includes("parodont")) return true;
+  if (target.includes("ortod") && source.includes("ortod")) return true;
+  return false;
+}
+
+function categoryForEntry(sheet, entry) {
+  const categories = EXCEL_CATEGORIES[sheet] || [];
+  return categories.find(category => matchesCategory(entry.type, category)) || (categories.includes("Ostalo") ? "Ostalo" : null);
+}
+
+function recordsForMonth(monthIndex) {
+  return cachedRecords.filter(record => recordDateParts(record)?.month === monthIndex);
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString("sr-RS", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function cell(value, className = "") {
+  return `<td class="${className}">${escapeHtml(value ?? "")}</td>`;
+}
+
+function headerCell(value, className = "") {
+  return `<th class="${className}">${escapeHtml(value ?? "")}</th>`;
+}
+
+function buildPazariRows(monthIndex) {
+  const days = Array.from({ length: 31 }, (_, index) => ({ day: index + 1, firstEur: 0, firstRsd: 0, secondEur: 0, secondRsd: 0, debtEur: 0, debtRsd: 0 }));
+  recordsForMonth(monthIndex).forEach(record => {
+    const parts = recordDateParts(record);
+    if (!parts || parts.day < 1 || parts.day > 31) return;
+    const row = days[parts.day - 1];
+    const amount = recordTotal(record) || Number(record.amountDue || 0);
+    const currency = record.currency === "RSD" ? "RSD" : "EUR";
+    const isSecondShift = fold(record.shift).includes("drug");
+    const debt = isDebt(record) ? Number(record.amountDue || 0) : 0;
+    if (debt > 0) {
+      if (currency === "RSD") row.debtRsd += debt; else row.debtEur += debt;
+      return;
+    }
+    if (isSecondShift) {
+      if (currency === "RSD") row.secondRsd += amount; else row.secondEur += amount;
+    } else {
+      if (currency === "RSD") row.firstRsd += amount; else row.firstEur += amount;
+    }
+  });
+  return days;
+}
+
+function renderPazariSheet(monthIndex) {
+  const rows = buildPazariRows(monthIndex);
+  const bodyRows = rows.map(row => {
+    const totalEur = row.firstEur + row.secondEur + row.debtEur;
+    const totalRsd = row.firstRsd + row.secondRsd + row.debtRsd;
+    const total = totalEur + (totalRsd / 117.6);
+    return `<tr>${cell("")}${cell(row.day, "excel-day")}${cell(formatNumber(row.firstEur))}${cell(formatNumber(row.firstRsd))}${cell(formatNumber(row.secondEur))}${cell(formatNumber(row.secondRsd))}${cell(formatNumber(row.debtEur))}${cell(formatNumber(row.debtRsd))}${cell(formatNumber(totalEur), "excel-total")}${cell(formatNumber(totalRsd), "excel-total")}${cell(formatNumber(total), "excel-total")}</tr>`;
+  }).join("");
+  const totals = rows.reduce((acc, row) => {
+    ["firstEur", "firstRsd", "secondEur", "secondRsd", "debtEur", "debtRsd"].forEach(key => acc[key] += row[key]);
+    return acc;
+  }, { firstEur: 0, firstRsd: 0, secondEur: 0, secondRsd: 0, debtEur: 0, debtRsd: 0 });
+  const totalEur = totals.firstEur + totals.secondEur + totals.debtEur;
+  const totalRsd = totals.firstRsd + totals.secondRsd + totals.debtRsd;
+  const total = totalEur + (totalRsd / 117.6);
+  return `
+    <thead>
+      <tr><th colspan="11" class="excel-month-title">${MONTHS[monthIndex]} 2026</th></tr>
+      <tr><th></th><th></th><th colspan="6" class="excel-main-title">PAZAR</th><th colspan="3"></th></tr>
+      <tr><th></th><th></th><th colspan="2">I smena</th><th colspan="2">II smena</th><th colspan="2">DUG</th><th></th><th></th><th></th></tr>
+      <tr><th></th><th></th><th>€</th><th>RSD</th><th>€</th><th>RSD</th><th>€</th><th>RSD</th><th>Ukupno €</th><th>Ukupno RSD</th><th>Ukupno</th></tr>
+    </thead>
+    <tbody>${bodyRows}<tr class="excel-sum-row">${cell("")}${cell("Ukupno:")}${cell(formatNumber(totals.firstEur))}${cell(formatNumber(totals.firstRsd))}${cell(formatNumber(totals.secondEur))}${cell(formatNumber(totals.secondRsd))}${cell(formatNumber(totals.debtEur))}${cell(formatNumber(totals.debtRsd))}${cell(formatNumber(totalEur))}${cell(formatNumber(totalRsd))}${cell(formatNumber(total))}</tr></tbody>
+  `;
+}
+
+function aggregateCategorySheet(sheet, monthIndex) {
+  const categories = EXCEL_CATEGORIES[sheet] || [];
+  const rows = Array.from({ length: 31 }, (_, index) => ({
+    day: index + 1,
+    categories: Object.fromEntries(categories.map(category => [category, { count: 0, amount: 0 }]))
+  }));
+  recordsForMonth(monthIndex).forEach(record => {
+    const parts = recordDateParts(record);
+    if (!parts || parts.day < 1 || parts.day > 31) return;
+    recordTreatmentEntries(record).forEach(entry => {
+      const category = categoryForEntry(sheet, entry);
+      if (!category) return;
+      rows[parts.day - 1].categories[category].count += 1;
+      rows[parts.day - 1].categories[category].amount += Number(entry.amount || 0);
+    });
+  });
+  return rows;
+}
+
+function renderCategorySheet(sheet, monthIndex) {
+  const categories = EXCEL_CATEGORIES[sheet] || [];
+  const rows = aggregateCategorySheet(sheet, monthIndex);
+  const headerPairs = categories.map(category => `<th colspan="2">${escapeHtml(category)}</th>`).join("");
+  const subHeaders = categories.map(() => "<th>Kol.</th><th>Cena</th>").join("");
+  const bodyRows = rows.map(row => {
+    let rowTotal = 0;
+    const categoryCells = categories.map(category => {
+      const data = row.categories[category];
+      rowTotal += data.amount;
+      return `${cell(data.count || "")}${cell(data.amount ? formatNumber(data.amount) : "")}`;
+    }).join("");
+    return `<tr>${cell("")}${cell(row.day, "excel-day")}${categoryCells}${cell(formatNumber(rowTotal), "excel-total")}</tr>`;
+  }).join("");
+  const sums = Object.fromEntries(categories.map(category => [category, { count: 0, amount: 0 }]));
+  rows.forEach(row => categories.forEach(category => {
+    sums[category].count += row.categories[category].count;
+    sums[category].amount += row.categories[category].amount;
+  }));
+  const grandTotal = categories.reduce((sum, category) => sum + sums[category].amount, 0);
+  const sumRow = categories.map(category => `${cell(sums[category].count || "")}${cell(sums[category].amount ? formatNumber(sums[category].amount) : "")}`).join("");
+  return `
+    <thead>
+      <tr><th colspan="${categories.length * 2 + 3}" class="excel-month-title">${MONTHS[monthIndex]} 2026</th></tr>
+      <tr><th></th><th></th><th colspan="${categories.length * 2}" class="excel-main-title">${escapeHtml(sheet)}</th><th></th></tr>
+      <tr><th></th><th></th>${headerPairs}<th>Ukupno</th></tr>
+      <tr><th></th><th>Dan</th>${subHeaders}<th>Cena</th></tr>
+    </thead>
+    <tbody>${bodyRows}<tr class="excel-sum-row">${cell("")}${cell("Ukupno:")}${sumRow}${cell(formatNumber(grandTotal))}</tr></tbody>
+  `;
+}
+
+function monthlyTotals() {
+  return MONTHS.map((month, monthIndex) => {
+    const pazarRows = buildPazariRows(monthIndex);
+    const pazari = pazarRows.reduce((sum, row) => sum + row.firstEur + row.secondEur + row.debtEur + ((row.firstRsd + row.secondRsd + row.debtRsd) / 117.6), 0);
+    const categories = ["Hirurgija", "Protetika", "Ortodoncija"].reduce((acc, sheet) => {
+      acc[sheet] = aggregateCategorySheet(sheet, monthIndex).reduce((sum, row) => sum + Object.values(row.categories).reduce((inner, item) => inner + item.amount, 0), 0);
+      return acc;
+    }, {});
+    const troskovi = aggregateCategorySheet("Troškovi", monthIndex).reduce((sum, row) => sum + Object.values(row.categories).reduce((inner, item) => inner + item.amount, 0), 0);
+    return { month, pazari, ...categories, troskovi, total: pazari + categories.Hirurgija + categories.Protetika + categories.Ortodoncija - troskovi };
+  });
+}
+
+function renderUkupnoSheet() {
+  const rows = monthlyTotals();
+  const bodyRows = rows.map(row => `<tr>${cell(row.month)}${cell(formatNumber(row.pazari))}${cell(formatNumber(row.Hirurgija))}${cell(formatNumber(row.Protetika))}${cell(formatNumber(row.Ortodoncija))}${cell(formatNumber(row.troskovi))}${cell(formatNumber(row.total), "excel-total")}</tr>`).join("");
+  const totals = rows.reduce((acc, row) => {
+    ["pazari", "Hirurgija", "Protetika", "Ortodoncija", "troskovi", "total"].forEach(key => acc[key] += row[key]);
+    return acc;
+  }, { pazari: 0, Hirurgija: 0, Protetika: 0, Ortodoncija: 0, troskovi: 0, total: 0 });
+  return `
+    <thead><tr>${["", "PAZARI", "Hirurgija", "Protetika", "Ortodoncija", "Troškovi", "Ukupno"].map(header => headerCell(header)).join("")}</tr></thead>
+    <tbody>${bodyRows}<tr class="excel-sum-row">${cell("Ukupno:")}${cell(formatNumber(totals.pazari))}${cell(formatNumber(totals.Hirurgija))}${cell(formatNumber(totals.Protetika))}${cell(formatNumber(totals.Ortodoncija))}${cell(formatNumber(totals.troskovi))}${cell(formatNumber(totals.total))}</tr></tbody>
+  `;
+}
+
+function updateExcelSummary(monthIndex) {
+  const rows = monthlyTotals();
+  const month = rows[monthIndex] || rows[0];
+  document.getElementById("excel-report-summary").innerHTML = `
+    <article><span>PAZARI</span><strong>${formatNumber(month.pazari)}</strong></article>
+    <article><span>Hirurgija</span><strong>${formatNumber(month.Hirurgija)}</strong></article>
+    <article><span>Protetika</span><strong>${formatNumber(month.Protetika)}</strong></article>
+    <article><span>Ortodoncija</span><strong>${formatNumber(month.Ortodoncija)}</strong></article>
+    <article><span>Troškovi</span><strong>${formatNumber(month.troskovi)}</strong></article>
+    <article><span>Ukupno</span><strong>${formatNumber(month.total)}</strong></article>
+  `;
+}
+
+function renderExcelSheet() {
+  const monthIndex = Number(document.getElementById("excel-month-select").value || 0);
+  const table = document.getElementById("excel-sheet-table");
+  document.querySelectorAll("[data-excel-sheet]").forEach(button => {
+    button.classList.toggle("active", button.dataset.excelSheet === activeExcelSheet);
+  });
+  if (activeExcelSheet === "PAZARI") table.innerHTML = renderPazariSheet(monthIndex);
+  else if (activeExcelSheet === "Ukupno") table.innerHTML = renderUkupnoSheet();
+  else table.innerHTML = renderCategorySheet(activeExcelSheet, monthIndex);
+  updateExcelSummary(monthIndex);
+
+  currentReportExport = {
+    title: `Excel ${activeExcelSheet} 2026`,
+    headers: Array.from(table.querySelectorAll("thead tr:last-child th")).map(th => th.textContent.trim()),
+    rows: Array.from(table.querySelectorAll("tbody tr")).map(tr => Array.from(tr.children).map(td => td.textContent.trim()))
+  };
+}
+
+function initializeExcelReportControls() {
+  const tabs = document.getElementById("excel-report-tabs");
+  const monthSelect = document.getElementById("excel-month-select");
+  if (!tabs || tabs.dataset.ready) return;
+  tabs.dataset.ready = "true";
+  tabs.innerHTML = EXCEL_SHEETS.map(sheet => `<button type="button" data-excel-sheet="${escapeHtml(sheet)}">${escapeHtml(sheet)}</button>`).join("");
+  monthSelect.innerHTML = MONTHS.map((month, index) => `<option value="${index}">${month} 2026</option>`).join("");
+  tabs.addEventListener("click", event => {
+    const button = event.target.closest("[data-excel-sheet]");
+    if (!button) return;
+    activeExcelSheet = button.dataset.excelSheet;
+    renderExcelSheet();
+  });
+  monthSelect.addEventListener("change", renderExcelSheet);
+}
+
+function loadExcelReport() {
+  initializeExcelReportControls();
+  document.querySelectorAll("[data-excel-sheet]").forEach(button => {
+    button.classList.toggle("active", button.dataset.excelSheet === activeExcelSheet);
+  });
+  renderExcelSheet();
 }
 
 (async function init() {
