@@ -74,6 +74,13 @@ function populateActivityFilter() {
   activityFilter.innerHTML = option("", "Sve delatnosti") + procedureCatalog.getActivities().map(activity => option(activity)).join("");
 }
 
+function populatePatientFilter() {
+  if (!searchInput) return;
+  const patients = Array.from(new Set(allRecords.map(record => record.patient).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b));
+  searchInput.innerHTML = option("", "Svi pacijenti") + patients.map(patient => option(patient)).join("");
+}
+
 function populateProcedureFilter() {
   if (!procedureFilter || !procedureCatalog) return;
   const activity = activityFilter?.value || "";
@@ -212,7 +219,7 @@ function matchesPeriod(recordDate, period) {
 }
 
 function filterRecords(records) {
-  const query = searchInput.value.trim().toLowerCase();
+  const patient = searchInput.value.trim();
   const status = statusFilter?.value || "";
   const doctor = doctorFilter?.value || "";
   const date = dateFilter?.value || "";
@@ -222,15 +229,14 @@ function filterRecords(records) {
   const payment = paymentFilter?.value || "";
 
   return records.filter((record) => {
-    const text = `${record.patient} ${recordProcedureValues(record).join(" ")} ${record.doctor} ${record.note}`.toLowerCase();
-    const matchesQuery = !query || text.includes(query);
+    const matchesPatient = !patient || record.patient === patient;
     const matchesStatus = !status || fold(record.status) === fold(status);
     const matchesDoctor = !doctor || fold(record.doctor) === fold(doctor) || fold(record.doctor).includes(fold(doctor));
     const matchesDate = !date || record.lastVisit === date;
     const matchesActivity = !activity || procedureCatalog.matchesActivity(record, activity);
     const matchesProcedureValue = matchesProcedure(record, procedure);
     const matchesPayment = !payment || (payment === "debtors" ? isDebt(record) : fold(record.paymentStatus) === fold(payment));
-    return matchesQuery && matchesStatus && matchesDoctor && matchesDate && matchesActivity && matchesProcedureValue && matchesPayment && matchesPeriod(record.lastVisit, period);
+    return matchesPatient && matchesStatus && matchesDoctor && matchesDate && matchesActivity && matchesProcedureValue && matchesPayment && matchesPeriod(record.lastVisit, period);
   });
 }
 
@@ -252,7 +258,7 @@ function exportFiltered(format) {
 
 [searchInput, statusFilter, doctorFilter, dateFilter, periodFilter, procedureFilter, paymentFilter]
   .filter(Boolean)
-  .forEach(input => input.addEventListener(input.type === "search" ? "input" : "change", refresh));
+  .forEach(input => input.addEventListener("change", refresh));
 
 activityFilter?.addEventListener("change", () => {
   populateProcedureFilter();
@@ -270,6 +276,7 @@ exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
     console.error("Records load error:", error);
     allRecords = [];
   }
+  populatePatientFilter();
   populateActivityFilter();
   populateProcedureFilter();
   refresh();
