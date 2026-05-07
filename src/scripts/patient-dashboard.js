@@ -44,6 +44,24 @@ function treatmentListForValue(treatments) {
   return Array.isArray(treatments) ? treatments : [treatments];
 }
 
+function recordTreatmentEntries(record) {
+  if (!record.treatments) return [];
+  return Object.values(record.treatments)
+    .flatMap(treatmentListForValue)
+    .filter(Boolean);
+}
+
+function recordVisitCost(record) {
+  const treatments = recordTreatmentEntries(record);
+  const treatmentsTotal = treatments.reduce((sum, treatment) => {
+    return sum + Math.max(0, Number(treatment.price || 0) - Number(treatment.discount || 0));
+  }, 0);
+  if (treatmentsTotal > 0) {
+    return Math.max(0, treatmentsTotal - Number(record.totalDiscount || 0));
+  }
+  return Number(record.amountDue || 0);
+}
+
 function formatDebtTotals(records) {
   const totals = records.reduce((acc, record) => {
     const currency = record.currency || "EUR";
@@ -64,7 +82,7 @@ const treatmentList = document.getElementById("treatment-list");
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
 
 function renderEmpty(message) {
-  recordsBody.innerHTML = `<tr><td colspan="7" class="empty-row">${message}</td></tr>`;
+  recordsBody.innerHTML = `<tr><td colspan="9" class="empty-row">${message}</td></tr>`;
   treatmentList.innerHTML = `<p>Nema unesene historije tretmana.</p>`;
 }
 
@@ -132,6 +150,7 @@ function renderEmpty(message) {
       <td>${escapeHtml(record.status)}</td>
       <td>${escapeHtml(record.paymentStatus || "-")}</td>
       <td>${escapeHtml(record.shift || "-")}</td>
+      <td>${formatMoney(recordVisitCost(record), record.currency)}</td>
       <td>${formatMoney(record.amountDue, record.currency)}</td>
       <td>${escapeHtml(record.note || "-")}${Number(record.totalDiscount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust na ukupno: ${formatMoney(record.totalDiscount, record.currency)}</div>` : ""}</td>
     </tr>
