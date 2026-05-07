@@ -39,6 +39,11 @@ function formatMoney(amount, currency = "EUR") {
   return `${Number(amount || 0).toFixed(2)} ${currency}`;
 }
 
+function treatmentListForValue(treatments) {
+  if (!treatments) return [];
+  return Array.isArray(treatments) ? treatments : [treatments];
+}
+
 function formatDebtTotals(records) {
   const totals = records.reduce((acc, record) => {
     const currency = record.currency || "EUR";
@@ -128,15 +133,17 @@ function renderEmpty(message) {
       <td>${escapeHtml(record.paymentStatus || "-")}</td>
       <td>${escapeHtml(record.shift || "-")}</td>
       <td>${formatMoney(record.amountDue, record.currency)}</td>
-      <td>${escapeHtml(record.note || "-")}</td>
+      <td>${escapeHtml(record.note || "-")}${Number(record.totalDiscount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust na ukupno: ${formatMoney(record.totalDiscount, record.currency)}</div>` : ""}</td>
     </tr>
   `).join("");
 
   const treatmentEntries = [];
   patientRecords.forEach((record) => {
     if (record.treatments) {
-      Object.entries(record.treatments).forEach(([tooth, treatment]) => {
-        treatmentEntries.push({ tooth, ...treatment, date: record.lastVisit, procedure: record.procedure });
+      Object.entries(record.treatments).forEach(([tooth, treatments]) => {
+        treatmentListForValue(treatments).forEach(treatment => {
+          treatmentEntries.push({ tooth, ...treatment, date: record.lastVisit, procedure: record.procedure });
+        });
       });
     }
   });
@@ -147,7 +154,8 @@ function renderEmpty(message) {
       <div class="treatment-item">
         <div>
           <strong>Zub ${escapeHtml(item.tooth)}</strong> - ${escapeHtml(item.type)}
-          <span style="color: #5b6c7d;">(${escapeHtml(item.status)})</span>
+          ${Number(item.price || 0) > 0 ? `<div style="margin-top: 6px; font-weight: 700;">${formatMoney(item.price)}</div>` : ""}
+          ${Number(item.discount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${formatMoney(item.discount)}</div>` : ""}
           <div style="margin-top: 6px;">${escapeHtml(item.note || "-")}</div>
           <div style="margin-top: 6px; font-size: 0.9rem; color: #5b6c7d;">${formatDate(item.date)} | ${escapeHtml(item.procedure)}</div>
         </div>

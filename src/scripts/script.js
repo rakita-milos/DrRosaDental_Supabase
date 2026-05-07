@@ -32,6 +32,17 @@ function paymentIsDebt(record) {
   return Number(record.amountDue || 0) > 0 && ["dugovanje", "delimicno"].includes(payment);
 }
 
+function isToday(rawDate) {
+  if (!rawDate) return false;
+  const today = new Date();
+  const todayKey = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0")
+  ].join("-");
+  return String(rawDate).slice(0, 10) === todayKey;
+}
+
 function renderDueSummary(records) {
   const uniqueDebtors = new Set(records.filter(paymentIsDebt).map(record => record.patient)).size;
   const debtorsCountEl = document.getElementById("debtors-count");
@@ -75,8 +86,9 @@ function renderRecords(records) {
   if (!await requireAccess()) return;
   try {
     const records = await window.DrRosaApi.getRecords();
+    const todaysRecords = records.filter(record => isToday(record.lastVisit));
     renderDueSummary(records);
-    renderRecords(records);
+    renderRecords(todaysRecords);
   } catch (error) {
     renderRecords([]);
     console.error("Dashboard load error:", error);

@@ -35,15 +35,12 @@
       </section>
 
       <section class="list-section">
-        <div class="section-header">
+        <div class="section-header records-filter-header">
           <div>
-            <p class="eyebrow">Filter</p>
             <h2>Brza pretraga</h2>
           </div>
-          <div class="export-actions">
-            <button id="export-excel-btn" class="secondary-btn" type="button">Excel</button>
-            <button id="export-pdf-btn" class="secondary-btn" type="button">PDF</button>
-          </div>
+        </div>
+        <div class="records-filter-panel">
           <div class="filter-actions">
             <input id="search-input" type="search" placeholder="Traži pacijenta ili postupak" />
             <select id="status-filter">
@@ -73,6 +70,10 @@
               <option value="Delimično">Delimično</option>
               <option value="debtors">Dužnici</option>
             </select>
+          </div>
+          <div class="export-actions records-export-actions">
+            <button id="export-excel-btn" class="secondary-btn" type="button">Excel</button>
+            <button id="export-pdf-btn" class="secondary-btn" type="button">PDF</button>
           </div>
         </div>
 

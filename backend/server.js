@@ -132,7 +132,10 @@ function seedDatabase() {
 
 function applyMigrations() {
   ensureColumn('visit_records', 'shift', "TEXT NOT NULL DEFAULT 'Prva smena'");
+  ensureColumn('visit_records', 'total_discount', "REAL NOT NULL DEFAULT 0");
   ensureColumn('payments', 'currency', "TEXT NOT NULL DEFAULT 'EUR'");
+  ensureColumn('treatments', 'price', "REAL NOT NULL DEFAULT 0");
+  ensureColumn('treatments', 'discount', "REAL NOT NULL DEFAULT 0");
 }
 
 function ensureColumn(table, column, definition) {
@@ -198,7 +201,9 @@ function normalizePaymentStatus(value) {
 
 function normalizeCurrency(value) {
   const raw = String(value || '').toUpperCase();
-  return raw === 'RSD' || raw.includes('DIN') ? 'RSD' : 'EUR';
+  if (raw === 'RSD' || raw.includes('DIN')) return 'RSD';
+  if (raw === 'USD' || raw.includes('DOL')) return 'USD';
+  return 'EUR';
 }
 
 function normalizeShift(value) {
@@ -397,6 +402,7 @@ app.get('/api/records', authenticateToken, (_req, res) => {
         vr.procedure,
         vr.status,
         vr.shift,
+        vr.total_discount,
         p.id as patient_id,
         p.first_name,
         p.last_name,
@@ -414,7 +420,7 @@ app.get('/api/records', authenticateToken, (_req, res) => {
     `).all();
 
     const getTreatments = db.prepare(`
-      SELECT tooth_number, treatment_type, status, notes
+      SELECT tooth_number, treatment_type, status, notes, price, discount
       FROM treatments
       WHERE visit_record_id = ?
     `);
@@ -422,11 +428,14 @@ app.get('/api/records', authenticateToken, (_req, res) => {
     res.json(records.map(record => {
       const treatments = {};
       getTreatments.all(record.id).forEach(treatment => {
-        treatments[treatment.tooth_number] = {
+        if (!treatments[treatment.tooth_number]) treatments[treatment.tooth_number] = [];
+        treatments[treatment.tooth_number].push({
           type: treatment.treatment_type,
           status: treatment.status,
-          note: treatment.notes
-        };
+          note: treatment.notes,
+          price: Number(treatment.price || 0),
+          discount: Number(treatment.discount || 0)
+        });
       });
       return { ...record, treatments };
     }));
@@ -442,8 +451,8 @@ function insertRecordTransaction(record) {
   const patientId = positiveInteger(record.patient_id);
   const doctorId = positiveInteger(record.doctor_id);
   const visitResult = db.prepare(`
-    INSERT INTO visit_records (patient_id, doctor_id, visit_date, procedure, status, shift, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO visit_records (patient_id, doctor_id, visit_date, procedure, status, shift, total_discount, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     patientId,
     doctorId,
@@ -451,6 +460,7 @@ function insertRecordTransaction(record) {
     cleanText(record.procedure, { max: 255, required: true }),
     normalizeStatus(record.status),
     normalizeShift(record.shift),
+    Math.max(0, Number(record.total_discount || 0)),
     cleanText(record.notes, { max: 2000 })
   );
 
@@ -469,18 +479,23 @@ function insertRecordTransaction(record) {
 
   if (record.treatments && typeof record.treatments === 'object') {
     const insertTreatment = db.prepare(`
-      INSERT INTO treatments (visit_record_id, tooth_number, treatment_type, status, notes)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO treatments (visit_record_id, tooth_number, treatment_type, status, notes, price, discount)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
-    Object.entries(record.treatments).forEach(([toothNumber, treatment]) => {
-      insertTreatment.run(
-        visitId,
-        cleanText(toothNumber, { max: 10 }),
-        cleanText(treatment.type, { max: 255, required: true }),
-        normalizeStatus(treatment.status || 'Planirano'),
-        cleanText(treatment.note, { max: 1000 })
-      );
+    Object.entries(record.treatments).forEach(([toothNumber, treatments]) => {
+      const treatmentList = Array.isArray(treatments) ? treatments : [treatments];
+      treatmentList.forEach(treatment => {
+        insertTreatment.run(
+          visitId,
+          cleanText(toothNumber, { max: 10 }),
+          cleanText(treatment.type, { max: 255, required: true }),
+          normalizeStatus(treatment.status || 'Planirano'),
+          cleanText(treatment.note, { max: 1000 }),
+          Math.max(0, Number(treatment.price || 0)),
+          Math.max(0, Number(treatment.discount || 0))
+        );
+      });
     });
   }
 

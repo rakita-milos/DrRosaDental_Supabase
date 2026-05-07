@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS visit_records (
   procedure TEXT NOT NULL,
   status TEXT NOT NULL,
   shift TEXT NOT NULL DEFAULT 'Prva smena',
+  total_discount REAL NOT NULL DEFAULT 0,
   notes TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -61,6 +62,8 @@ CREATE TABLE IF NOT EXISTS treatments (
   treatment_type TEXT,
   status TEXT DEFAULT 'Planirano',
   notes TEXT,
+  price REAL NOT NULL DEFAULT 0,
+  discount REAL NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 

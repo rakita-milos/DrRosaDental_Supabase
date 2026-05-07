@@ -78,6 +78,7 @@
       amountDue: Number(row.amount_due ?? row.amountDue ?? 0),
       currency: row.currency || row.paymentCurrency || "EUR",
       shift: row.shift || "Prva smena",
+      totalDiscount: Number(row.total_discount ?? row.totalDiscount ?? 0),
       treatments: row.treatments || {}
     };
   }
@@ -167,6 +168,7 @@
         currency: record.currency,
         payment_status: record.paymentStatus,
         shift: record.shift,
+        total_discount: record.totalDiscount,
         treatments: record.treatments
       })
     });

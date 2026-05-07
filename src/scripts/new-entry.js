@@ -52,8 +52,23 @@ const inputs = {
 
 let patients = [];
 let doctors = [];
+let allRecords = [];
 let teethTreatments = {};
-let selectedTooth = null;
+let selectedTeeth = new Set();
+
+const TREATMENT_PRICES = {
+  "Kontrola": 30,
+  "Čišćenje": 50,
+  "Plomba": 60,
+  "Koren": 120,
+  "Krunica": 250,
+  "Most": 450,
+  "Implant": 600,
+  "Vađenje": 50,
+  "Ortodontija": 100,
+  "Bleaching": 150,
+  "Parodontologija": 90
+};
 
 const urlParams = new URLSearchParams(window.location.search);
 const patientParam = urlParams.get("patient");
@@ -80,7 +95,7 @@ function showAlert(message, type = "success") {
 function updatePreview() {
   previewElements.name.textContent = inputs.patient.value.trim() || "-";
   previewElements.visit.textContent = formatDate(inputs.lastVisit.value);
-  previewElements.procedure.textContent = inputs.procedure.value.trim() || "-";
+  previewElements.procedure.textContent = inputs.procedure.value.trim() || (hasToothTreatments() ? "Rad po zubima" : "-");
   previewElements.status.textContent = inputs.status.value;
   previewElements.paymentStatus.textContent = inputs.paymentStatus.value;
   previewElements.amountDue.textContent = Number(inputs.amountDue.value || 0).toFixed(2);
@@ -121,23 +136,149 @@ const selectedToothSpan = document.getElementById("selected-tooth");
 const closePanel = document.getElementById("close-panel");
 const saveTreatmentBtn = document.getElementById("save-treatment");
 const treatmentType = document.getElementById("treatment-type");
-const treatmentStatus = document.getElementById("treatment-status");
 const treatmentNote = document.getElementById("treatment-note");
+const treatmentDiscount = document.getElementById("treatment-discount");
+const treatmentPrice = document.getElementById("treatment-price");
+const treatmentTotalPrice = document.getElementById("treatment-total-price");
 const teethSummary = document.getElementById("teeth-summary");
+const totalDiscount = document.getElementById("total-discount");
+const toothNodes = document.querySelectorAll(".tooth-node");
+
+function formatMoney(amount) {
+  return `${Number(amount || 0).toFixed(2)} EUR`;
+}
+
+function selectedTeethList() {
+  return Array.from(selectedTeeth).sort((a, b) => Number(a) - Number(b));
+}
+
+function selectedTreatmentPrice() {
+  return TREATMENT_PRICES[treatmentType.value] || 0;
+}
+
+function treatmentListForTooth(tooth) {
+  const treatments = teethTreatments[tooth];
+  if (!treatments) return [];
+  return Array.isArray(treatments) ? treatments : [treatments];
+}
+
+function hasToothTreatments() {
+  return Object.values(teethTreatments).some(treatments => treatmentListForValue(treatments).length > 0);
+}
+
+function treatmentListForValue(treatments) {
+  if (!treatments) return [];
+  return Array.isArray(treatments) ? treatments : [treatments];
+}
+
+function currentTreatmentEntries() {
+  return Object.entries(teethTreatments)
+    .flatMap(([tooth, toothTreatments]) => treatmentListForValue(toothTreatments).map((treatment, index) => ({ tooth, treatment, index })));
+}
+
+function currentTreatmentTotal() {
+  return currentTreatmentEntries().reduce((total, item) => total + Number(item.treatment.price || 0), 0);
+}
+
+function currentTreatmentDiscountTotal() {
+  return currentTreatmentEntries().reduce((total, item) => total + Number(item.treatment.discount || 0), 0);
+}
+
+function currentGrossTotal() {
+  return currentTreatmentTotal();
+}
+
+function currentManualTotalDiscount() {
+  return Math.max(0, Number(totalDiscount.value || 0));
+}
+
+function currentFinalTotal() {
+  return Math.max(0, currentGrossTotal() - currentTreatmentDiscountTotal() - currentManualTotalDiscount());
+}
+
+function updateAmountDueLimit() {
+  const maxDue = currentFinalTotal();
+  if (maxDue > 0) {
+    inputs.amountDue.max = maxDue.toFixed(2);
+    if (Number(inputs.amountDue.value || 0) > maxDue) {
+      inputs.amountDue.value = maxDue.toFixed(2);
+    }
+    return;
+  }
+
+  inputs.amountDue.removeAttribute("max");
+}
+
+function currentTreatmentDescription() {
+  const groups = currentTreatmentEntries().reduce((acc, item) => {
+    if (!acc[item.treatment.type]) acc[item.treatment.type] = [];
+    acc[item.treatment.type].push(item.tooth);
+    return acc;
+  }, {});
+
+  return Object.entries(groups)
+    .map(([type, teeth]) => `${type} zub ${teeth.sort((a, b) => Number(a) - Number(b)).join(", ")}`)
+    .join("; ");
+}
+
+function updateTreatmentPricePreview() {
+  const price = selectedTreatmentPrice();
+  const discount = Math.min(price, Math.max(0, Number(treatmentDiscount.value || 0)));
+  const selectedCount = Math.max(1, selectedTeeth.size);
+  treatmentPrice.textContent = formatMoney(price);
+  treatmentTotalPrice.textContent = formatMoney((price - discount) * selectedCount);
+}
+
+function spreadToothMap() {
+  toothNodes.forEach(toothNode => {
+    const box = toothNode.getBBox();
+    const centerX = box.x + box.width / 2;
+    const centerY = box.y + box.height / 2;
+    const dx = (centerX - 380) * 0.30;
+    const dy = (centerY - 280) * 0.06;
+    toothNode.setAttribute("transform", `translate(${dx.toFixed(1)} ${dy.toFixed(1)})`);
+  });
+}
+
+function refreshSelectedTeethPanel() {
+  const teeth = selectedTeethList();
+  selectedToothSpan.textContent = teeth.length ? teeth.join(", ") : "-";
+  teethPanel.style.display = teeth.length ? "block" : "none";
+
+  if (teeth.length === 1) {
+    const current = treatmentListForTooth(teeth[0]).at(-1);
+    treatmentType.value = current?.type || treatmentType.value || "";
+    treatmentDiscount.value = current?.discount || "";
+    treatmentNote.value = current?.note || "";
+  } else if (teeth.length > 1) {
+    treatmentDiscount.value = "";
+    treatmentNote.value = "";
+  }
+
+  updateTreatmentPricePreview();
+}
+
+function toggleToothSelection(toothNode) {
+  const tooth = toothNode.dataset.tooth;
+  if (selectedTeeth.has(tooth)) {
+    selectedTeeth.delete(tooth);
+  } else {
+    selectedTeeth.add(tooth);
+  }
+  refreshSelectedTeethPanel();
+  updateToothHighlights();
+}
 
 function openToothPanel(toothNode) {
-  selectedTooth = toothNode.dataset.tooth;
-  selectedToothSpan.textContent = selectedTooth;
-  const current = teethTreatments[selectedTooth];
-  treatmentType.value = current?.type || "";
-  treatmentStatus.value = current?.status || "Planirano";
-  treatmentNote.value = current?.note || "";
+  const tooth = toothNode.dataset.tooth;
+  if (!selectedTeeth.has(tooth)) selectedTeeth.add(tooth);
+  refreshSelectedTeethPanel();
   teethPanel.style.display = "block";
 }
 
-document.querySelectorAll(".tooth-node").forEach(toothNode => {
+toothNodes.forEach(toothNode => {
   toothNode.addEventListener("click", () => {
-    openToothPanel(toothNode);
+    toggleToothSelection(toothNode);
   });
 
   toothNode.addEventListener("keydown", (event) => {
@@ -150,61 +291,182 @@ document.querySelectorAll(".tooth-node").forEach(toothNode => {
 
 closePanel.addEventListener("click", () => {
   teethPanel.style.display = "none";
-  selectedTooth = null;
+  selectedTeeth.clear();
+  updateToothHighlights();
 });
 
 saveTreatmentBtn.addEventListener("click", () => {
-  if (!selectedTooth || !treatmentType.value) {
-    alert("Odaberite vrstu tretmana!");
+  if (selectedTeeth.size === 0 || !treatmentType.value) {
+    alert("Odaberite zub i vrstu tretmana!");
     return;
   }
 
-  teethTreatments[selectedTooth] = {
-    type: treatmentType.value,
-    status: treatmentStatus.value,
-    note: treatmentNote.value
-  };
+  selectedTeethList().forEach(tooth => {
+    const price = selectedTreatmentPrice();
+    const discount = Math.min(price, Math.max(0, Number(treatmentDiscount.value || 0)));
+    if (!Array.isArray(teethTreatments[tooth])) teethTreatments[tooth] = treatmentListForTooth(tooth);
+    teethTreatments[tooth].push({
+      type: treatmentType.value,
+      note: treatmentNote.value,
+      price,
+      discount
+    });
+  });
 
-  document.querySelector(`.tooth-node[data-tooth="${selectedTooth}"]`).classList.add("treated");
   teethPanel.style.display = "none";
+  selectedTeeth.clear();
   updateTeethSummary();
-  selectedTooth = null;
+  updateToothHighlights();
+});
+
+treatmentType.addEventListener("change", updateTreatmentPricePreview);
+treatmentDiscount.addEventListener("input", updateTreatmentPricePreview);
+totalDiscount.addEventListener("input", () => {
+  updateTeethSummary();
+  updateAmountDueLimit();
+  updatePreview();
+});
+
+inputs.amountDue.addEventListener("input", () => {
+  updateAmountDueLimit();
+  updatePreview();
 });
 
 function updateTeethSummary() {
-  const treatments = Object.entries(teethTreatments);
-  if (treatments.length === 0) {
+  const treatments = currentTreatmentEntries();
+  const history = getPatientToothHistory(inputs.patient.value.trim());
+
+  if (treatments.length === 0 && history.length === 0) {
     teethSummary.innerHTML = "";
+    updateToothHighlights();
     return;
   }
 
-  teethSummary.innerHTML = `<h4>Tretmani zuba:</h4>${treatments.map(([tooth, treatment]) => `
+  const currentDescription = currentTreatmentDescription();
+  const currentHtml = treatments.length === 0 ? "" : `
+    <h4>Odabrano za ovaj unos:</h4>
+    <div class="treatment-total-card">
+      <span>Rađeno</span>
+      <strong>${escapeHtml(currentDescription)}</strong>
+      <span>Osnovna cena</span>
+      <strong>${formatMoney(currentGrossTotal())}</strong>
+      <span>Popust po zubima</span>
+      <strong>${formatMoney(currentTreatmentDiscountTotal())}</strong>
+      <span>Popust na ukupno</span>
+      <strong>${formatMoney(currentManualTotalDiscount())}</strong>
+      <span>Za naplatu</span>
+      <strong>${formatMoney(currentFinalTotal())}</strong>
+    </div>
+    ${treatments.map(({ tooth, treatment, index }) => `
     <div class="treatment-item">
       <div>
         <strong>Zub ${escapeHtml(tooth)}:</strong> ${escapeHtml(treatment.type)}
-        <span style="color: #5b6c7d;">(${escapeHtml(treatment.status)})</span>
+        <div style="margin-top: 6px; font-weight: 700;">${formatMoney(treatment.price)}</div>
+        ${Number(treatment.discount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${formatMoney(treatment.discount)}</div>` : ""}
+        ${treatment.note ? `<div style="margin-top: 6px;">${escapeHtml(treatment.note)}</div>` : ""}
       </div>
-      <button type="button" class="remove-treatment" data-tooth="${escapeHtml(tooth)}" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 18px;">x</button>
+      <button type="button" class="remove-treatment" data-tooth="${escapeHtml(tooth)}" data-index="${index}" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 18px;">x</button>
     </div>
   `).join("")}`;
+
+  const historyHtml = history.length === 0 ? "" : `
+    <h4>${treatments.length ? "Prethodna istorija:" : "Istorija rada po zubima:"}</h4>
+    ${history.map(item => `
+      <div class="treatment-item">
+        <div>
+          <strong>Zub ${escapeHtml(item.tooth)}:</strong> ${escapeHtml(item.type)}
+          <div style="margin-top: 6px; font-weight: 700;">${formatMoney(item.price)}</div>
+          ${Number(item.discount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${formatMoney(item.discount)}</div>` : ""}
+          ${item.note ? `<div style="margin-top: 6px;">${escapeHtml(item.note)}</div>` : ""}
+          <div style="margin-top: 6px; font-size: 0.9rem; color: #5b6c7d;">${formatDate(item.date)} | ${escapeHtml(item.procedure || "-")}</div>
+        </div>
+      </div>
+    `).join("")}`;
+
+  teethSummary.innerHTML = currentHtml + historyHtml;
+  updateAmountDueLimit();
 
   document.querySelectorAll(".remove-treatment").forEach(btn => {
     btn.addEventListener("click", () => {
       const tooth = btn.dataset.tooth;
-      delete teethTreatments[tooth];
-      document.querySelector(`.tooth-node[data-tooth="${tooth}"]`).classList.remove("treated");
+      const index = Number(btn.dataset.index);
+      const treatments = treatmentListForTooth(tooth);
+      treatments.splice(index, 1);
+      if (treatments.length) {
+        teethTreatments[tooth] = treatments;
+      } else {
+        delete teethTreatments[tooth];
+      }
       updateTeethSummary();
+      updatePreview();
     });
   });
+
+  updateToothHighlights();
 }
+
+function getPatientToothHistory(name) {
+  if (!name) return [];
+  return allRecords
+    .filter(record => record.patient === name && record.treatments)
+    .flatMap(record => Object.entries(record.treatments).flatMap(([tooth, treatments]) =>
+      treatmentListForValue(treatments).map(treatment => ({
+        tooth,
+        type: treatment.type,
+        note: treatment.note,
+        price: treatment.price,
+        discount: treatment.discount,
+        date: record.lastVisit,
+        procedure: record.procedure
+      }))
+    ))
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+}
+
+function updateToothHighlights() {
+  const history = getPatientToothHistory(inputs.patient.value.trim());
+  const highlightedTeeth = new Set([...Object.keys(teethTreatments), ...history.map(item => item.tooth)]);
+  const extractedTeeth = new Set(history.filter(item => item.type === "Vađenje").map(item => item.tooth));
+  const implantTeeth = new Set(history.filter(item => item.type === "Implant").map(item => item.tooth));
+
+  toothNodes.forEach(tooth => {
+    const toothNumber = tooth.dataset.tooth;
+    const currentTreatments = treatmentListForTooth(toothNumber);
+    tooth.classList.toggle("treated", highlightedTeeth.has(toothNumber));
+    tooth.classList.toggle("selected", selectedTeeth.has(toothNumber));
+    tooth.classList.toggle("extracted", extractedTeeth.has(toothNumber) || currentTreatments.some(treatment => treatment.type === "Vađenje"));
+    tooth.classList.toggle("implant", implantTeeth.has(toothNumber) || currentTreatments.some(treatment => treatment.type === "Implant"));
+  });
+}
+
+inputs.patient.addEventListener("change", () => {
+  updateTeethSummary();
+  updateToothHighlights();
+});
+
+inputs.patient.addEventListener("input", () => {
+  updateTeethSummary();
+  updateToothHighlights();
+});
 
 form.addEventListener("input", updatePreview);
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const patientNameValue = inputs.patient.value.trim();
-  if (!patientNameValue || !inputs.lastVisit.value || !inputs.procedure.value.trim()) {
-    showAlert("Ispunite sve obavezne podatke prije spremanja.", "error");
+  const procedureValue = inputs.procedure.value.trim();
+  const hasTreatments = hasToothTreatments();
+  const finalTotal = currentFinalTotal();
+  const amountDueValue = Number(inputs.amountDue.value || 0);
+  if (!patientNameValue || !inputs.lastVisit.value || (!procedureValue && !hasTreatments)) {
+    showAlert("Ispunite pacijenta, datum i odaberite postupak ili rad na mapi zuba.", "error");
+    return;
+  }
+
+  if (hasTreatments && amountDueValue > finalTotal) {
+    inputs.amountDue.value = finalTotal.toFixed(2);
+    updatePreview();
+    showAlert("Iznos duga ne može biti veći od ukupne cene svih radova.", "error");
     return;
   }
 
@@ -227,13 +489,14 @@ form.addEventListener("submit", async (event) => {
     doctorId: doctor?.id,
     patient: patientNameValue,
     lastVisit: inputs.lastVisit.value,
-    procedure: inputs.procedure.value.trim(),
+    procedure: procedureValue || currentTreatmentDescription() || "Rad po zubima",
     doctor: inputs.doctor.value,
     status: inputs.status.value,
     paymentStatus: inputs.paymentStatus.value,
-    amountDue: Number(inputs.amountDue.value || 0),
+    amountDue: amountDueValue,
     currency: inputs.currency.value,
     shift: inputs.shift.value,
+    totalDiscount: currentManualTotalDiscount(),
     note: inputs.note.value.trim() || "-",
     treatments: teethTreatments
   };
@@ -243,8 +506,10 @@ form.addEventListener("submit", async (event) => {
     showAlert("Unos je spremljen! Vratite se na dashboard da ga pregledate.");
     form.reset();
     teethTreatments = {};
-    document.querySelectorAll(".tooth-node").forEach(tooth => tooth.classList.remove("treated"));
+    totalDiscount.value = "";
+    allRecords = await window.DrRosaApi.getRecords();
     updateTeethSummary();
+    updateToothHighlights();
     updatePreview();
   } catch (error) {
     showAlert(error.message || "Unos nije sacuvan.", "error");
@@ -254,16 +519,21 @@ form.addEventListener("submit", async (event) => {
 (async function init() {
   if (!await requireAccess()) return;
   try {
-    const [loadedPatients, loadedDoctors] = await Promise.all([
+    const [loadedPatients, loadedDoctors, loadedRecords] = await Promise.all([
       window.DrRosaApi.getPatients(),
-      window.DrRosaApi.getDoctors()
+      window.DrRosaApi.getDoctors(),
+      window.DrRosaApi.getRecords()
     ]);
     patients = loadedPatients;
     doctors = loadedDoctors;
+    allRecords = loadedRecords;
     populatePatientList();
     populateDoctors();
   } catch (error) {
     console.error("Form setup error:", error);
   }
   updatePreview();
+  updateTeethSummary();
+  updateToothHighlights();
+  spreadToothMap();
 })();
