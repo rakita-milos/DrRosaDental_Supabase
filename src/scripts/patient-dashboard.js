@@ -62,6 +62,38 @@ function recordVisitCost(record) {
   return Number(record.amountDue || 0);
 }
 
+function groupTreatmentEntries(entries) {
+  const groups = new Map();
+  entries.forEach(item => {
+    const key = `${item.visitId}|${item.type || ""}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        date: item.date,
+        visitId: item.visitId,
+        procedure: item.procedure,
+        type: item.type,
+        currency: item.currency || "EUR",
+        teeth: [],
+        notes: [],
+        gross: 0,
+        discount: 0
+      });
+    }
+    const group = groups.get(key);
+    group.teeth.push(item.tooth);
+    if (item.note && item.note !== "-") group.notes.push(item.note);
+    group.gross += Number(item.price || 0);
+    group.discount += Number(item.discount || 0);
+  });
+
+  return Array.from(groups.values()).map(group => ({
+    ...group,
+    teeth: Array.from(new Set(group.teeth)).sort((a, b) => Number(a) - Number(b)),
+    notes: Array.from(new Set(group.notes)),
+    total: Math.max(0, group.gross - group.discount)
+  }));
+}
+
 function formatDebtTotals(records) {
   const totals = records.reduce((acc, record) => {
     const currency = record.currency || "EUR";
@@ -161,21 +193,29 @@ function renderEmpty(message) {
     if (record.treatments) {
       Object.entries(record.treatments).forEach(([tooth, treatments]) => {
         treatmentListForValue(treatments).forEach(treatment => {
-          treatmentEntries.push({ tooth, ...treatment, date: record.lastVisit, procedure: record.procedure });
+          treatmentEntries.push({
+            tooth,
+            ...treatment,
+            date: record.lastVisit,
+            visitId: record.id || `${record.lastVisit}-${record.procedure}`,
+            procedure: record.procedure,
+            currency: record.currency
+          });
         });
       });
     }
   });
 
+  const treatmentGroups = groupTreatmentEntries(treatmentEntries);
   treatmentList.innerHTML = treatmentEntries.length === 0
     ? `<p>Nema unesenih tretmana po zubima.</p>`
-    : treatmentEntries.map(item => `
+    : treatmentGroups.map(item => `
       <div class="treatment-item">
         <div>
-          <strong>Zub ${escapeHtml(item.tooth)}</strong> - ${escapeHtml(item.type)}
-          ${Number(item.price || 0) > 0 ? `<div style="margin-top: 6px; font-weight: 700;">${formatMoney(item.price)}</div>` : ""}
-          ${Number(item.discount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${formatMoney(item.discount)}</div>` : ""}
-          <div style="margin-top: 6px;">${escapeHtml(item.note || "-")}</div>
+          <strong>Zubi ${escapeHtml(item.teeth.join(", "))}</strong> - ${escapeHtml(item.type)}
+          <div style="margin-top: 6px; font-weight: 700;">Ukupno: ${formatMoney(item.total, item.currency)}</div>
+          ${Number(item.discount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${formatMoney(item.discount, item.currency)}</div>` : ""}
+          <div style="margin-top: 6px;">${escapeHtml(item.notes.join("; ") || "-")}</div>
           <div style="margin-top: 6px; font-size: 0.9rem; color: #5b6c7d;">${formatDate(item.date)} | ${escapeHtml(item.procedure)}</div>
         </div>
       </div>
