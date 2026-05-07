@@ -1273,24 +1273,36 @@ td:nth-child(5) {
 .excel-sheet-wrap {
   overflow: auto;
   max-height: 68vh;
-  border: 1px solid #c7d3df;
-  border-radius: 12px;
+  border: 1px solid #d7e0eb;
+  border-radius: 16px;
   background: white;
 }
 
 .excel-sheet-table {
   min-width: 980px;
-  width: max-content;
-  border-collapse: collapse;
-  font-size: 0.86rem;
-  line-height: 1.25;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.excel-sheet-table caption {
+  caption-side: top;
+  padding: 16px 18px;
+  color: #1b3c75;
+  font-size: 1.05rem;
+  font-weight: 900;
+  text-align: left;
+  background: #f8fbff;
+  border-bottom: 1px solid #d7e0eb;
 }
 
 .excel-sheet-table th,
 .excel-sheet-table td {
   min-width: 76px;
-  padding: 7px 8px;
-  border: 1px solid #9fb2c4;
+  padding: 11px 12px;
+  border-bottom: 1px solid #e8eef5;
   text-align: right;
   white-space: nowrap;
 }
@@ -1299,42 +1311,31 @@ td:nth-child(5) {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: #eaf2f8;
-  color: #17212b;
+  background: #eef6fb;
+  color: #243145;
   font-size: 0.78rem;
   font-weight: 900;
+  text-transform: uppercase;
   text-align: center;
 }
 
-.excel-sheet-table .excel-month-title {
-  background: #1b3c75;
-  color: white;
-  font-size: 1rem;
-  text-align: left;
-}
-
-.excel-sheet-table .excel-main-title {
-  background: #cfe7fb;
-  color: #1b3c75;
-}
-
 .excel-sheet-table td:first-child,
-.excel-sheet-table th:first-child,
-.excel-sheet-table td:nth-child(2),
-.excel-sheet-table th:nth-child(2) {
+.excel-sheet-table th:first-child {
   position: sticky;
   left: 0;
   z-index: 1;
   background: #f8fbff;
+  text-align: left;
+  font-weight: 800;
 }
 
-.excel-sheet-table td:nth-child(2),
-.excel-sheet-table th:nth-child(2) {
-  left: 76px;
+.excel-sheet-table th:first-child {
+  z-index: 3;
+  background: #eef6fb;
 }
 
 .excel-sheet-table .excel-day {
-  text-align: center;
+  text-align: left;
   font-weight: 800;
 }
 
