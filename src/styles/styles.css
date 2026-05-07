@@ -341,6 +341,49 @@ main {
   line-height: 1.1;
 }
 
+.patient-hero {
+  grid-template-columns: minmax(280px, 1fr) minmax(360px, 460px);
+  align-items: center;
+  padding: 24px 28px;
+}
+
+.patient-hero h2 {
+  font-size: clamp(1.8rem, 2.2vw, 2.35rem);
+  margin-bottom: 10px;
+}
+
+.patient-hero p {
+  margin-bottom: 18px;
+}
+
+.patient-hero .hero-actions {
+  margin-top: 18px;
+}
+
+.patient-hero .hero-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.patient-hero .hero-stats-card {
+  min-height: 78px;
+  padding: 12px 14px;
+  border: 1px solid #dfe8f1;
+  border-radius: 14px;
+}
+
+.patient-hero .hero-stats-card .eyebrow {
+  margin-bottom: 5px;
+  font-size: 0.7rem;
+  line-height: 1.2;
+}
+
+.patient-hero .hero-stats-card span {
+  font-size: 1.25rem;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1352,6 +1395,10 @@ td:nth-child(5) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .patient-hero {
+    grid-template-columns: 1fr;
+  }
+
   .cards-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1369,6 +1416,14 @@ td:nth-child(5) {
   }
 
   .all-records-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .patient-hero {
+    padding: 20px;
+  }
+
+  .patient-hero .hero-stats {
     grid-template-columns: 1fr;
   }
 
