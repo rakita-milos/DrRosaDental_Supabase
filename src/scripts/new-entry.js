@@ -150,6 +150,7 @@ const treatmentPrice = document.getElementById("treatment-price");
 const treatmentTotalPrice = document.getElementById("treatment-total-price");
 const teethSummary = document.getElementById("teeth-summary");
 const totalDiscount = document.getElementById("total-discount");
+const totalDiscountPanel = document.getElementById("total-discount-panel");
 const toothNodes = document.querySelectorAll(".tooth-node");
 
 function formatMoney(amount) {
@@ -362,6 +363,11 @@ inputs.procedure.addEventListener("change", () => {
 function updateTeethSummary() {
   const treatments = currentTreatmentEntries();
   const history = getPatientToothHistory(inputs.patient.value.trim());
+  const hasCurrentTreatments = treatments.length > 0;
+  totalDiscountPanel.style.display = hasCurrentTreatments ? "" : "none";
+  if (!hasCurrentTreatments && totalDiscount.value) {
+    totalDiscount.value = "";
+  }
 
   if (treatments.length === 0 && history.length === 0) {
     teethSummary.innerHTML = "";
