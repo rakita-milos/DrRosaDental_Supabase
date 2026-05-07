@@ -327,6 +327,7 @@ function recordTreatmentEntries(record) {
         entries.push({
           tooth,
           type: treatment.type || record.procedure,
+          activity: treatment.activity || procedureCatalog.findActivityForProcedure(treatment.type || record.procedure),
           amount: Math.max(0, Number(treatment.price || 0) - Number(treatment.discount || 0))
         });
       });
@@ -334,7 +335,12 @@ function recordTreatmentEntries(record) {
   }
 
   if (entries.length === 0) {
-    entries.push({ tooth: "", type: record.procedure, amount: Number(record.amountDue || 0) });
+    entries.push({
+      tooth: "",
+      type: record.procedure,
+      activity: procedureCatalog.findActivityForProcedure(record.procedure),
+      amount: Number(record.amountDue || 0)
+    });
   }
 
   return entries;
@@ -362,6 +368,10 @@ function matchesCategory(text, category) {
 
 function categoryForEntry(sheet, entry) {
   const categories = EXCEL_CATEGORIES[sheet] || [];
+  if (["Hirurgija", "Protetika", "Ortodoncija"].includes(sheet)) {
+    const activity = entry.activity || procedureCatalog.findActivityForProcedure(entry.type);
+    if (activity && activity !== sheet) return null;
+  }
   return categories.find(category => matchesCategory(entry.type, category)) || (categories.includes("Ostalo") ? "Ostalo" : null);
 }
 
@@ -459,29 +469,25 @@ function aggregateCategorySheet(sheet, monthIndex, year) {
 function renderCategorySheet(sheet, monthIndex, year) {
   const categories = EXCEL_CATEGORIES[sheet] || [];
   const rows = aggregateCategorySheet(sheet, monthIndex, year);
-  const headers = categories.map(category => `<th>${escapeHtml(category)} Kol.</th><th>${escapeHtml(category)} Cena</th>`).join("");
-  const bodyRows = rows.map(row => {
-    let rowTotal = 0;
-    const categoryCells = categories.map(category => {
-      const data = row.categories[category];
-      rowTotal += data.amount;
-      return `${cell(data.count || "")}${cell(data.amount ? formatNumber(data.amount) : "")}`;
-    }).join("");
-    return `<tr>${cell(row.day, "excel-day")}${categoryCells}${cell(formatNumber(rowTotal), "excel-total")}</tr>`;
-  }).join("");
+  const bodyItems = rows.flatMap(row => categories
+    .map(category => ({ day: row.day, category, ...row.categories[category] }))
+    .filter(item => item.count > 0 || item.amount > 0));
+  const bodyRows = bodyItems.length
+    ? bodyItems.map(item => `<tr>${cell(item.day, "excel-day")}${cell(item.category)}${cell(item.count)}${cell(formatNumber(item.amount), "excel-total")}</tr>`).join("")
+    : `<tr><td colspan="4" class="empty-row">Nema podataka za izabrani mesec i godinu.</td></tr>`;
   const sums = Object.fromEntries(categories.map(category => [category, { count: 0, amount: 0 }]));
   rows.forEach(row => categories.forEach(category => {
     sums[category].count += row.categories[category].count;
     sums[category].amount += row.categories[category].amount;
   }));
+  const totalCount = categories.reduce((sum, category) => sum + sums[category].count, 0);
   const grandTotal = categories.reduce((sum, category) => sum + sums[category].amount, 0);
-  const sumRow = categories.map(category => `${cell(sums[category].count || "")}${cell(sums[category].amount ? formatNumber(sums[category].amount) : "")}`).join("");
   return `
     <caption>${escapeHtml(sheet)} - ${MONTHS[monthIndex]} ${year}</caption>
     <thead>
-      <tr><th>Dan</th>${headers}<th>Ukupno</th></tr>
+      <tr><th>Dan</th><th>Stavka</th><th>Kolicina</th><th>Cena</th></tr>
     </thead>
-    <tbody>${bodyRows}<tr class="excel-sum-row">${cell("Ukupno:")}${sumRow}${cell(formatNumber(grandTotal))}</tr></tbody>
+    <tbody>${bodyRows}<tr class="excel-sum-row">${cell("Ukupno:")}${cell("")}${cell(totalCount)}${cell(formatNumber(grandTotal))}</tr></tbody>
   `;
 }
 
