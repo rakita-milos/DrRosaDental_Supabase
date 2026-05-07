@@ -617,7 +617,7 @@ app.get('/api/director/reports/doctors', authenticateToken, requireDirector, (_r
   try {
     const totalVisits = db.prepare('SELECT COUNT(*) as count FROM visit_records').get().count || 0;
     const rows = db.prepare(`
-      SELECT d.id, d.name, COUNT(vr.id) as visit_count
+      SELECT d.id, d.name, COUNT(vr.id) as visit_count, COUNT(DISTINCT vr.patient_id) as patient_count
       FROM doctors d
       LEFT JOIN visit_records vr ON d.id = vr.doctor_id
       GROUP BY d.id, d.name
@@ -627,6 +627,7 @@ app.get('/api/director/reports/doctors', authenticateToken, requireDirector, (_r
     res.json(rows.map(row => ({
       doctor: row.name,
       visits: Number(row.visit_count || 0),
+      patients: Number(row.patient_count || 0),
       percentage: totalVisits ? Number(((row.visit_count / totalVisits) * 100).toFixed(1)) : 0
     })));
   } catch (error) {

@@ -228,13 +228,31 @@ async function loadPatientsReport() {
 
 async function loadDoctorsReport() {
   const apiReport = await getReport("doctors");
-  const rows = apiReport || Object.entries(cachedRecords.reduce((acc, record) => {
-    acc[record.doctor] = (acc[record.doctor] || 0) + 1;
+  const localRows = Object.values(cachedRecords.reduce((acc, record) => {
+    const doctor = record.doctor || "-";
+    if (!acc[doctor]) acc[doctor] = { doctor, visits: 0, patients: new Set() };
+    acc[doctor].visits += 1;
+    if (record.patient) acc[doctor].patients.add(record.patient);
     return acc;
-  }, {})).map(([doctor, visits]) => ({ doctor, visits, percentage: cachedRecords.length ? (visits / cachedRecords.length) * 100 : 0 }));
+  }, {})).map(row => ({
+    doctor: row.doctor,
+    visits: row.visits,
+    patients: row.patients.size,
+    percentage: cachedRecords.length ? (row.visits / cachedRecords.length) * 100 : 0
+  }));
+
+  const rows = (apiReport || localRows).map(row => {
+    const local = localRows.find(item => item.doctor === row.doctor);
+    return {
+      doctor: row.doctor,
+      visits: Number(row.visits || local?.visits || 0),
+      patients: Number(row.patients ?? row.patientCount ?? row.patient_count ?? local?.patients ?? 0),
+      percentage: Number(row.percentage ?? local?.percentage ?? 0)
+    };
+  });
 
   document.getElementById("doctors-table").innerHTML = rows.map(row => `
-    <tr><td>${escapeHtml(row.doctor)}</td><td>${row.visits}</td><td>-</td><td>${Number(row.percentage || 0).toFixed(1)}%</td></tr>
+    <tr><td>${escapeHtml(row.doctor)}</td><td>${row.visits}</td><td>${row.patients}</td><td>${Number(row.percentage || 0).toFixed(1)}%</td></tr>
   `).join("");
 
   currentReportExport = {
@@ -243,7 +261,7 @@ async function loadDoctorsReport() {
     rows: rows.map(row => [
       row.doctor,
       row.visits,
-      "-",
+      row.patients,
       `${Number(row.percentage || 0).toFixed(1)}%`
     ])
   };
