@@ -20,6 +20,13 @@ button {
   font: inherit;
 }
 
+button,
+a.primary-btn,
+a.secondary-btn,
+a.danger-btn {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .app-shell {
   max-width: 1280px;
   margin: 0 auto;
@@ -222,6 +229,147 @@ h1 {
 .back-to-reports:focus-visible {
   outline: 3px solid rgba(24, 145, 240, 0.22);
   outline-offset: 3px;
+}
+
+.primary-btn,
+.secondary-btn,
+.danger-btn,
+.login-btn,
+.back-to-reports,
+.export-actions button,
+.topbar nav a,
+.topbar nav button,
+.topbar-actions a,
+.topbar-actions button,
+.topbar .primary-btn,
+.topbar .secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 10px 22px rgba(15, 44, 84, 0.08);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.primary-btn,
+.login-btn,
+.topbar .primary-btn {
+  border-color: #1891f0;
+  background: linear-gradient(135deg, #63b73a 0%, #1891f0 100%);
+  color: white;
+}
+
+.secondary-btn,
+.back-to-reports,
+.export-actions button,
+.topbar nav a,
+.topbar nav button,
+.topbar-actions a,
+.topbar-actions button,
+.topbar .secondary-btn {
+  border-color: #d7e0eb;
+  background: white;
+  color: #1f2b3a;
+}
+
+.danger-btn {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #b4232f;
+}
+
+.primary-btn:hover,
+.secondary-btn:hover,
+.danger-btn:hover,
+.login-btn:hover,
+.back-to-reports:hover,
+.export-actions button:hover,
+.topbar nav a:hover,
+.topbar nav button:hover,
+.topbar-actions a:hover,
+.topbar-actions button:hover,
+.topbar .primary-btn:hover,
+.topbar .secondary-btn:hover,
+.primary-btn:focus-visible,
+.secondary-btn:focus-visible,
+.danger-btn:focus-visible,
+.login-btn:focus-visible,
+.back-to-reports:focus-visible,
+.export-actions button:focus-visible,
+.topbar nav a:focus-visible,
+.topbar nav button:focus-visible,
+.topbar-actions a:focus-visible,
+.topbar-actions button:focus-visible,
+.topbar .primary-btn:focus-visible,
+.topbar .secondary-btn:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(15, 44, 84, 0.16);
+}
+
+.primary-btn:hover,
+.primary-btn:focus-visible,
+.login-btn:hover,
+.login-btn:focus-visible,
+.topbar .primary-btn:hover,
+.topbar .primary-btn:focus-visible {
+  border-color: #1178c8;
+  background: linear-gradient(135deg, #58a834 0%, #1178c8 100%);
+  color: white;
+}
+
+.secondary-btn:hover,
+.secondary-btn:focus-visible,
+.back-to-reports:hover,
+.back-to-reports:focus-visible,
+.export-actions button:hover,
+.export-actions button:focus-visible,
+.topbar nav a:hover,
+.topbar nav button:hover,
+.topbar-actions a:hover,
+.topbar-actions button:hover,
+.topbar .secondary-btn:hover,
+.topbar .secondary-btn:focus-visible {
+  border-color: #1891f0;
+  background: #f0f8ff;
+  color: #1b3c75;
+}
+
+.danger-btn:hover,
+.danger-btn:focus-visible {
+  border-color: #dc3545;
+  background: #dc3545;
+  color: white;
+}
+
+.primary-btn:focus-visible,
+.secondary-btn:focus-visible,
+.danger-btn:focus-visible,
+.login-btn:focus-visible,
+.back-to-reports:focus-visible,
+.export-actions button:focus-visible,
+.topbar nav a:focus-visible,
+.topbar nav button:focus-visible,
+.topbar-actions a:focus-visible,
+.topbar-actions button:focus-visible,
+.topbar .primary-btn:focus-visible,
+.topbar .secondary-btn:focus-visible {
+  outline: 3px solid rgba(24, 145, 240, 0.22);
+  outline-offset: 3px;
+}
+
+.back-to-reports {
+  width: fit-content;
+  margin-bottom: 18px;
 }
 
 .gradient-red {
@@ -1080,6 +1228,13 @@ td:nth-child(5) {
   color: #1b3c75;
 }
 
+.remove-treatment {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 1rem;
+}
+
 .panel-content {
   display: grid;
   gap: 16px;
@@ -1204,6 +1359,98 @@ td:nth-child(5) {
   align-items: stretch;
 }
 
+.admin-codebook-layout {
+  display: grid;
+  gap: 22px;
+}
+
+.codebook-card {
+  min-height: 190px;
+}
+
+.admin-codebook-form {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #d7e0eb;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.shift-fields,
+.currency-fields {
+  display: none;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #d7e0eb;
+  border-radius: 12px;
+  background: white;
+}
+
+.shift-fields.active,
+.currency-fields.active {
+  display: grid;
+}
+
+.codebook-group-field.hidden,
+.codebook-price-field.hidden,
+#codebook-value-field.hidden {
+  display: none;
+}
+
+.weekday-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.weekday-picker legend {
+  width: 100%;
+  margin-bottom: 4px;
+  color: #243145;
+  font-weight: 800;
+}
+
+.weekday-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #d7e0eb;
+  border-radius: 10px;
+  background: #f8fbff;
+  color: #243145;
+  font-weight: 800;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #243145;
+  font-weight: 800;
+}
+
+.checkbox-row input {
+  width: 18px;
+  height: 18px;
+}
+
+.form-alert {
+  min-height: 22px;
+  margin: 0;
+  color: #1b3c75;
+  font-weight: 800;
+}
+
+.form-alert.error {
+  color: #b4232f;
+}
+
 .records-export-actions {
   justify-content: flex-end;
   padding-top: 2px;
@@ -1230,20 +1477,35 @@ td:nth-child(5) {
 }
 
 .excel-report-tabs button {
-  border: 1px solid #c9d7e5;
+  min-height: 40px;
+  border: 1px solid #d7e0eb;
   border-radius: 10px;
   background: #fff;
   color: #1f2b3a;
   padding: 10px 14px;
   font-weight: 800;
   cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15, 44, 84, 0.07);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
 }
 
 .excel-report-tabs button.active,
-.excel-report-tabs button:hover {
+.excel-report-tabs button:hover,
+.excel-report-tabs button:focus-visible {
   border-color: #1a8ee4;
-  background: #eaf5ff;
+  background: #f0f8ff;
   color: #1b3c75;
+  box-shadow: 0 12px 24px rgba(15, 44, 84, 0.12);
+}
+
+.excel-report-tabs button:hover,
+.excel-report-tabs button:focus-visible {
+  transform: translateY(-2px);
+}
+
+.excel-report-tabs button:focus-visible {
+  outline: 3px solid rgba(24, 145, 240, 0.22);
+  outline-offset: 3px;
 }
 
 .excel-report-toolbar label {
@@ -1375,8 +1637,8 @@ td:nth-child(5) {
 }
 
 .export-actions .secondary-btn {
-  padding: 10px 18px;
-  font-weight: 700;
+  padding: 12px 20px;
+  font-weight: 800;
 }
 
 .filter-actions input,

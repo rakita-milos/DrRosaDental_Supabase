@@ -1,6 +1,7 @@
 let cachedRecords = [];
 let currentReportExport = { title: "Direktor izvjestaj", headers: [], rows: [] };
 let activeExcelSheet = "PAZARI";
+let codebookItems = [];
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
 const procedureCatalog = window.DrRosaProcedureCatalog;
 const MONTHS = ["Januar", "Februar", "Mart", "April", "Maj", "Jun", "Jul", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"];
@@ -11,6 +12,32 @@ const EXCEL_CATEGORIES = {
   Ortodoncija: ["Mobilna", "Fiksna", "Pozicioner", "Monoblok", "Ostalo"],
   Troškovi: ["Doprinosi", "Anastasija plata", "dr Ljilja zarada", "dr Mara zarada", "dr Dunja zarada", "dr Nikola zarada", "dr Jovana", "Nina plata", "Medical", "Dental", "Hirurgija", "Parodontologija", "Ortodoncija", "Služba"]
 };
+const CODEBOOK_LABELS = {
+  activity: "Delatnosti",
+  procedure: "Postupci",
+  visit_status: "Statusi posete",
+  payment_status: "Statusi placanja",
+  currency: "Valute",
+  shift: "Smene"
+};
+const CODEBOOK_DESCRIPTIONS = {
+  activity: "Grupe stomatoloskih usluga koje se koriste za postupke.",
+  procedure: "Pojedinacni postupci i cene po delatnostima.",
+  visit_status: "Status pregleda ili posete pacijenta.",
+  payment_status: "Status naplate za posete i dugovanja.",
+  currency: "Valute dostupne pri unosu placanja.",
+  shift: "Smene rada ordinacije sa vremenom i danima."
+};
+const WEEKDAY_LABELS = {
+  monday: "Ponedeljak",
+  tuesday: "Utorak",
+  wednesday: "Sreda",
+  thursday: "Četvrtak",
+  friday: "Petak",
+  saturday: "Subota",
+  sunday: "Nedelja"
+};
+let activeCodebookType = "activity";
 
 async function checkDirectorAccess() {
   const session = await window.DrRosaApi.verifySession("director");
@@ -52,6 +79,13 @@ function showReports() {
   document.querySelectorAll(".report-content").forEach(el => el.classList.remove("active"));
 }
 
+function showCodebookList() {
+  document.querySelectorAll(".report-content").forEach(el => el.classList.remove("active"));
+  document.getElementById("reports-grid").style.display = "none";
+  document.getElementById("admin-codebooks-report").classList.add("active");
+  renderCodebookGrid();
+}
+
 async function showReport(reportId) {
   document.getElementById("reports-grid").style.display = "none";
   document.querySelectorAll(".report-content").forEach(el => el.classList.remove("active"));
@@ -62,6 +96,7 @@ async function showReport(reportId) {
   if (reportId === "doctors-report") await loadDoctorsReport();
   if (reportId === "procedures-report") await loadProceduresReport();
   if (reportId === "excel-report") loadExcelReport();
+  if (reportId === "admin-codebooks-report") await loadCodebooksAdmin();
 }
 
 window.showReports = showReports;
@@ -75,6 +110,8 @@ function initializeReports() {
     { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosjecna naplata" },
     { id: "excel-report", tone: "blue", icon: "TAB", title: "Izvještaji po tabovima", description: "PAZARI, hirurgija, protetika, ortodoncija, troškovi i ukupno" }
   ];
+
+  reports.push({ id: "admin-codebooks-report", tone: "teal", icon: "ADM", title: "Admin sifarnici", description: "Delatnosti, postupci, statusi, valute i smene" });
 
   document.getElementById("reports-grid").innerHTML = reports.map(report => `
     <button class="report-card report-card-${report.tone}" type="button" data-report-id="${report.id}">
@@ -95,10 +132,13 @@ function initializeReportNavigation() {
   document.querySelectorAll(".back-to-reports").forEach(button => {
     button.addEventListener("click", showReports);
   });
+
+  document.querySelector(".back-to-codebooks")?.addEventListener("click", showCodebookList);
 }
 
 function initializeExportActions() {
   document.querySelectorAll(".report-content > .section-header").forEach(header => {
+    if (header.closest("#admin-codebooks-report")) return;
     if (header.querySelector(".export-actions")) return;
     const actions = document.createElement("div");
     actions.className = "export-actions";
@@ -583,11 +623,356 @@ function loadExcelReport() {
   renderExcelSheet();
 }
 
+function codebookFormElements() {
+  return {
+    form: document.getElementById("codebook-form"),
+    id: document.getElementById("codebook-id"),
+    type: document.getElementById("codebook-type"),
+    value: document.getElementById("codebook-value"),
+    label: document.getElementById("codebook-label"),
+    group: document.getElementById("codebook-group"),
+    price: document.getElementById("codebook-price"),
+    sort: document.getElementById("codebook-sort"),
+    active: document.getElementById("codebook-active"),
+    message: document.getElementById("codebook-message"),
+    table: document.getElementById("codebook-table"),
+    reset: document.getElementById("codebook-reset"),
+    groups: document.getElementById("codebook-groups"),
+    grid: document.getElementById("codebook-grid"),
+    title: document.getElementById("codebook-editor-title"),
+    shiftFields: document.getElementById("shift-fields"),
+    shiftTimeFrom: document.getElementById("shift-time-from"),
+    shiftTimeTo: document.getElementById("shift-time-to"),
+    shiftDays: Array.from(document.querySelectorAll('input[name="shift-days"]')),
+    currencyFields: document.getElementById("currency-fields"),
+    currencyRate: document.getElementById("currency-rate"),
+    currencyRateDate: document.getElementById("currency-rate-date"),
+    fetchCurrencyRate: document.getElementById("fetch-currency-rate"),
+    groupField: document.querySelector(".codebook-group-field"),
+    priceField: document.querySelector(".codebook-price-field"),
+    valueField: document.getElementById("codebook-value-field"),
+    detailHeader: document.getElementById("codebook-detail-header")
+  };
+}
+
+function codebookItemsFor(type) {
+  return codebookItems.filter(item => item.type === type);
+}
+
+function renderCodebookGrid() {
+  const { grid } = codebookFormElements();
+  if (!grid) return;
+  grid.innerHTML = Object.entries(CODEBOOK_LABELS).map(([type, label]) => {
+    const count = codebookItemsFor(type).length;
+    return `
+      <button class="report-card report-card-teal codebook-card" type="button" data-codebook-type="${type}">
+        <span class="report-icon">${count}</span>
+        <span class="report-title">${escapeHtml(label)}</span>
+        <span class="report-description">${escapeHtml(CODEBOOK_DESCRIPTIONS[type] || "")}</span>
+      </button>
+    `;
+  }).join("");
+}
+
+function openCodebookEditor(type) {
+  activeCodebookType = type;
+  const elements = codebookFormElements();
+  elements.type.value = type;
+  elements.title.textContent = CODEBOOK_LABELS[type] || "Sifarnik";
+  document.querySelectorAll(".report-content").forEach(el => el.classList.remove("active"));
+  document.getElementById("reports-grid").style.display = "none";
+  document.getElementById("admin-codebook-editor").classList.add("active");
+  resetCodebookForm();
+  updateShiftFieldsVisibility();
+  renderCodebooksAdmin();
+}
+
+function updateShiftFieldsVisibility() {
+  const elements = codebookFormElements();
+  const hideGroupField = ["activity", "currency", "visit_status", "payment_status", "shift"].includes(activeCodebookType);
+  const hidePriceField = ["activity", "currency", "visit_status", "payment_status", "shift"].includes(activeCodebookType);
+  const hideDetailColumn = ["activity", "visit_status", "payment_status"].includes(activeCodebookType);
+  elements.shiftFields?.classList.toggle("active", activeCodebookType === "shift");
+  elements.currencyFields?.classList.toggle("active", activeCodebookType === "currency");
+  elements.groupField?.classList.toggle("hidden", hideGroupField);
+  elements.priceField?.classList.toggle("hidden", hidePriceField);
+  elements.valueField?.classList.toggle("hidden", activeCodebookType !== "currency");
+  if (elements.detailHeader) {
+    elements.detailHeader.hidden = hideDetailColumn;
+    elements.detailHeader.textContent = activeCodebookType === "procedure"
+      ? "Delatnost"
+      : activeCodebookType === "shift"
+        ? "Radno vreme / dani"
+        : activeCodebookType === "currency"
+          ? "Kurs"
+          : "Detalji";
+  }
+}
+
+function slugifyCodebookValue(label) {
+  return String(label || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "dj")
+    .replace(/Đ/g, "Dj")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 120);
+}
+
+function clearShiftFields() {
+  const elements = codebookFormElements();
+  elements.shiftTimeFrom.value = "";
+  elements.shiftTimeTo.value = "";
+  elements.shiftDays.forEach(day => {
+    day.checked = false;
+  });
+  elements.currencyRate.value = "";
+  elements.currencyRateDate.value = "";
+}
+
+function setShiftFields(metadata = {}) {
+  const elements = codebookFormElements();
+  const selectedDays = new Set(Array.isArray(metadata.days) ? metadata.days : []);
+  elements.shiftTimeFrom.value = metadata.timeFrom || "";
+  elements.shiftTimeTo.value = metadata.timeTo || "";
+  elements.shiftDays.forEach(day => {
+    day.checked = selectedDays.has(day.value);
+  });
+  elements.currencyRate.value = metadata.exchangeRate || "";
+  elements.currencyRateDate.value = metadata.rateDate || "";
+}
+
+function readShiftMetadata() {
+  const elements = codebookFormElements();
+  return {
+    timeFrom: elements.shiftTimeFrom.value || null,
+    timeTo: elements.shiftTimeTo.value || null,
+    days: elements.shiftDays.filter(day => day.checked).map(day => day.value)
+  };
+}
+
+function readCurrencyMetadata() {
+  const elements = codebookFormElements();
+  return {
+    exchangeRate: elements.currencyRate.value ? Number(elements.currencyRate.value) : null,
+    rateDate: elements.currencyRateDate.value || null,
+    rateBase: "EUR",
+    rateSource: elements.currencyRate.value ? "manual" : null
+  };
+}
+
+function formatShiftMetadata(item) {
+  const metadata = item.metadata || {};
+  const time = metadata.timeFrom && metadata.timeTo ? `${metadata.timeFrom}-${metadata.timeTo}` : "-";
+  const days = Array.isArray(metadata.days) && metadata.days.length
+    ? metadata.days.map(day => WEEKDAY_LABELS[day] || day).join(", ")
+    : "-";
+  return `${time}; ${days}`;
+}
+
+function formatCurrencyMetadata(item) {
+  const metadata = item.metadata || {};
+  if (!metadata.exchangeRate) return "-";
+  const date = metadata.rateDate ? ` (${metadata.rateDate})` : "";
+  const source = metadata.rateSource ? `, ${metadata.rateSource}` : "";
+  return `1 EUR = ${metadata.exchangeRate} ${item.value}${date}${source}`;
+}
+
+function showCodebookMessage(message, isError = false) {
+  const elements = codebookFormElements();
+  if (!elements.message) return;
+  elements.message.textContent = message || "";
+  elements.message.classList.toggle("error", Boolean(isError));
+}
+
+function resetCodebookForm() {
+  const elements = codebookFormElements();
+  elements.id.value = "";
+  elements.type.value = activeCodebookType;
+  elements.value.value = "";
+  elements.value.disabled = false;
+  elements.label.value = "";
+  elements.group.value = "";
+  elements.price.value = "0";
+  elements.sort.value = "0";
+  elements.active.checked = true;
+  clearShiftFields();
+  updateShiftFieldsVisibility();
+  showCodebookMessage("");
+}
+
+function fillCodebookForm(item) {
+  const elements = codebookFormElements();
+  activeCodebookType = item.type;
+  elements.id.value = item.id;
+  elements.type.value = item.type;
+  elements.value.value = item.value;
+  elements.value.disabled = true;
+  elements.label.value = item.label;
+  elements.group.value = item.groupName || "";
+  elements.price.value = item.price || 0;
+  elements.sort.value = item.sortOrder || 0;
+  elements.active.checked = item.isActive !== false;
+  setShiftFields(item.metadata);
+  updateShiftFieldsVisibility();
+  showCodebookMessage("Izmena postojece sifre.");
+}
+
+function readCodebookForm() {
+  const elements = codebookFormElements();
+  const label = elements.label.value.trim();
+  const existingValue = elements.value.value.trim();
+  return {
+    type: elements.type.value,
+    value: elements.id.value
+      ? existingValue
+      : activeCodebookType === "currency"
+        ? existingValue.toUpperCase()
+        : slugifyCodebookValue(label),
+    label,
+    groupName: elements.group.value.trim() || null,
+    price: Number(elements.price.value || 0),
+    sortOrder: Number(elements.sort.value || 0),
+    isActive: elements.active.checked,
+    metadata: activeCodebookType === "shift"
+      ? readShiftMetadata()
+      : activeCodebookType === "currency"
+        ? readCurrencyMetadata()
+        : {}
+  };
+}
+
+function renderCodebookGroups() {
+  const elements = codebookFormElements();
+  if (!elements.groups) return;
+  const values = codebookItems
+    .filter(item => item.type === "activity" && item.isActive !== false)
+    .map(item => item.value);
+  elements.groups.innerHTML = values.map(value => `<option value="${escapeHtml(value)}"></option>`).join("");
+}
+
+function renderCodebooksAdmin() {
+  const elements = codebookFormElements();
+  if (!elements.table) return;
+  const selectedType = activeCodebookType;
+  const rows = codebookItems
+    .filter(item => item.type === selectedType)
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.label.localeCompare(b.label));
+
+  const hideDetailColumn = ["activity", "visit_status", "payment_status"].includes(selectedType);
+  const emptyColspan = hideDetailColumn ? 5 : 6;
+  elements.table.innerHTML = rows.length ? rows.map(item => `
+    <tr>
+      <td>${escapeHtml(item.value)}</td>
+      <td>${escapeHtml(item.label)}</td>
+      ${hideDetailColumn ? "" : `<td>${escapeHtml(item.type === "shift" ? formatShiftMetadata(item) : item.type === "currency" ? formatCurrencyMetadata(item) : (item.groupName || "-"))}</td>`}
+      <td>${Number(item.price || 0).toFixed(2)}</td>
+      <td>${item.isActive === false ? "Neaktivno" : "Aktivno"}</td>
+      <td>
+        <button class="secondary-btn edit-codebook-btn" type="button" data-codebook-id="${item.id}">Uredi</button>
+        <button class="danger-btn delete-codebook-btn" type="button" data-codebook-id="${item.id}">Obrisi</button>
+      </td>
+    </tr>
+  `).join("") : `<tr><td colspan="${emptyColspan}" class="empty-row">Nema sifri za odabrani sifarnik.</td></tr>`;
+
+  renderCodebookGroups();
+}
+
+async function loadCodebooksAdmin() {
+  try {
+    codebookItems = await window.DrRosaApi.getAdminCodebooks();
+    renderCodebookGrid();
+  } catch (error) {
+    showCodebookMessage(error.message || "Sifarnici nisu ucitani.", true);
+  }
+}
+
+function initializeCodebookAdmin() {
+  const elements = codebookFormElements();
+  if (!elements.form || elements.form.dataset.ready) return;
+  elements.form.dataset.ready = "true";
+
+  elements.grid?.addEventListener("click", event => {
+    const card = event.target.closest("[data-codebook-type]");
+    if (!card) return;
+    openCodebookEditor(card.dataset.codebookType);
+  });
+
+  elements.reset.addEventListener("click", resetCodebookForm);
+  elements.fetchCurrencyRate?.addEventListener("click", async () => {
+    const currency = elements.value.value.trim().toUpperCase();
+    if (!currency) {
+      showCodebookMessage("Unesite sifru valute pre povlacenja kursa.", true);
+      return;
+    }
+    try {
+      const rate = await window.DrRosaApi.getExchangeRate(currency, "EUR");
+      elements.currencyRate.value = rate.rate;
+      elements.currencyRateDate.value = rate.date;
+      showCodebookMessage(`Kurs je povucen iz ${rate.source}.`);
+    } catch (error) {
+      showCodebookMessage(error.message || "Kurs nije povucen. Unesite ga rucno.", true);
+    }
+  });
+
+  elements.form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = readCodebookForm();
+    if (!payload.value || !payload.label) {
+      showCodebookMessage("Unesite sifru i naziv.", true);
+      return;
+    }
+
+    try {
+      if (elements.id.value) {
+        await window.DrRosaApi.updateCodebookItem(elements.id.value, payload);
+        showCodebookMessage("Sifra je azurirana.");
+      } else {
+        await window.DrRosaApi.createCodebookItem(payload);
+        showCodebookMessage("Sifra je dodata.");
+      }
+      codebookItems = await window.DrRosaApi.getAdminCodebooks();
+      resetCodebookForm();
+      renderCodebooksAdmin();
+      renderCodebookGrid();
+      await procedureCatalog.loadFromApi?.();
+    } catch (error) {
+      showCodebookMessage(error.message || "Sifra nije sacuvana.", true);
+    }
+  });
+
+  elements.table.addEventListener("click", async (event) => {
+    const editButton = event.target.closest(".edit-codebook-btn");
+    const deleteButton = event.target.closest(".delete-codebook-btn");
+    if (editButton) {
+      const item = codebookItems.find(entry => String(entry.id) === String(editButton.dataset.codebookId));
+      if (item) fillCodebookForm(item);
+      return;
+    }
+    if (!deleteButton) return;
+    if (!confirm("Da li ste sigurni da zelite da obrisete ovu sifru?")) return;
+    try {
+      await window.DrRosaApi.deleteCodebookItem(deleteButton.dataset.codebookId);
+      codebookItems = await window.DrRosaApi.getAdminCodebooks();
+      resetCodebookForm();
+      renderCodebooksAdmin();
+      renderCodebookGrid();
+      showCodebookMessage("Sifra je obrisana.");
+    } catch (error) {
+      showCodebookMessage(error.message || "Sifra nije obrisana.", true);
+    }
+  });
+}
+
 (async function init() {
   if (!await checkDirectorAccess()) return;
+  await procedureCatalog.loadFromApi?.();
   initializeReports();
   initializeReportNavigation();
   initializeExportActions();
+  initializeCodebookAdmin();
   try {
     cachedRecords = await window.DrRosaApi.getRecords();
   } catch (error) {

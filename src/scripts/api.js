@@ -215,6 +215,36 @@
     return request(`/director/reports/${type}`);
   }
 
+  async function getCodebooks(type) {
+    return request(`/codebooks${type ? `?type=${encodeURIComponent(type)}` : ""}`);
+  }
+
+  async function getAdminCodebooks(type) {
+    return request(`/director/codebooks${type ? `?type=${encodeURIComponent(type)}` : ""}`);
+  }
+
+  async function createCodebookItem(item) {
+    return request("/director/codebooks", {
+      method: "POST",
+      body: JSON.stringify(item)
+    });
+  }
+
+  async function updateCodebookItem(itemId, item) {
+    return request(`/director/codebooks/${itemId}`, {
+      method: "PUT",
+      body: JSON.stringify(item)
+    });
+  }
+
+  async function deleteCodebookItem(itemId) {
+    return request(`/director/codebooks/${itemId}`, { method: "DELETE" });
+  }
+
+  async function getExchangeRate(currency, base = "EUR") {
+    return request(`/director/exchange-rate?base=${encodeURIComponent(base)}&currency=${encodeURIComponent(currency)}`);
+  }
+
   window.DrRosaApi = {
     login,
     verifySession,
@@ -230,6 +260,12 @@
     updateRecord,
     deleteRecord,
     getDirectorReport,
+    getCodebooks,
+    getAdminCodebooks,
+    createCodebookItem,
+    updateCodebookItem,
+    deleteCodebookItem,
+    getExchangeRate,
     normalizeRecord,
     getLocalRecords
   };

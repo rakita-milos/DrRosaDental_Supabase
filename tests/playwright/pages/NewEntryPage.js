@@ -28,7 +28,11 @@ class NewEntryPage {
   async fillVisit(data) {
     await this.patientName.fill(data.patientName);
     await this.lastVisit.fill(data.lastVisit || "2026-05-08");
-    await this.activity.selectOption({ index: data.activityIndex || 1 });
+    if (data.activityLabel) {
+      await this.activity.selectOption({ label: data.activityLabel });
+    } else {
+      await this.activity.selectOption({ index: data.activityIndex || 1 });
+    }
     await expect(this.procedure).toBeEnabled();
     if (data.procedureLabel) {
       await this.procedure.selectOption({ label: data.procedureLabel });

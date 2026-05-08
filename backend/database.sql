@@ -41,9 +41,23 @@ CREATE TABLE IF NOT EXISTS doctors (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS codebook_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL,
+  value TEXT NOT NULL,
+  label TEXT NOT NULL,
+  group_name TEXT,
+  metadata TEXT,
+  price REAL NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS visit_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE RESTRICT,
   doctor_id INTEGER NOT NULL REFERENCES doctors(id),
   visit_date TEXT NOT NULL,
   procedure TEXT NOT NULL,
@@ -70,7 +84,7 @@ CREATE TABLE IF NOT EXISTS treatments (
 CREATE TABLE IF NOT EXISTS payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   visit_record_id INTEGER NOT NULL REFERENCES visit_records(id) ON DELETE CASCADE,
-  patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE RESTRICT,
   amount REAL NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'EUR',
   payment_status TEXT NOT NULL,
@@ -87,3 +101,5 @@ CREATE INDEX IF NOT EXISTS idx_visit_records_doctor ON visit_records(doctor_id);
 CREATE INDEX IF NOT EXISTS idx_visit_records_date ON visit_records(visit_date);
 CREATE INDEX IF NOT EXISTS idx_payments_patient ON payments(patient_id);
 CREATE INDEX IF NOT EXISTS idx_treatments_visit ON treatments(visit_record_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_codebook_items_unique ON codebook_items(type, value, COALESCE(group_name, ''));
+CREATE INDEX IF NOT EXISTS idx_codebook_items_type ON codebook_items(type, is_active, sort_order);

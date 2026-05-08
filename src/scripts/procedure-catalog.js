@@ -1,5 +1,5 @@
 (function () {
-  const activities = {
+  let activities = {
     "Opšta stomatologija": [
       "Kontrola",
       "Čišćenje",
@@ -50,7 +50,7 @@
     ]
   };
 
-  const prices = {
+  let prices = {
     "Kontrola": 30,
     "Čišćenje": 50,
     "Kontrola i čišćenje": 50,
@@ -135,6 +135,41 @@
     });
   }
 
+  async function loadFromApi() {
+    if (!window.DrRosaApi?.getCodebooks || !localStorage.getItem("drrosa-token")) return;
+    try {
+      const items = await window.DrRosaApi.getCodebooks();
+      const activeItems = items.filter(item => item.isActive !== false);
+      const nextActivities = {};
+      const nextPrices = {};
+
+      activeItems
+        .filter(item => item.type === "activity")
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.label.localeCompare(b.label))
+        .forEach(item => {
+          nextActivities[item.value] = [];
+        });
+
+      activeItems
+        .filter(item => item.type === "procedure")
+        .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.label.localeCompare(b.label))
+        .forEach(item => {
+          const group = item.groupName || "Ostalo";
+          if (!nextActivities[group]) nextActivities[group] = [];
+          nextActivities[group].push(item.value);
+          nextPrices[item.value] = Number(item.price || 0);
+        });
+
+      if (Object.keys(nextActivities).length > 0) {
+        activities = nextActivities;
+        prices = nextPrices;
+        window.DrRosaProcedureCatalog.activities = activities;
+      }
+    } catch (error) {
+      console.error("Codebook catalog load error:", error);
+    }
+  }
+
   window.DrRosaProcedureCatalog = {
     activities,
     getActivities,
@@ -142,6 +177,7 @@
     getAllProcedures,
     getPrice,
     findActivityForProcedure,
-    matchesActivity
+    matchesActivity,
+    loadFromApi
   };
 })();

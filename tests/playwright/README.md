@@ -8,7 +8,11 @@ Automatizovani smoke testovi za Dr Rosa aplikaciju.
 - Navigaciju kroz glavne staff stranice
 - Full CRUD tok za pacijenta preko UI-ja: create, read, update, delete
 - Full CRUD tok za posetu preko UI-ja: create, read, update, delete
+- Proveru da brisanje pacijenta sa istorijom bude blokirano uz potvrdu i poruku
 - Direktor panel i sve glavne izvestaje
+- Direktor admin deo za sifarnike: otvaranje, dodavanje i brisanje test sifre
+- Smena u sifarniku se testira sa vremenom i vise odabranih dana
+- Valute u sifarniku sakrivaju grupu/cenu i prikazuju polja za kurs
 - Osnovni klik na Excel/PDF export dugmad u direktor panelu
 
 ## Struktura
@@ -41,6 +45,14 @@ cd tests/playwright
 npm install
 npm test
 ```
+
+Za dodatne regression E2E scenarije:
+
+```bash
+npm run test:regression
+```
+
+Regression testovi posle testa brisu test pacijente, posete i sifarnike koje kreiraju.
 
 Za vidljiv browser:
 

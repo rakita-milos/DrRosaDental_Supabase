@@ -5,6 +5,10 @@ class AllRecordsPage {
     this.page = page;
     this.patientFilter = page.locator("#search-input");
     this.tableBody = page.locator("#all-records-body");
+    this.statusFilter = page.locator("#status-filter");
+    this.paymentFilter = page.locator("#payment-filter");
+    this.exportExcel = page.locator("#export-excel-btn");
+    this.exportPdf = page.locator("#export-pdf-btn");
   }
 
   async goto() {
@@ -27,6 +31,25 @@ class AllRecordsPage {
     await this.filterByPatient(name);
     await this.tableBody.getByRole("link", { name: "Otvori" }).click();
     await expect(this.page).toHaveURL(/patient-dashboard\.html/);
+  }
+
+  async filterByStatus(status) {
+    await this.statusFilter.selectOption(status);
+  }
+
+  async filterByPaymentStatus(status) {
+    await this.paymentFilter.selectOption(status);
+  }
+
+  async exportFilteredTable() {
+    const downloadPromise = this.page.waitForEvent("download");
+    await this.exportExcel.click();
+    await downloadPromise;
+
+    const popupPromise = this.page.waitForEvent("popup");
+    await this.exportPdf.click();
+    const popup = await popupPromise;
+    await popup.close();
   }
 }
 

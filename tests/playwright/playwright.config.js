@@ -5,7 +5,8 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL || process.env.APP_BASE_URL || "
 
 module.exports = defineConfig({
   testDir: path.join(__dirname, "tests"),
-  timeout: 30_000,
+  timeout: 60_000,
+  workers: 1,
   expect: {
     timeout: 8_000
   },

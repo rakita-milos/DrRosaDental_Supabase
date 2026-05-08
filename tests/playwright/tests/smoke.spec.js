@@ -99,6 +99,7 @@ test("full patient and visit CRUD smoke test", async ({ page }) => {
   await allRecords.goto();
   await allRecords.openPatient(updatedFullName);
   await patientDashboard.expectRecordVisible("Plomba");
+  await patientDashboard.expectPatientDeleteBlocked();
 
   await patientDashboard.deleteFirstRecord();
   await expect(patientDashboard.recordsBody).toContainText(/Nema zapisa/i);
@@ -125,4 +126,12 @@ test("director panel reports smoke test", async ({ page }) => {
     await directorPanel.exportCurrentReport(report.id);
     await directorPanel.backToReports(report.id);
   }
+
+  await directorPanel.openCodebookAdmin();
+  await directorPanel.createAndDeleteCodebookItem(`Test smena ${Date.now()}`);
+  await directorPanel.expectCurrencyFormFields();
+  await directorPanel.expectPaymentStatusSimpleFields();
+  await directorPanel.expectActivitySimpleFields();
+  await directorPanel.expectCurrencyCodeLockedOnEdit();
+  await directorPanel.createEditAndDeleteActivity(`Test delatnost ${Date.now()}`, `Izmenjena delatnost ${Date.now()}`);
 });

@@ -58,9 +58,17 @@ Authorization: Bearer <token>
 - `GET /api/patients/:id`
 - `POST /api/patients`
 - `PUT /api/patients/:id`
+- `DELETE /api/patients/:id`
 - `GET /api/records`
 - `POST /api/records`
 - `PUT /api/records/:id`
+- `DELETE /api/records/:id`
+- `GET /api/codebooks`
+- `GET /api/director/codebooks`
+- `POST /api/director/codebooks`
+- `PUT /api/director/codebooks/:id`
+- `DELETE /api/director/codebooks/:id`
+- `GET /api/director/exchange-rate`
 - `GET /api/doctors`
 - `GET /api/director/reports/financial`
 - `GET /api/director/reports/patients`
@@ -79,3 +87,16 @@ Authorization: Bearer <token>
 - User input is normalized before storage.
 - SQL queries use prepared statements.
 - Health checks do not expose the SQLite file path.
+
+## Delete Rules
+
+- Patient delete returns `409 Conflict` when the patient has linked visit history or payments.
+- Visit record delete removes the selected history entry and its owned payment/treatment rows through SQLite foreign keys.
+- The UI asks for confirmation before every exposed delete action.
+
+## Codebook Notes
+
+- Shift codebook items can store `metadata.timeFrom`, `metadata.timeTo` and `metadata.days`.
+- `metadata.days` supports one or more weekday keys: `monday` through `sunday`.
+- Currency codebook items can store `metadata.exchangeRate`, `metadata.rateDate`, `metadata.rateBase` and `metadata.rateSource`.
+- The exchange-rate endpoint uses Frankfurter as a best-effort provider; rates can still be entered manually.

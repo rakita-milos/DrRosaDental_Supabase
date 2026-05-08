@@ -147,6 +147,33 @@ function setSelectValue(select, value) {
   select.value = value;
 }
 
+async function populateCodebookSelects() {
+  if (!window.DrRosaApi?.getCodebooks) return;
+  const mappings = [
+    { type: "visit_status", select: inputs.status },
+    { type: "payment_status", select: inputs.paymentStatus },
+    { type: "currency", select: inputs.currency },
+    { type: "shift", select: inputs.shift }
+  ];
+
+  await Promise.all(mappings.map(async ({ type, select }) => {
+    if (!select) return;
+    try {
+      const items = await window.DrRosaApi.getCodebooks(type);
+      if (!items.length) return;
+      const current = select.value;
+      select.innerHTML = items.map(item => {
+        const metadata = item.metadata || {};
+        const shiftTime = type === "shift" && metadata.timeFrom && metadata.timeTo ? ` (${metadata.timeFrom}-${metadata.timeTo})` : "";
+        return option(item.value, `${item.label}${shiftTime}`);
+      }).join("");
+      setSelectValue(select, current || items[0].value);
+    } catch (error) {
+      console.error(`${type} codebook load error:`, error);
+    }
+  }));
+}
+
 function cloneTreatments(treatments) {
   return JSON.parse(JSON.stringify(treatments || {}));
 }
@@ -434,7 +461,7 @@ function updateTeethSummary() {
         ${Number(treatment.discount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${formatMoney(treatment.discount)}</div>` : ""}
         ${treatment.note ? `<div style="margin-top: 6px;">${escapeHtml(treatment.note)}</div>` : ""}
       </div>
-      <button type="button" class="remove-treatment" data-tooth="${escapeHtml(tooth)}" data-index="${index}" style="background: none; border: none; color: #dc3545; cursor: pointer; font-size: 18px;">x</button>
+      <button type="button" class="danger-btn remove-treatment" data-tooth="${escapeHtml(tooth)}" data-index="${index}">x</button>
     </div>
   `).join("")}`;
 
@@ -602,6 +629,8 @@ form.addEventListener("submit", async (event) => {
 (async function init() {
   if (!await requireAccess()) return;
   try {
+    await procedureCatalog.loadFromApi?.();
+    await populateCodebookSelects();
     const [loadedPatients, loadedDoctors, loadedRecords] = await Promise.all([
       window.DrRosaApi.getPatients(),
       window.DrRosaApi.getDoctors(),

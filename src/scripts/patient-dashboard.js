@@ -167,7 +167,10 @@ function renderEmpty(message) {
     patientInfoSection.style.display = "block";
     editPatientLink.href = `new-patient.html?patient=${encodeURIComponent(patientDetails.id)}`;
     deletePatientBtn.addEventListener("click", async () => {
-      if (!confirm("Da li ste sigurni da zelite da obrisete ovog pacijenta i sve njegove zapise?")) return;
+      const confirmMessage = patientRecords.length > 0
+        ? `Pacijent ima ${patientRecords.length} povezanih zapisa. Brisanje pacijenta ce biti odbijeno dok postoji istorija. Zelite li ipak pokusati?`
+        : "Da li ste sigurni da zelite da obrisete ovog pacijenta?";
+      if (!confirm(confirmMessage)) return;
       try {
         await window.DrRosaApi.deletePatient(patientDetails.id);
         window.location.href = "all-records.html";
@@ -212,7 +215,7 @@ function renderEmpty(message) {
 
   document.querySelectorAll(".delete-record-btn").forEach(button => {
     button.addEventListener("click", async () => {
-      if (!confirm("Da li ste sigurni da zelite da obrisete ovaj zapis?")) return;
+      if (!confirm("Da li ste sigurni da zelite da obrisete ovaj zapis iz istorije pacijenta?")) return;
       try {
         await window.DrRosaApi.deleteRecord(button.dataset.recordId);
         window.location.reload();

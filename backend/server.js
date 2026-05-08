@@ -127,6 +127,7 @@ function seedDatabase() {
     insertUser.run('staff@drosa.com', bcrypt.hashSync(staffPassword, 12), 'Ana - Medicinska sestra', 'staff');
   }
 
+  seedCodebooks();
   rotateDefaultPasswords();
 }
 
@@ -136,12 +137,84 @@ function applyMigrations() {
   ensureColumn('payments', 'currency', "TEXT NOT NULL DEFAULT 'EUR'");
   ensureColumn('treatments', 'price', "REAL NOT NULL DEFAULT 0");
   ensureColumn('treatments', 'discount', "REAL NOT NULL DEFAULT 0");
+  ensureCodebookTable();
+  ensureColumn('codebook_items', 'metadata', "TEXT");
+  ensureDefaultShiftMetadata();
 }
 
 function ensureColumn(table, column, definition) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all();
   if (columns.some(existing => existing.name === column)) return;
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+function ensureCodebookTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS codebook_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      value TEXT NOT NULL,
+      label TEXT NOT NULL,
+      group_name TEXT,
+      metadata TEXT,
+      price REAL NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_codebook_items_unique ON codebook_items(type, value, COALESCE(group_name, \'\'))');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_codebook_items_type ON codebook_items(type, is_active, sort_order)');
+}
+
+function ensureDefaultShiftMetadata() {
+  const update = db.prepare('UPDATE codebook_items SET metadata = ? WHERE type = ? AND value = ? AND (metadata IS NULL OR metadata = ?)');
+  update.run(JSON.stringify({ timeFrom: '08:00', timeTo: '14:00', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] }), 'shift', 'Prva smena', '');
+  update.run(JSON.stringify({ timeFrom: '14:00', timeTo: '20:00', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] }), 'shift', 'Druga smena', '');
+}
+
+function seedCodebooks() {
+  const count = db.prepare('SELECT COUNT(*) as count FROM codebook_items').get().count;
+  if (count > 0) return;
+
+  const insert = db.prepare(`
+    INSERT INTO codebook_items (type, value, label, group_name, metadata, price, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const add = (type, value, label = value, groupName = null, price = 0, sortOrder = 0, metadata = null) => {
+    insert.run(type, value, label, groupName, metadata ? JSON.stringify(metadata) : null, price, sortOrder);
+  };
+
+  ['Opsta stomatologija', 'Hirurgija', 'Protetika', 'Ortodoncija'].forEach((item, index) => add('activity', item, item, null, 0, index + 1));
+  [
+    ['Kontrola', 'Opsta stomatologija', 30],
+    ['Ciscenje', 'Opsta stomatologija', 50],
+    ['Kontrola i ciscenje', 'Opsta stomatologija', 50],
+    ['Plomba', 'Opsta stomatologija', 60],
+    ['Endodontija', 'Opsta stomatologija', 120],
+    ['Izbeljivanje', 'Opsta stomatologija', 150],
+    ['Parodontologija', 'Opsta stomatologija', 90],
+    ['Vadjenja zuba', 'Hirurgija', 50],
+    ['Hirursko vadjenje', 'Hirurgija', 90],
+    ['Impakcija umnjaka', 'Hirurgija', 180],
+    ['Apikotomija', 'Hirurgija', 180],
+    ['Implant', 'Hirurgija', 600],
+    ['Keramicka kruna', 'Protetika', 250],
+    ['Cirkonijum kruna', 'Protetika', 300],
+    ['Totalna proteza', 'Protetika', 450],
+    ['Parcijalna proteza', 'Protetika', 350],
+    ['Fasete', 'Protetika', 220],
+    ['Mobilna', 'Ortodoncija', 600],
+    ['Fiksna', 'Ortodoncija', 900],
+    ['Ostalo', 'Ortodoncija', 0]
+  ].forEach(([value, groupName, price], index) => add('procedure', value, value, groupName, price, index + 1));
+  ['Zakazano', 'U tijeku', 'Zavrseno', 'Otkazano'].forEach((item, index) => add('visit_status', item, item, null, 0, index + 1));
+  ['Placeno', 'Dugovanje', 'Delimicno'].forEach((item, index) => add('payment_status', item, item, null, 0, index + 1));
+  ['EUR', 'RSD', 'USD'].forEach((item, index) => add('currency', item, item, null, 0, index + 1));
+  add('shift', 'Prva smena', 'Prva smena', null, 0, 1, { timeFrom: '08:00', timeTo: '14:00', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] });
+  add('shift', 'Druga smena', 'Druga smena', null, 0, 2, { timeFrom: '14:00', timeTo: '20:00', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] });
 }
 
 function isStrongInitialPassword(value) {
@@ -408,6 +481,18 @@ app.delete('/api/patients/:id', authenticateToken, (req, res) => {
   try {
     const current = db.prepare('SELECT id FROM patients WHERE id = ?').get(req.params.id);
     if (!current) return res.status(404).json({ error: 'Patient not found' });
+
+    const relatedRecords = db.prepare('SELECT COUNT(*) as count FROM visit_records WHERE patient_id = ?').get(req.params.id).count || 0;
+    const relatedPayments = db.prepare('SELECT COUNT(*) as count FROM payments WHERE patient_id = ?').get(req.params.id).count || 0;
+    if (relatedRecords > 0 || relatedPayments > 0) {
+      return res.status(409).json({
+        error: 'Pacijent ima povezanu istoriju/posete i ne moze biti obrisan dok se ti zapisi ne uklone.',
+        related: {
+          records: Number(relatedRecords),
+          payments: Number(relatedPayments)
+        }
+      });
+    }
 
     db.prepare('DELETE FROM patients WHERE id = ?').run(req.params.id);
     res.json({ id: Number(req.params.id), message: 'Patient deleted successfully' });
@@ -709,6 +794,202 @@ app.get('/api/doctors', authenticateToken, (_req, res) => {
     res.json(doctors);
   } catch (error) {
     console.error('Get doctors error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============ DIRECTOR ADMIN CODEBOOKS ============
+
+const CODEBOOK_TYPES = new Set(['activity', 'procedure', 'visit_status', 'payment_status', 'currency', 'shift']);
+
+function normalizeCodebookType(value) {
+  const type = cleanText(value, { max: 40, required: true });
+  return CODEBOOK_TYPES.has(type) ? type : null;
+}
+
+function serializeCodebookItem(row) {
+  let metadata = {};
+  try {
+    metadata = row.metadata ? JSON.parse(row.metadata) : {};
+  } catch (_error) {
+    metadata = {};
+  }
+  return {
+    id: row.id,
+    type: row.type,
+    value: row.value,
+    label: row.label,
+    groupName: row.group_name,
+    metadata,
+    price: Number(row.price || 0),
+    isActive: Boolean(row.is_active),
+    sortOrder: Number(row.sort_order || 0)
+  };
+}
+
+function normalizeCodebookMetadata(type, metadata) {
+  const input = metadata && typeof metadata === 'object' ? metadata : {};
+  if (type === 'currency') {
+    return {
+      exchangeRate: input.exchangeRate === undefined || input.exchangeRate === null || input.exchangeRate === ''
+        ? null
+        : Math.max(0, Number(input.exchangeRate || 0)),
+      rateDate: cleanText(input.rateDate, { max: 20 }),
+      rateBase: cleanText(input.rateBase, { max: 10 }) || 'EUR',
+      rateSource: cleanText(input.rateSource, { max: 80 }) || null
+    };
+  }
+  if (type !== 'shift') return {};
+  const allowedDays = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+  const days = Array.isArray(input.days)
+    ? input.days.map(day => cleanText(day, { max: 20 })).filter(day => allowedDays.has(day))
+    : [];
+  return {
+    timeFrom: cleanText(input.timeFrom, { max: 5 }) || null,
+    timeTo: cleanText(input.timeTo, { max: 5 }) || null,
+    days
+  };
+}
+
+app.get('/api/director/exchange-rate', authenticateToken, requireDirector, async (req, res) => {
+  try {
+    const base = cleanText(req.query.base || 'EUR', { max: 10, required: true }).toUpperCase();
+    const currency = cleanText(req.query.currency, { max: 10, required: true }).toUpperCase();
+    if (!currency) return res.status(400).json({ error: 'Currency is required' });
+    if (currency === base) {
+      return res.json({ base, currency, rate: 1, date: new Date().toISOString().slice(0, 10), source: 'local' });
+    }
+
+    const url = `https://api.frankfurter.dev/v2/rate/${encodeURIComponent(base)}/${encodeURIComponent(currency)}`;
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.rate) {
+      return res.status(502).json({ error: data.message || 'Exchange rate provider unavailable' });
+    }
+
+    res.json({
+      base,
+      currency,
+      rate: Number(data.rate),
+      date: data.date || new Date().toISOString().slice(0, 10),
+      source: 'Frankfurter'
+    });
+  } catch (error) {
+    console.error('Exchange rate error:', error);
+    res.status(502).json({ error: 'Exchange rate provider unavailable' });
+  }
+});
+
+app.get('/api/codebooks', authenticateToken, (req, res) => {
+  try {
+    const type = req.query.type ? normalizeCodebookType(req.query.type) : null;
+    if (req.query.type && !type) return res.status(400).json({ error: 'Invalid codebook type' });
+
+    const rows = type
+      ? db.prepare('SELECT * FROM codebook_items WHERE type = ? AND is_active = 1 ORDER BY sort_order, label').all(type)
+      : db.prepare('SELECT * FROM codebook_items WHERE is_active = 1 ORDER BY type, sort_order, label').all();
+
+    res.json(rows.map(serializeCodebookItem));
+  } catch (error) {
+    console.error('Get public codebooks error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/director/codebooks', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const type = req.query.type ? normalizeCodebookType(req.query.type) : null;
+    if (req.query.type && !type) return res.status(400).json({ error: 'Invalid codebook type' });
+
+    const rows = type
+      ? db.prepare('SELECT * FROM codebook_items WHERE type = ? ORDER BY sort_order, label').all(type)
+      : db.prepare('SELECT * FROM codebook_items ORDER BY type, sort_order, label').all();
+
+    res.json(rows.map(serializeCodebookItem));
+  } catch (error) {
+    console.error('Get codebooks error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/director/codebooks', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const type = normalizeCodebookType(req.body.type);
+    const value = cleanText(req.body.value, { max: 120, required: true });
+    const label = cleanText(req.body.label || req.body.value, { max: 120, required: true });
+    const groupName = cleanText(req.body.groupName || req.body.group_name, { max: 120 });
+    const metadata = normalizeCodebookMetadata(type, req.body.metadata);
+    const price = Math.max(0, Number(req.body.price || 0));
+    const sortOrder = Number.isInteger(Number(req.body.sortOrder)) ? Number(req.body.sortOrder) : 0;
+
+    if (!type || !value || !label) return res.status(400).json({ error: 'Type, value and label are required' });
+
+    const result = db.prepare(`
+      INSERT INTO codebook_items (type, value, label, group_name, price, is_active, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(type, value, label, groupName, price, req.body.isActive === false ? 0 : 1, sortOrder);
+
+    db.prepare('UPDATE codebook_items SET metadata = ? WHERE id = ?').run(JSON.stringify(metadata), result.lastInsertRowid);
+
+    res.status(201).json(serializeCodebookItem(db.prepare('SELECT * FROM codebook_items WHERE id = ?').get(result.lastInsertRowid)));
+  } catch (error) {
+    if (error.code === 'ERR_SQLITE_ERROR') {
+      return res.status(409).json({ error: 'Sifra vec postoji u ovom sifarniku.' });
+    }
+    console.error('Create codebook error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/director/codebooks/:id', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const current = db.prepare('SELECT * FROM codebook_items WHERE id = ?').get(req.params.id);
+    if (!current) return res.status(404).json({ error: 'Codebook item not found' });
+
+    const data = { ...current, ...req.body };
+    const type = normalizeCodebookType(current.type);
+    const value = current.value;
+    const label = cleanText(data.label || data.value, { max: 120, required: true });
+    const groupName = cleanText(data.groupName ?? data.group_name, { max: 120 });
+    const metadata = normalizeCodebookMetadata(type, data.metadata);
+    const price = Math.max(0, Number(data.price || 0));
+    const isActive = data.isActive === false || data.is_active === 0 ? 0 : 1;
+    const sortOrder = Number.isInteger(Number(data.sortOrder ?? data.sort_order)) ? Number(data.sortOrder ?? data.sort_order) : 0;
+
+    if (!type || !value || !label) return res.status(400).json({ error: 'Type, value and label are required' });
+
+    db.prepare(`
+      UPDATE codebook_items
+      SET type = ?, value = ?, label = ?, group_name = ?, metadata = ?, price = ?, is_active = ?, sort_order = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(type, value, label, groupName, JSON.stringify(metadata), price, isActive, sortOrder, req.params.id);
+
+    res.json(serializeCodebookItem(db.prepare('SELECT * FROM codebook_items WHERE id = ?').get(req.params.id)));
+  } catch (error) {
+    if (error.code === 'ERR_SQLITE_ERROR') {
+      return res.status(409).json({ error: 'Sifra vec postoji u ovom sifarniku.' });
+    }
+    console.error('Update codebook error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/director/codebooks/:id', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const current = db.prepare('SELECT * FROM codebook_items WHERE id = ?').get(req.params.id);
+    if (!current) return res.status(404).json({ error: 'Codebook item not found' });
+
+    const usage = current.type === 'procedure'
+      ? db.prepare('SELECT COUNT(*) as count FROM visit_records WHERE procedure = ?').get(current.value).count || 0
+      : 0;
+    if (usage > 0) {
+      return res.status(409).json({ error: 'Sifra se koristi u zapisima i ne moze biti obrisana. Deaktivirajte je umesto brisanja.' });
+    }
+
+    db.prepare('DELETE FROM codebook_items WHERE id = ?').run(req.params.id);
+    res.json({ id: Number(req.params.id), message: 'Codebook item deleted successfully' });
+  } catch (error) {
+    console.error('Delete codebook error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

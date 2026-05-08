@@ -37,6 +37,22 @@ class PatientDashboardPage {
     await this.deletePatient.click();
     await expect(this.page).toHaveURL(/all-records\.html/);
   }
+
+  async expectPatientDeleteBlocked(messagePattern = /povezanu istoriju|posete/i) {
+    const messages = [];
+    const acceptDialog = async (dialog) => {
+      messages.push(dialog.message());
+      await dialog.accept();
+    };
+
+    this.page.on("dialog", acceptDialog);
+    await this.deletePatient.click();
+    await expect.poll(() => messages.length).toBeGreaterThanOrEqual(2);
+    this.page.off("dialog", acceptDialog);
+
+    expect(messages[messages.length - 1]).toMatch(messagePattern);
+    await expect(this.page).toHaveURL(/patient-dashboard\.html/);
+  }
 }
 
 module.exports = { PatientDashboardPage };

@@ -36,6 +36,16 @@ function signTestToken(user) {
   return `${header}.${payload}.${signature}`;
 }
 
+function tokenFor(role = "staff") {
+  const isDirector = role === "director";
+  return signTestToken({
+    id: isDirector ? 1 : 2,
+    email: isDirector ? "director@drosa.com" : "staff@drosa.com",
+    name: isDirector ? "Dr Rosa Basic" : "Ana - Medicinska sestra",
+    role
+  });
+}
+
 async function authenticate(page, role = "staff") {
   const isDirector = role === "director";
   const user = {
@@ -44,7 +54,8 @@ async function authenticate(page, role = "staff") {
     name: isDirector ? "Dr Rosa Basic" : "Ana - Medicinska sestra",
     role
   };
-  const token = signTestToken(user);
+  const token = tokenFor(role);
+  await page.evaluate(() => localStorage.clear()).catch(() => {});
   await page.goto("/src/pages/login.html");
   await page.evaluate(({ token, user }) => {
     localStorage.setItem("drrosa-token", token);
@@ -55,4 +66,4 @@ async function authenticate(page, role = "staff") {
   }, { token, user });
 }
 
-module.exports = { authenticate, credentialsFor };
+module.exports = { authenticate, credentialsFor, tokenFor };

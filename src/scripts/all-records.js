@@ -89,6 +89,28 @@ function populateProcedureFilter() {
   procedureFilter.disabled = !activity;
 }
 
+async function populateCodebookFilters() {
+  const mappings = [
+    { type: "visit_status", select: statusFilter, placeholder: "Svi statusi" },
+    { type: "payment_status", select: paymentFilter, placeholder: "Sva placanja", extras: [{ value: "debtors", label: "Duznici" }] }
+  ];
+
+  await Promise.all(mappings.map(async ({ type, select, placeholder, extras = [] }) => {
+    if (!select || !window.DrRosaApi?.getCodebooks) return;
+    try {
+      const current = select.value;
+      const items = await window.DrRosaApi.getCodebooks(type);
+      if (!items.length) return;
+      select.innerHTML = option("", placeholder)
+        + items.map(item => option(item.value, item.label)).join("")
+        + extras.map(item => option(item.value, item.label)).join("");
+      select.value = current;
+    } catch (error) {
+      console.error(`${type} filter codebook load error:`, error);
+    }
+  }));
+}
+
 function treatmentListForValue(treatments) {
   if (!treatments) return [];
   return Array.isArray(treatments) ? treatments : [treatments];
@@ -272,6 +294,8 @@ exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
 
 (async function init() {
   if (!await requireAccess()) return;
+  await procedureCatalog.loadFromApi?.();
+  await populateCodebookFilters();
   try {
     allRecords = await window.DrRosaApi.getRecords();
   } catch (error) {

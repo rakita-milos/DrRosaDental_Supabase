@@ -7,6 +7,7 @@ A dental clinic management system with role-based access control, patient tracki
 **Staff interface**
 - Patient dashboard with visit history
 - New patient registration
+- Patient edit/delete with protected deletion when visit history exists
 - Visit/treatment logging with FDI tooth mapping
 - Payment tracking: Placeno, Delimicno, Dugovanje
 - Patient filtering, search and detail pages
@@ -19,6 +20,9 @@ A dental clinic management system with role-based access control, patient tracki
 - Procedure distribution report
 - Excel-style report tabs: PAZARI, Hirurgija, Protetika, Ortodoncija, Troskovi, Ukupno
 - Excel/PDF export for opened report tables
+- Admin area for codebooks: activities, procedures, visit/payment statuses, currencies and shifts
+- Shift codebook stores working time and one or more weekdays
+- Currency codebook stores exchange-rate metadata instead of group/price fields
 
 **Security**
 - Role-based access control: director/staff
@@ -191,7 +195,9 @@ Automated smoke tests live in `tests/playwright`.
 - New visit creation
 - Full patient CRUD: create, read, update, delete
 - Full visit CRUD: create, read, update, delete
+- Delete protection: patient deletion is blocked while linked visit history exists
 - Director panel reports
+- Director admin codebooks: open, create and delete smoke item
 - Basic Excel/PDF export button checks in director reports
 
 ### Install test dependencies
@@ -206,6 +212,13 @@ npm install
 ```bash
 cd tests/playwright
 npm test
+```
+
+### Run full regression E2E tests
+
+```bash
+cd tests/playwright
+npm run test:regression
 ```
 
 ### Run with visible browser
@@ -230,6 +243,7 @@ npm run report
 - Tests use Page Object Model classes from `tests/playwright/pages`.
 - For a different host/port, run tests with `PLAYWRIGHT_BASE_URL`, for example `PLAYWRIGHT_BASE_URL=https://your-server.example npm test`.
 - The full CRUD smoke test creates, updates and deletes its own smoke patient/visit records.
+- Regression E2E tests clean up created test patients, visits and codebook items through API cleanup.
 - Last verified result: `4 passed`.
 
 ## Maintenance Commands

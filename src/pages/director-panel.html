@@ -215,6 +215,118 @@
           <table class="excel-sheet-table" id="excel-sheet-table"></table>
         </div>
       </section>
+
+      <section class="list-section report-content" id="admin-codebooks-report">
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izvještaje</button>
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Admin</p>
+            <h2>Upravljanje šifarnicima</h2>
+          </div>
+        </div>
+
+        <div class="cards-grid" id="codebook-grid"></div>
+      </section>
+
+      <section class="list-section report-content" id="admin-codebook-editor">
+        <button class="secondary-btn back-to-codebooks" type="button">← Nazad na šifarnike</button>
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Admin šifarnik</p>
+            <h2 id="codebook-editor-title">Šifarnik</h2>
+          </div>
+        </div>
+
+        <div class="admin-codebook-layout">
+          <form id="codebook-form" class="admin-codebook-form">
+            <input type="hidden" id="codebook-id" />
+            <input type="hidden" id="codebook-type" value="activity" />
+            <div class="input-grid">
+              <label id="codebook-value-field">
+                Šifra
+                <input id="codebook-value" type="text" />
+              </label>
+              <label>
+                Naziv
+                <input id="codebook-label" type="text" required />
+              </label>
+              <label class="codebook-group-field">
+                Grupa / delatnost
+                <input id="codebook-group" type="text" list="codebook-groups" />
+                <datalist id="codebook-groups"></datalist>
+              </label>
+              <label class="codebook-price-field">
+                Cena
+                <input id="codebook-price" type="number" min="0" step="0.01" value="0" />
+              </label>
+              <label>
+                Redosled
+                <input id="codebook-sort" type="number" step="1" value="0" />
+              </label>
+            </div>
+            <div id="shift-fields" class="shift-fields">
+              <div class="input-grid">
+                <label>
+                  Vreme od
+                  <input id="shift-time-from" type="time" />
+                </label>
+                <label>
+                  Vreme do
+                  <input id="shift-time-to" type="time" />
+                </label>
+              </div>
+              <fieldset class="weekday-picker">
+                <legend>Dani u nedelji</legend>
+                <label><input type="checkbox" name="shift-days" value="monday" /> Ponedeljak</label>
+                <label><input type="checkbox" name="shift-days" value="tuesday" /> Utorak</label>
+                <label><input type="checkbox" name="shift-days" value="wednesday" /> Sreda</label>
+                <label><input type="checkbox" name="shift-days" value="thursday" /> Četvrtak</label>
+                <label><input type="checkbox" name="shift-days" value="friday" /> Petak</label>
+                <label><input type="checkbox" name="shift-days" value="saturday" /> Subota</label>
+                <label><input type="checkbox" name="shift-days" value="sunday" /> Nedelja</label>
+              </fieldset>
+            </div>
+            <div id="currency-fields" class="currency-fields">
+              <div class="input-grid">
+                <label>
+                  Kurs prema EUR
+                  <input id="currency-rate" type="number" min="0" step="0.000001" />
+                </label>
+                <label>
+                  Datum kursa
+                  <input id="currency-rate-date" type="date" />
+                </label>
+              </div>
+              <button class="secondary-btn" id="fetch-currency-rate" type="button">Povuci trenutni kurs</button>
+            </div>
+            <label class="checkbox-row">
+              <input id="codebook-active" type="checkbox" checked />
+              Aktivno
+            </label>
+            <div class="form-actions">
+              <button class="primary-btn" type="submit">Sačuvaj šifru</button>
+              <button class="secondary-btn" id="codebook-reset" type="button">Novi unos</button>
+            </div>
+            <p id="codebook-message" class="form-alert" role="status"></p>
+          </form>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Šifra</th>
+                  <th>Naziv</th>
+                  <th id="codebook-detail-header">Detalji</th>
+                  <th>Cena</th>
+                  <th>Status</th>
+                  <th>Akcije</th>
+                </tr>
+              </thead>
+              <tbody id="codebook-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 
