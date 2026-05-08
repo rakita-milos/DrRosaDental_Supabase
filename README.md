@@ -1,200 +1,300 @@
 # Dr Rosa Dental Dashboard
 
-A modern dental clinic management system with role-based access control, patient tracking, financial reporting, and director-only analytics dashboard.
+A dental clinic management system with role-based access control, patient tracking, visit records, payment status, tooth-map treatments, financial reports and director-only analytics.
 
-## 🎯 Features
+## Features
 
-✅ **Staff Interface**
+**Staff interface**
 - Patient dashboard with visit history
-- Treatment logging with tooth mapping (FDI numbering)
-- Payment tracking (Plaćeno, Delimično, Dugovanje)
-- Patient filtering and search
-- Individual patient profiles
+- New patient registration
+- Visit/treatment logging with FDI tooth mapping
+- Payment tracking: Placeno, Delimicno, Dugovanje
+- Patient filtering, search and detail pages
+- Excel/PDF export from filtered records
 
-✅ **Director Panel** (Director-only section)
-- Financial reports (revenue, debt, payment status)
-- Patient analytics (growth, retention, visit frequency)
-- Doctor productivity tracking
-- Procedure distribution analysis
+**Director panel**
+- Financial report: revenue, debt, payment percentage
+- Patient report: total, regular/new patients, debts
+- Doctor productivity report
+- Procedure distribution report
+- Excel-style report tabs: PAZARI, Hirurgija, Protetika, Ortodoncija, Troskovi, Ukupno
+- Excel/PDF export for opened report tables
 
-✅ **Security**
-- Role-based access control (Director/Staff)
-- Session-based authentication
-- Automatic logout and login redirects
-- Protected URLs
+**Security**
+- Role-based access control: director/staff
+- JWT authentication
+- bcrypt password hashing
+- Helmet security headers
+- CORS allow-list
+- SQLite prepared statements
+- Login rate limiting
 
-## 📁 Project Structure
+## Project Structure
 
-```
+```text
 DrRosaWebApp/
-├── index.html                          # Root file (redirects to src/pages)
-├── README.md                           # This file
-├── DIRECTOR_PANEL_GUIDE.md            # Complete director panel documentation
-└── src/
-    ├── pages/
-    │   ├── login.html                 # Login page (entry point)
-    │   ├── index.html                 # Staff dashboard
-    │   ├── new-entry.html             # Create new visit record
-    │   ├── all-records.html           # View all patients
-    │   ├── patient-dashboard.html     # Individual patient view
-    │   ├── new-patient.html           # Register new patient
-    │   └── director-panel.html        # DIRECTOR ONLY - Reports
-    ├── styles/
-    │   └── styles.css                 # Global responsive styling
-    ├── scripts/
-    │   ├── login.js                   # Authentication logic
-    │   ├── script.js                  # Dashboard rendering
-    │   ├── new-entry.js               # Visit record form
-    │   ├── all-records.js             # Patient list filtering
-    │   ├── patient-dashboard.js       # Patient detail view
-    │   ├── new-patient.js             # Patient registration
-    │   └── director-reports.js        # Director panel reports
-    └── assets/
-        └── logo.svg                   # Brand logo
+  index.html
+  README.md
+  DIRECTOR_PANEL_GUIDE.md
+  backend/
+    server.js
+    database.sql
+    package.json
+    .env
+    data/
+    scripts/
+  src/
+    pages/
+      login.html
+      index.html
+      new-entry.html
+      all-records.html
+      patient-dashboard.html
+      new-patient.html
+      director-panel.html
+    scripts/
+      api.js
+      login.js
+      script.js
+      new-entry.js
+      all-records.js
+      patient-dashboard.js
+      new-patient.js
+      director-reports.js
+      export-utils.js
+      procedure-catalog.js
+    styles/
+      styles.css
+    assets/
+      logo.svg
+  tests/
+    playwright/
+      package.json
+      playwright.config.js
+      tests/smoke.spec.js
+      README.md
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
-### 1. Start HTTP Server
+### 1. Install backend dependencies
+
 ```bash
-cd c:\Users\milos\DrRosaWebApp
-python -m http.server 8000
+cd backend
+npm install
 ```
 
-### 2. Open in Browser
-Navigate to: `http://localhost:8000/src/pages/login.html`
+### 2. Configure backend
 
-### 3. Demo Credentials
+Create or update `backend/.env`.
 
-**Director Access:**
+```env
+SQLITE_DB_PATH=./data/drosa.sqlite
+SQLITE_BACKUP_DIR=./backups
+PORT=3000
+NODE_ENV=development
+JWT_SECRET=change-this-to-a-unique-32-character-minimum-secret
+API_URL=http://localhost:3000
+CORS_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000
+INITIAL_DIRECTOR_PASSWORD=change-this-password
+INITIAL_STAFF_PASSWORD=change-this-password
+```
+
+### 3. Start the app
+
+```bash
+cd backend
+npm start
+```
+
+Open:
+
+```text
+http://localhost:3000/src/pages/login.html
+```
+
+### Optional development server
+
+```bash
+cd backend
+npm run dev
+```
+
+## Credentials
+
+Passwords are read from `backend/.env`.
+
+**Director**
 - Email: `director@drosa.com`
-- Password: value from `backend/.env` -> `INITIAL_DIRECTOR_PASSWORD`
+- Password: `INITIAL_DIRECTOR_PASSWORD`
 - Role: Direktor Ordinacije
-- Access: Director panel with all reports
 
-**Staff Access:**
+**Staff**
 - Email: `staff@drosa.com`
-- Password: value from `backend/.env` -> `INITIAL_STAFF_PASSWORD`
+- Password: `INITIAL_STAFF_PASSWORD`
 - Role: Zaposlenik
-- Access: Patient dashboard, new entries, records
 
-## 🔐 Authentication System
+## Useful Runtime Checks
 
-### How It Works
-1. User submits credentials on `login.html`
-2. `login.js` validates against demo user database
-3. Session saved to `localStorage['drrosa-session']` with role
-4. Redirect based on role:
-   - Director → `director-panel.html`
-   - Staff → `index.html` (dashboard)
-5. All pages validate session on load
-   - Valid session + correct role → Allow access
-   - Invalid/missing session → Redirect to login
-   - Wrong role (e.g., staff accessing director panel) → Redirect to login
+```bash
+# Health check with curl
+curl http://localhost:3000/api/health
 
-### Session Object
-```json
-{
-  "email": "director@drosa.com",
-  "name": "Dr Rosa Bašić",
-  "role": "director",
-  "loginTime": "2026-05-03T19:39:40.254Z"
-}
+# Health check in PowerShell
+Invoke-WebRequest -UseBasicParsing http://localhost:3000/api/health
+
+# See running Node processes in PowerShell
+Get-Process | Where-Object { $_.ProcessName -eq 'node' } | Select-Object Id,ProcessName,Path
 ```
 
-## 📊 Director Panel Reports
+## Authentication
 
-**4 Comprehensive Reports Available:**
+1. User submits credentials on `login.html`.
+2. Frontend calls `POST /api/auth/login`.
+3. Backend validates the user in SQLite.
+4. Backend returns a JWT and user object.
+5. Frontend stores:
+   - `localStorage['drrosa-token']`
+   - `localStorage['drrosa-session']`
+6. Protected pages call `POST /api/auth/verify`.
+7. Director-only pages additionally require `role === "director"`.
 
-1. **Finansijski Izvještaj** (Financial Report)
-   - Total revenue, outstanding debt, payment percentage
-   - Payment breakdown by patient with amount and status
+## Data Persistence
 
-2. **Pacijenti** (Patients Report)
-   - Total patients, regular vs new patients
-   - Visit frequency and payment status per patient
-   - Retention metrics
+Primary data is stored in SQLite.
 
-3. **Doktori** (Doctors Report)
-   - Workload distribution across doctors
-   - Patient count per doctor
-   - Productivity percentages
+- Default database: `backend/data/drosa.sqlite`
+- Schema: `backend/database.sql`
+- Config: `backend/.env`
 
-4. **Postupci** (Procedures Report)
-   - Procedure frequency and percentages
-   - Average payment per procedure type
-   - Service mix analysis
+Browser storage is only used for active auth/session state.
 
-**See [DIRECTOR_PANEL_GUIDE.md](DIRECTOR_PANEL_GUIDE.md) for detailed documentation.**
+## Export Behavior
 
-## 💾 Data Persistence
+Excel/PDF export utilities live in `src/scripts/export-utils.js`.
 
-All data stored in browser `localStorage`:
+- Excel export creates an `.xls` file from the provided table headers and rows.
+- PDF export opens a print window with the same table content; use browser print/save as PDF.
+- `Sve evidencije` export follows the currently filtered table rows.
+- Director report export follows the currently opened report/table.
+- If there are no rows, export shows `Nema podataka za export.`
 
-- `drrosa-session` — Current user session
-- `drrosa-records` — All visit records with payment status
-- `drrosa-patients` — Patient registry with contact info
+## Playwright Smoke Tests
 
-**Example Record:**
-```javascript
-{
-  patient: "Ana Kovač",
-  lastVisit: "2026-04-28",
-  procedure: "Kontrola i čišćenje",
-  status: "Zakazano",
-  doctor: "Dr Rosa",
-  paymentStatus: "Plaćeno",
-  amountDue: 50
-}
+Automated smoke tests live in `tests/playwright`.
+
+### Covered flows
+
+- Staff and director login
+- Staff navigation
+- New patient creation
+- New visit creation
+- Director panel reports
+- Basic Excel/PDF export button checks in director reports
+
+### Install test dependencies
+
+```bash
+cd tests/playwright
+npm install
 ```
 
-## 🎨 Design Features
+### Run tests
 
-- **Responsive Layout**: Mobile-first design with Flexbox/Grid
-- **Gradient Color System**: Brand-inspired blue and green gradients
-- **Status Colors**: 
-  - 🟢 Plaćeno (Paid)
-  - 🟡 Delimično (Partial)
-  - 🔴 Dugovanje (Debt)
-  - 🔵 Zakazano (Scheduled)
-- **Interactive Tooth Map**: FDI numbering system for treatment mapping
-- **Dark/Light Text**: Accessible contrast ratios
-- **SVG Logo**: Scalable brand asset
+```bash
+cd tests/playwright
+npm test
+```
 
-## 🔧 Technologies
+### Run with visible browser
 
-- **HTML5** — Semantic markup with accessibility
-- **CSS3** — Flexbox, Grid, gradients, media queries
-- **Vanilla JavaScript** — No dependencies, pure ES6+
-- **localStorage API** — Client-side data persistence
-- **SVG** — Interactive tooth mapping
+```bash
+cd tests/playwright
+npm run test:headed
+```
 
-## 📝 Notes
+### Open Playwright HTML report
 
-- Application uses demo data and localStorage (no backend server)
-- All data is cleared when browser cache is cleared
-- For production: Replace localStorage with real database
-- Currently supports 2 demo users; expand in `login.js`
+```bash
+cd tests/playwright
+npm run report
+```
 
-## 🚀 Future Enhancements
+### Test notes
 
-- [ ] Backend API integration (Node.js/Python)
-- [ ] Real database (PostgreSQL/MongoDB)
-- [ ] PDF export for reports
-- [ ] Email report delivery
-- [ ] Charts and graphs (Chart.js)
-- [ ] Calendar interface
-- [ ] Billing/Invoice system
-- [ ] Two-factor authentication
-- [ ] Audit logging
-- [ ] User management for staff
+- `playwright.config.js` checks `http://localhost:3000/api/health`.
+- If the backend is not already running, Playwright starts `backend/server.js`.
+- Test credentials are read from `backend/.env`.
+- For a different host/port, run tests with `PLAYWRIGHT_BASE_URL`, for example `PLAYWRIGHT_BASE_URL=https://your-server.example npm test`.
+- The patient/visit smoke test creates real smoke records in SQLite with names like `Smoke... Playwright`.
+- Last verified result: `4 passed`.
 
-## 📞 Support
+## Maintenance Commands
 
-For documentation on Director Panel features, see [DIRECTOR_PANEL_GUIDE.md](DIRECTOR_PANEL_GUIDE.md)
+```bash
+# Backend dependency audit
+cd backend
+npm audit
+
+# Backend SQLite backup
+cd backend
+npm run backup
+
+# Seed demo data
+cd backend
+npm run seed:demo
+
+# Playwright dependency audit
+cd tests/playwright
+npm audit
+
+# Git status
+git status --short
+```
+
+## Security Test Summary
+
+Recent local checks covered:
+
+- Health endpoint
+- Auth-required API routes
+- Wrong password rejection
+- SQLi-style login payload rejection
+- Staff blocked from director report routes
+- Director report access
+- CORS disallowed origin rejection
+- Login rate limiter returning `429`
+- npm audit with `0` known vulnerabilities
+- Patient and visit CRUD integration
+
+## Technologies
+
+- HTML5
+- CSS3
+- Vanilla JavaScript
+- Node.js
+- Express
+- SQLite
+- JWT
+- bcrypt
+- Helmet
+- Playwright
+
+## Production Hardening Notes
+
+- Rotate `JWT_SECRET` and all initial passwords.
+- Use HTTPS.
+- Consider moving JWT storage from `localStorage` to HttpOnly Secure SameSite cookies.
+- Remove inline styles where possible and tighten CSP by removing `style-src 'unsafe-inline'`.
+- Add user-management UI for staff accounts.
+- Add automated database backup scheduling.
+
+## Support
+
+For director panel documentation, see [DIRECTOR_PANEL_GUIDE.md](DIRECTOR_PANEL_GUIDE.md).
 
 ---
 
-**Version:** 2.1 (Frontend/API integration pass)  
-**Last Updated:** Maj 2026  
-**Status:** Demo with backend integration; production hardening still required
+**Version:** 2.2  
+**Last Updated:** May 2026  
+**Status:** Demo with backend integration, SQLite persistence, export support and Playwright smoke tests; production hardening still required.

@@ -1,5 +1,5 @@
 (function () {
-  const API_BASE = window.DRROSA_API_BASE || "http://localhost:3000/api";
+  const API_BASE = window.DRROSA_API_BASE || "/api";
 
   const defaultRecords = [
     { patient: "Ana Kovac", lastVisit: "2026-04-28", procedure: "Kontrola i ciscenje", status: "Zakazano", note: "Follow-up za 2 tjedna", doctor: "Dr Rosa", visits: 1, paymentStatus: "Placeno", amountDue: 0 },

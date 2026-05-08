@@ -170,10 +170,12 @@ function renderRecords(records) {
     patient.patient,
     formatDate(patient.lastVisit),
     patient.visits,
+    "-",
     patient.hasDebt ? "Dugovanje" : "Placeno",
     Array.from(patient.currencies).join(" / "),
     Array.from(patient.shifts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "-",
-    formatCurrencyAmounts(patient.totalDebt)
+    formatCurrencyAmounts(patient.totalDebt),
+    "Otvori"
   ]);
 
   if (uniquePatients.length === 0) {
@@ -248,7 +250,7 @@ function refresh() {
 
 function exportFiltered(format) {
   const title = "Filtrirana evidencija pacijenata";
-  const headers = ["Pacijent", "Zadnji posjet", "Ukupno poseta", "Placanje", "Valuta", "Smena", "Dugovanje"];
+  const headers = ["Pacijent", "Zadnji posjet", "Ukupno poseta", "Status", "Placanje", "Valuta", "Smena", "Dugovanje", "Detalji"];
   if (format === "excel") {
     window.DrRosaExport.exportExcel(title, headers, currentExportRows);
     return;

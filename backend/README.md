@@ -11,8 +11,8 @@ NODE_ENV=production
 PORT=3000
 JWT_SECRET=use-a-unique-secret-with-at-least-32-characters
 CORS_ORIGIN=https://your-frontend-origin.example
-SQLITE_DB_PATH=E:\DrRosaData\drosa.sqlite
-SQLITE_BACKUP_DIR=E:\DrRosaData\backups
+SQLITE_DB_PATH=./data/drosa.sqlite
+SQLITE_BACKUP_DIR=./backups
 INITIAL_DIRECTOR_PASSWORD=set-a-strong-initial-password
 INITIAL_STAFF_PASSWORD=set-a-different-strong-password
 ```
@@ -21,11 +21,12 @@ Notes:
 - `JWT_SECRET` is required. The server will not start with a missing or weak secret.
 - Initial passwords are used only when the `users` table is empty.
 - `CORS_ORIGIN` is an allowlist. Use comma-separated origins if needed.
-- For a USB database, keep the drive letter stable and stop the backend before unplugging it.
+- Relative SQLite paths are resolved from the `backend` directory, so the project can move between computers and servers.
 
 ## Commands
 
 ```powershell
+cd backend
 npm.cmd install
 npm.cmd start
 npm.cmd run backup
