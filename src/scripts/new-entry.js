@@ -576,6 +576,13 @@ form.addEventListener("submit", async (event) => {
   };
 
   try {
+    if (recordParam) {
+      await window.DrRosaApi.updateRecord(recordParam, newRecord);
+      showAlert("Unos je azuriran! Vratite se na dashboard da ga pregledate.");
+      allRecords = await window.DrRosaApi.getRecords();
+      return;
+    }
+
     await window.DrRosaApi.createRecord(newRecord);
     showAlert("Unos je spremljen! Vratite se na dashboard da ga pregledate.");
     form.reset();

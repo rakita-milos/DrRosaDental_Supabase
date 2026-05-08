@@ -145,6 +145,27 @@
     });
   }
 
+  async function updatePatient(patientId, patient) {
+    return request(`/patients/${patientId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        first_name: patient.firstName,
+        last_name: patient.lastName,
+        date_of_birth: patient.birthDate,
+        email: patient.email,
+        phone: patient.phone,
+        address: patient.address,
+        emergency_contact: patient.emergencyContact,
+        gender: patient.gender,
+        medical_history: patient.medicalHistory
+      })
+    });
+  }
+
+  async function deletePatient(patientId) {
+    return request(`/patients/${patientId}`, { method: "DELETE" });
+  }
+
   async function getDoctors() {
     return request("/doctors");
   }
@@ -174,6 +195,22 @@
     });
   }
 
+  async function updateRecord(recordId, record) {
+    return request(`/records/${recordId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        procedure: record.procedure,
+        status: record.status,
+        notes: record.note,
+        shift: record.shift
+      })
+    });
+  }
+
+  async function deleteRecord(recordId) {
+    return request(`/records/${recordId}`, { method: "DELETE" });
+  }
+
   async function getDirectorReport(type) {
     return request(`/director/reports/${type}`);
   }
@@ -185,9 +222,13 @@
     getSession,
     getPatients,
     createPatient,
+    updatePatient,
+    deletePatient,
     getDoctors,
     getRecords,
     createRecord,
+    updateRecord,
+    deleteRecord,
     getDirectorReport,
     normalizeRecord,
     getLocalRecords

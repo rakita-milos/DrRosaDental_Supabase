@@ -6,10 +6,33 @@ Automatizovani smoke testovi za Dr Rosa aplikaciju.
 
 - Login za staff i director role
 - Navigaciju kroz glavne staff stranice
-- Unos novog pacijenta preko UI-ja
-- Unos nove posete preko UI-ja
+- Full CRUD tok za pacijenta preko UI-ja: create, read, update, delete
+- Full CRUD tok za posetu preko UI-ja: create, read, update, delete
 - Direktor panel i sve glavne izvestaje
 - Osnovni klik na Excel/PDF export dugmad u direktor panelu
+
+## Struktura
+
+Testovi koriste Page Object Model:
+
+```text
+tests/playwright/
+  pages/
+    LoginPage.js
+    DashboardPage.js
+    NewPatientPage.js
+    NewEntryPage.js
+    AllRecordsPage.js
+    PatientDashboardPage.js
+    DirectorPanelPage.js
+  utils/
+    auth.js
+    env.js
+  tests/
+    smoke.spec.js
+```
+
+`smoke.spec.js` sadrzi scenarije, dok su selektori i akcije smesteni u page object klase. Non-login testovi koriste test JWT iz `backend/.env`, da ne trose login rate limiter; pravi UI login je pokriven posebnim testom.
 
 ## Pokretanje
 

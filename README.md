@@ -189,6 +189,8 @@ Automated smoke tests live in `tests/playwright`.
 - Staff navigation
 - New patient creation
 - New visit creation
+- Full patient CRUD: create, read, update, delete
+- Full visit CRUD: create, read, update, delete
 - Director panel reports
 - Basic Excel/PDF export button checks in director reports
 
@@ -225,8 +227,9 @@ npm run report
 - `playwright.config.js` checks `http://localhost:3000/api/health`.
 - If the backend is not already running, Playwright starts `backend/server.js`.
 - Test credentials are read from `backend/.env`.
+- Tests use Page Object Model classes from `tests/playwright/pages`.
 - For a different host/port, run tests with `PLAYWRIGHT_BASE_URL`, for example `PLAYWRIGHT_BASE_URL=https://your-server.example npm test`.
-- The patient/visit smoke test creates real smoke records in SQLite with names like `Smoke... Playwright`.
+- The full CRUD smoke test creates, updates and deletes its own smoke patient/visit records.
 - Last verified result: `4 passed`.
 
 ## Maintenance Commands

@@ -120,7 +120,8 @@ h1 {
 }
 
 .primary-btn,
-.secondary-btn {
+.secondary-btn,
+.danger-btn {
   border: none;
   border-radius: 999px;
   cursor: pointer;
@@ -143,6 +144,21 @@ h1 {
   background: white;
   color: #1f2b3a;
   box-shadow: 0 10px 24px rgba(136, 151, 171, 0.12);
+}
+
+.danger-btn {
+  background: #fff1f2;
+  color: #b4232f;
+  border: 1px solid #fecdd3;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(180, 35, 47, 0.08);
+}
+
+.danger-btn:hover,
+.danger-btn:focus-visible {
+  transform: translateY(-1px);
+  background: #dc3545;
+  color: white;
 }
 
 .topbar nav a,

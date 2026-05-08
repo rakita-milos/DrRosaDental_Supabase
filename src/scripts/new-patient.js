@@ -19,6 +19,38 @@ async function requireAccess() {
 
 const form = document.getElementById("patient-form");
 const cancelBtn = document.getElementById("cancel-btn");
+const patientId = new URLSearchParams(window.location.search).get("patient");
+
+function patientFullName(patient) {
+  return `${patient.firstName || patient.first_name || ""} ${patient.lastName || patient.last_name || ""}`.trim();
+}
+
+function setValue(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.value = value || "";
+}
+
+async function loadPatientForEdit() {
+  if (!patientId) return;
+  try {
+    const patients = await window.DrRosaApi.getPatients();
+    const patient = patients.find(item => String(item.id) === String(patientId));
+    if (!patient) return;
+    document.querySelector(".section-header h2").textContent = "Uredi pacijenta";
+    form.querySelector("button[type='submit']").textContent = "Sacuvaj izmene";
+    setValue("first-name", patient.firstName || patient.first_name);
+    setValue("last-name", patient.lastName || patient.last_name);
+    setValue("birth-date", patient.birthDate || patient.date_of_birth);
+    setValue("gender", patient.gender);
+    setValue("address", patient.address);
+    setValue("phone", patient.phone);
+    setValue("email", patient.email);
+    setValue("emergency-contact", patient.emergencyContact || patient.emergency_contact);
+    setValue("medical-history", patient.medicalHistory || patient.medical_history);
+  } catch (error) {
+    alert(error.message || "Pacijent nije ucitan.");
+  }
+}
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -39,6 +71,12 @@ form.addEventListener("submit", async (event) => {
   };
 
   try {
+    if (patientId) {
+      await window.DrRosaApi.updatePatient(patientId, patient);
+      alert("Pacijent azuriran!");
+      window.location.href = `patient-dashboard.html?patient=${encodeURIComponent(patientFullName(patient))}`;
+      return;
+    }
     await window.DrRosaApi.createPatient(patient);
     alert("Pacijent sacuvan!");
     form.reset();
@@ -53,4 +91,7 @@ cancelBtn.addEventListener("click", () => {
   }
 });
 
-requireAccess();
+(async function init() {
+  if (!await requireAccess()) return;
+  await loadPatientForEdit();
+})();

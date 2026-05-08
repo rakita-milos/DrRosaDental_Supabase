@@ -117,6 +117,8 @@ const patientInfoSection = document.getElementById("patient-info-section");
 const patientInfo = document.getElementById("patient-info");
 const recordsBody = document.getElementById("patient-records-body");
 const treatmentList = document.getElementById("treatment-list");
+const editPatientLink = document.getElementById("edit-patient-link");
+const deletePatientBtn = document.getElementById("delete-patient-btn");
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
 
 function renderEmpty(message) {
@@ -163,6 +165,16 @@ function renderEmpty(message) {
 
   if (patientDetails) {
     patientInfoSection.style.display = "block";
+    editPatientLink.href = `new-patient.html?patient=${encodeURIComponent(patientDetails.id)}`;
+    deletePatientBtn.addEventListener("click", async () => {
+      if (!confirm("Da li ste sigurni da zelite da obrisete ovog pacijenta i sve njegove zapise?")) return;
+      try {
+        await window.DrRosaApi.deletePatient(patientDetails.id);
+        window.location.href = "all-records.html";
+      } catch (error) {
+        alert(error.message || "Pacijent nije obrisan.");
+      }
+    });
     patientInfo.innerHTML = `
       <p><strong>Ime:</strong> ${escapeHtml(patientFullName(patientDetails))}</p>
       <p><strong>Datum rodjenja:</strong> ${formatDate(patientDetails.birthDate || patientDetails.date_of_birth)}</p>
@@ -191,9 +203,24 @@ function renderEmpty(message) {
       <td>${formatMoney(recordVisitCost(record), record.currency)}</td>
       <td>${formatMoney(record.amountDue, record.currency)}</td>
       <td>${escapeHtml(record.note || "-")}${Number(record.totalDiscount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust na ukupno: ${formatMoney(record.totalDiscount, record.currency)}</div>` : ""}</td>
-      <td><a class="secondary-btn" href="${recordDetailsUrl(record)}">Otvori</a></td>
+      <td>
+        <a class="secondary-btn" href="${recordDetailsUrl(record)}">Uredi</a>
+        <button class="danger-btn delete-record-btn" type="button" data-record-id="${escapeHtml(record.id)}">Obrisi</button>
+      </td>
     </tr>
   `).join("");
+
+  document.querySelectorAll(".delete-record-btn").forEach(button => {
+    button.addEventListener("click", async () => {
+      if (!confirm("Da li ste sigurni da zelite da obrisete ovaj zapis?")) return;
+      try {
+        await window.DrRosaApi.deleteRecord(button.dataset.recordId);
+        window.location.reload();
+      } catch (error) {
+        alert(error.message || "Zapis nije obrisan.");
+      }
+    });
+  });
 
   const treatmentEntries = [];
   patientRecords.forEach((record) => {

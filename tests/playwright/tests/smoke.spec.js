@@ -1,55 +1,12 @@
-const fs = require("fs");
-const path = require("path");
 const { test, expect } = require("@playwright/test");
-
-const backendEnv = readEnv(path.join(__dirname, "../../../backend/.env"));
-
-function readEnv(filePath) {
-  return fs
-    .readFileSync(filePath, "utf8")
-    .split(/\r?\n/)
-    .filter(line => line.includes("=") && !line.trim().startsWith("#"))
-    .reduce((env, line) => {
-      const index = line.indexOf("=");
-      env[line.slice(0, index).trim()] = line.slice(index + 1).trim();
-      return env;
-    }, {});
-}
-
-async function login(page, role = "staff") {
-  const isDirector = role === "director";
-  await page.goto("/src/pages/login.html");
-  await page.locator("#email").fill(isDirector ? "director@drosa.com" : "staff@drosa.com");
-  await page.locator("#role").selectOption(role);
-  await page.locator("#password").fill(isDirector ? backendEnv.INITIAL_DIRECTOR_PASSWORD : backendEnv.INITIAL_STAFF_PASSWORD);
-  await page.getByRole("button", { name: "Prijavi se" }).click();
-  await expect(page).toHaveURL(new RegExp(isDirector ? "director-panel\\.html" : "index\\.html"));
-}
-
-async function authenticate(page, role = "staff") {
-  const isDirector = role === "director";
-  const response = await page.request.post("/api/auth/login", {
-    data: {
-      email: isDirector ? "director@drosa.com" : "staff@drosa.com",
-      password: isDirector ? backendEnv.INITIAL_DIRECTOR_PASSWORD : backendEnv.INITIAL_STAFF_PASSWORD,
-      role
-    }
-  });
-
-  if (!response.ok()) {
-    throw new Error(`API login failed with HTTP ${response.status()}`);
-  }
-
-  const data = await response.json();
-  await page.goto("/src/pages/login.html");
-  await page.evaluate(({ token, user }) => {
-    localStorage.setItem("drrosa-token", token);
-    localStorage.setItem("drrosa-session", JSON.stringify({
-      ...user,
-      loginTime: new Date().toISOString()
-    }));
-  }, data);
-}
+const { authenticate } = require("../utils/auth");
+const { LoginPage } = require("../pages/LoginPage");
+const { DashboardPage } = require("../pages/DashboardPage");
+const { NewPatientPage } = require("../pages/NewPatientPage");
+const { NewEntryPage } = require("../pages/NewEntryPage");
+const { AllRecordsPage } = require("../pages/AllRecordsPage");
+const { PatientDashboardPage } = require("../pages/PatientDashboardPage");
+const { DirectorPanelPage } = require("../pages/DirectorPanelPage");
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/src/pages/login.html");
@@ -57,80 +14,103 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("login smoke test for staff and director roles", async ({ page }) => {
-  await login(page, "staff");
+  const loginPage = new LoginPage(page);
+
+  await loginPage.loginAs("staff");
   await expect(page.locator("h1")).toBeVisible();
   await page.locator("#logout-btn").click();
   await expect(page).toHaveURL(/login\.html/);
 
-  await login(page, "director");
+  await loginPage.loginAs("director");
   await expect(page.getByRole("heading", { name: /Direktor panel/i })).toBeVisible();
 });
 
 test("staff navigation smoke test", async ({ page }) => {
   await authenticate(page, "staff");
-  await page.goto("/src/pages/index.html");
+  const dashboard = new DashboardPage(page);
 
-  await page.getByRole("link", { name: "Novi unos" }).click();
-  await expect(page).toHaveURL(/new-entry\.html/);
+  await dashboard.goto();
+  await dashboard.openNewEntry();
   await expect(page.getByRole("heading", { name: /Dodaj pregled/i })).toBeVisible();
 
-  await page.getByRole("link", { name: "Novi pacijent" }).first().click();
-  await expect(page).toHaveURL(/new-patient\.html/);
+  await dashboard.goto();
+  await dashboard.openNewPatient();
   await expect(page.getByRole("heading", { name: /Unos novog pacijenta/i })).toBeVisible();
 
-  await page.getByRole("link", { name: /Kompletna evidencija/i }).click();
-  await expect(page).toHaveURL(/all-records\.html/);
+  await dashboard.goto();
+  await dashboard.openAllRecords();
   await expect(page.locator("#all-records-body tr").first()).toBeVisible();
-
-  await page.getByRole("link", { name: "Dashboard" }).click();
-  await expect(page).toHaveURL(/index\.html/);
 });
 
-test("create patient and visit smoke test", async ({ page }) => {
+test("full patient and visit CRUD smoke test", async ({ page }) => {
   await authenticate(page, "staff");
 
   const stamp = Date.now();
-  const firstName = `Smoke${stamp}`;
-  const lastName = "Playwright";
-  const fullName = `${firstName} ${lastName}`;
+  const patient = {
+    firstName: `Smoke${stamp}`,
+    lastName: "Playwright",
+    birthDate: "1986-05-08",
+    email: `smoke${stamp}@example.test`,
+    phone: "060123456"
+  };
+  const updatedPatient = {
+    ...patient,
+    firstName: `${patient.firstName}Edit`,
+    phone: "061654321"
+  };
+  const fullName = `${patient.firstName} ${patient.lastName}`;
+  const updatedFullName = `${updatedPatient.firstName} ${updatedPatient.lastName}`;
 
-  await page.goto("/src/pages/new-patient.html");
-  page.on("dialog", dialog => dialog.accept());
-  await page.locator("#first-name").fill(firstName);
-  await page.locator("#last-name").fill(lastName);
-  await page.locator("#birth-date").fill("1986-05-08");
-  await page.locator("#gender").selectOption({ index: 1 });
-  await page.locator("#address").fill("Playwright smoke address");
-  await page.locator("#phone").fill("060123456");
-  await page.locator("#email").fill(`smoke${stamp}@example.test`);
-  await page.locator("#emergency-contact").fill("Smoke Contact");
-  await page.locator("#medical-history").fill("Automated smoke patient");
-  await page.getByRole("button", { name: /Sa.*uvaj pacijenta/i }).click();
+  const newPatient = new NewPatientPage(page);
+  const newEntry = new NewEntryPage(page);
+  const allRecords = new AllRecordsPage(page);
+  const patientDashboard = new PatientDashboardPage(page);
 
-  await page.goto("/src/pages/new-entry.html");
-  await page.locator("#patient-name").fill(fullName);
-  await page.locator("#last-visit").fill("2026-05-08");
-  await page.locator("#procedure-activity").selectOption({ index: 1 });
-  await expect(page.locator("#procedure")).toBeEnabled();
-  await page.locator("#procedure").selectOption({ index: 1 });
-  await page.locator("#status").selectOption({ index: 2 });
-  await page.locator("#payment-status").selectOption({ index: 0 });
-  await page.locator("#currency").selectOption("EUR");
-  await page.locator("#shift").selectOption("Prva smena");
-  await page.locator("#amount-due").fill("0");
-  await page.locator("#note").fill("Automated Playwright visit smoke test");
-  await page.getByRole("button", { name: /Spremi unos/i }).click();
+  await newPatient.goto();
+  await newPatient.fillPatient(patient);
+  await newPatient.saveAndAcceptDialog("Pacijent sacuvan");
 
-  await expect(page.locator(".form-alert")).toContainText(/Unos je spremljen/i);
+  await newEntry.goto(null, fullName);
+  await newEntry.fillVisit({
+    patientName: fullName,
+    procedureLabel: "Kontrola",
+    note: "Automated Playwright visit create"
+  });
+  await newEntry.save();
+  await expect(newEntry.alert).toContainText(/Unos je spremljen/i);
 
-  await page.goto("/src/pages/all-records.html");
-  await page.locator("#search-input").selectOption(fullName);
-  await expect(page.locator("#all-records-body")).toContainText(fullName);
+  await allRecords.goto();
+  await allRecords.filterByPatient(fullName);
+  await allRecords.expectPatientVisible(fullName);
+  await allRecords.openPatient(fullName);
+  await patientDashboard.expectLoaded(fullName);
+  await patientDashboard.expectRecordVisible("Kontrola");
+
+  await patientDashboard.editPatientDetails();
+  await newPatient.fillPatient(updatedPatient);
+  await newPatient.saveAndAcceptDialog("Pacijent azuriran");
+  await patientDashboard.expectLoaded(updatedFullName);
+
+  await patientDashboard.editFirstRecord();
+  await newEntry.updateProcedureFromOpenedRecord("Plomba");
+  await newEntry.save();
+  await expect(newEntry.alert).toContainText(/Unos je azuriran/i);
+
+  await allRecords.goto();
+  await allRecords.openPatient(updatedFullName);
+  await patientDashboard.expectRecordVisible("Plomba");
+
+  await patientDashboard.deleteFirstRecord();
+  await expect(patientDashboard.recordsBody).toContainText(/Nema zapisa/i);
+
+  await patientDashboard.deleteCurrentPatient();
+  await allRecords.expectPatientHidden(updatedFullName);
 });
 
 test("director panel reports smoke test", async ({ page }) => {
   await authenticate(page, "director");
-  await page.goto("/src/pages/director-panel.html");
+  const directorPanel = new DirectorPanelPage(page);
+  await directorPanel.goto();
 
   const reports = [
     { id: "financial-report", table: "#payment-table" },
@@ -141,12 +121,8 @@ test("director panel reports smoke test", async ({ page }) => {
   ];
 
   for (const report of reports) {
-    await page.locator(`[data-report-id="${report.id}"]`).click();
-    await expect(page.locator(`#${report.id}`)).toHaveClass(/active/);
-    await expect(page.locator(`${report.table} tr`).first()).toBeVisible();
-    await page.locator(`#${report.id} .export-report-excel`).click();
-    await page.locator(`#${report.id} .export-report-pdf`).click();
-    await page.locator(`#${report.id} .back-to-reports`).click();
-    await expect(page.locator("#reports-grid")).toBeVisible();
+    await directorPanel.openReport(report.id, report.table);
+    await directorPanel.exportCurrentReport(report.id);
+    await directorPanel.backToReports(report.id);
   }
 });

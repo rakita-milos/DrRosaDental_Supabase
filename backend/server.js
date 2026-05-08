@@ -373,20 +373,46 @@ app.put('/api/patients/:id', authenticateToken, (req, res) => {
 
     db.prepare(`
       UPDATE patients
-      SET first_name = ?, last_name = ?, email = ?, phone = ?, address = ?, updated_at = CURRENT_TIMESTAMP
+      SET first_name = ?,
+          last_name = ?,
+          date_of_birth = ?,
+          gender = ?,
+          email = ?,
+          phone = ?,
+          address = ?,
+          emergency_contact = ?,
+          medical_history = ?,
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
       firstName,
       lastName,
+      cleanText(data.date_of_birth, { max: 20 }),
+      cleanText(data.gender, { max: 30 }),
       cleanText(data.email, { max: 255 }),
       cleanText(data.phone, { max: 50 }),
       cleanText(data.address, { max: 255 }),
+      cleanText(data.emergency_contact, { max: 255 }),
+      cleanText(data.medical_history, { max: 2000 }),
       req.params.id
     );
 
     res.json(db.prepare('SELECT * FROM patients WHERE id = ?').get(req.params.id));
   } catch (error) {
     console.error('Update patient error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/patients/:id', authenticateToken, (req, res) => {
+  try {
+    const current = db.prepare('SELECT id FROM patients WHERE id = ?').get(req.params.id);
+    if (!current) return res.status(404).json({ error: 'Patient not found' });
+
+    db.prepare('DELETE FROM patients WHERE id = ?').run(req.params.id);
+    res.json({ id: Number(req.params.id), message: 'Patient deleted successfully' });
+  } catch (error) {
+    console.error('Delete patient error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -551,6 +577,19 @@ app.put('/api/records/:id', authenticateToken, (req, res) => {
     res.json({ id: Number(req.params.id), message: 'Record updated successfully' });
   } catch (error) {
     console.error('Update record error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/records/:id', authenticateToken, (req, res) => {
+  try {
+    const current = db.prepare('SELECT id FROM visit_records WHERE id = ?').get(req.params.id);
+    if (!current) return res.status(404).json({ error: 'Record not found' });
+
+    db.prepare('DELETE FROM visit_records WHERE id = ?').run(req.params.id);
+    res.json({ id: Number(req.params.id), message: 'Record deleted successfully' });
+  } catch (error) {
+    console.error('Delete record error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
