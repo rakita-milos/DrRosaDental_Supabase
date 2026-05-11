@@ -5,6 +5,9 @@
   "description": "Automated Playwright smoke tests for the Dr Rosa web app.",
   "scripts": {
     "test": "playwright test",
+    "test:smoke": "playwright test tests/smoke.spec.js tests/app-smoke.spec.js",
+    "test:integration": "playwright test tests/role-integration.e2e.spec.js",
+    "test:exports": "playwright test tests/reports-export.e2e.spec.js",
     "test:regression": "playwright test tests/regression.e2e.spec.js",
     "test:headed": "playwright test --headed",
     "report": "playwright show-report"

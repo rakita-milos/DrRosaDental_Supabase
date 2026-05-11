@@ -16,9 +16,17 @@ class DirectorPanelPage {
     await expect(this.page.locator(`${tableSelector} tr`).first()).toBeVisible();
   }
 
-  async exportCurrentReport(reportId) {
+  async exportCurrentReport(reportId, { closePopup = true } = {}) {
+    const downloadPromise = this.page.waitForEvent("download");
     await this.page.locator(`#${reportId} .export-report-excel`).click();
+    const download = await downloadPromise;
+
+    const popupPromise = this.page.waitForEvent("popup");
     await this.page.locator(`#${reportId} .export-report-pdf`).click();
+    const popup = await popupPromise;
+    await popup.waitForLoadState("domcontentloaded").catch(() => {});
+    if (closePopup) await popup.close();
+    return { download, popup };
   }
 
   async backToReports(reportId) {
@@ -68,6 +76,7 @@ class DirectorPanelPage {
     await expect(this.page.locator("#codebook-editor-title")).toContainText("Valute");
     await expect(this.page.locator("#codebook-value-field")).toBeVisible();
     await expect(this.page.locator("#codebook-detail-header")).toHaveText("Kurs");
+    await expect(this.page.locator("#codebook-price-header")).toBeHidden();
     await expect(this.page.locator(".codebook-group-field")).toBeHidden();
     await expect(this.page.locator(".codebook-price-field")).toBeHidden();
     await expect(this.page.locator("#currency-fields")).toBeVisible();
@@ -79,6 +88,7 @@ class DirectorPanelPage {
     await expect(this.page.locator("#codebook-editor-title")).toContainText("Statusi placanja");
     await expect(this.page.locator("#codebook-value-field")).toBeHidden();
     await expect(this.page.locator("#codebook-detail-header")).toBeHidden();
+    await expect(this.page.locator("#codebook-price-header")).toBeHidden();
     await expect(this.page.locator(".codebook-group-field")).toBeHidden();
     await expect(this.page.locator(".codebook-price-field")).toBeHidden();
     await expect(this.page.locator("#currency-fields")).toBeHidden();
@@ -92,6 +102,7 @@ class DirectorPanelPage {
     await expect(this.page.locator(".codebook-group-field")).toBeHidden();
     await expect(this.page.locator(".codebook-price-field")).toBeHidden();
     await expect(this.page.locator("#codebook-detail-header")).toBeHidden();
+    await expect(this.page.locator("#codebook-price-header")).toBeHidden();
   }
 
   async expectCurrencyCodeLockedOnEdit() {

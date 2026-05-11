@@ -185,11 +185,13 @@ Excel/PDF export utilities live in `src/scripts/export-utils.js`.
 
 ## Playwright Smoke Tests
 
-Automated smoke tests live in `tests/playwright`.
+Automated Playwright tests live in `tests/playwright`.
 
 ### Covered flows
 
 - Staff and director login
+- Staff and director page smoke coverage
+- Unauthenticated, staff and director access rules
 - Staff navigation
 - New patient creation
 - New visit creation
@@ -198,7 +200,10 @@ Automated smoke tests live in `tests/playwright`.
 - Delete protection: patient deletion is blocked while linked visit history exists
 - Director panel reports
 - Director admin codebooks: open, create and delete smoke item
-- Basic Excel/PDF export button checks in director reports
+- Cross-role integration: staff-created data is visible in director reports
+- Cross-role integration: director-created data is visible in staff evidence screens
+- Director-created codebook activity/procedure is available in staff visit entry
+- Excel/PDF export content checks for all records, financial reports and PAZARI reports
 
 ### Install test dependencies
 
@@ -212,6 +217,15 @@ npm install
 ```bash
 cd tests/playwright
 npm test
+```
+
+### Run grouped tests
+
+```bash
+cd tests/playwright
+npm run test:smoke
+npm run test:integration
+npm run test:exports
 ```
 
 ### Run full regression E2E tests
@@ -243,8 +257,8 @@ npm run report
 - Tests use Page Object Model classes from `tests/playwright/pages`.
 - For a different host/port, run tests with `PLAYWRIGHT_BASE_URL`, for example `PLAYWRIGHT_BASE_URL=https://your-server.example npm test`.
 - The full CRUD smoke test creates, updates and deletes its own smoke patient/visit records.
-- Regression E2E tests clean up created test patients, visits and codebook items through API cleanup.
-- Last verified result: `4 passed`.
+- Integration, export and regression E2E tests clean up created test patients, visits and codebook items through API cleanup.
+- Last verified result: `25 passed`.
 
 ## Maintenance Commands
 

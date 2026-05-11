@@ -41,15 +41,17 @@ class AllRecordsPage {
     await this.paymentFilter.selectOption(status);
   }
 
-  async exportFilteredTable() {
+  async exportFilteredTable({ closePopup = true } = {}) {
     const downloadPromise = this.page.waitForEvent("download");
     await this.exportExcel.click();
-    await downloadPromise;
+    const download = await downloadPromise;
 
     const popupPromise = this.page.waitForEvent("popup");
     await this.exportPdf.click();
     const popup = await popupPromise;
-    await popup.close();
+    await popup.waitForLoadState("domcontentloaded").catch(() => {});
+    if (closePopup) await popup.close();
+    return { download, popup };
   }
 }
 

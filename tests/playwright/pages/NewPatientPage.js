@@ -32,11 +32,16 @@ class NewPatientPage {
   }
 
   async saveAndAcceptDialog(expectedText) {
-    const dialogPromise = this.page.waitForEvent("dialog");
+    const dialogPromise = new Promise((resolve) => {
+      this.page.once("dialog", dialog => {
+        const message = dialog.message();
+        resolve(message);
+        dialog.accept().catch(() => {});
+      });
+    });
     await this.submit.click();
-    const dialog = await dialogPromise;
-    if (expectedText) expect(dialog.message()).toContain(expectedText);
-    await dialog.accept();
+    const message = await dialogPromise;
+    if (expectedText) expect(message).toContain(expectedText);
   }
 }
 

@@ -1,11 +1,10 @@
 const { test, expect } = require("@playwright/test");
 const { authenticate } = require("../utils/auth");
 const { cleanupRegressionData } = require("../utils/cleanup");
-const { NewPatientPage } = require("../pages/NewPatientPage");
+const { createCodebookItem, createPatient, createPatientWithRecord } = require("../utils/api");
 const { NewEntryPage } = require("../pages/NewEntryPage");
 const { AllRecordsPage } = require("../pages/AllRecordsPage");
 const { PatientDashboardPage } = require("../pages/PatientDashboardPage");
-const { DirectorPanelPage } = require("../pages/DirectorPanelPage");
 
 const TEST_PREFIX = "E2E";
 
@@ -26,62 +25,57 @@ test("regression: staff cannot open director admin area", async ({ page }) => {
   await expect(page).not.toHaveURL(/director-panel\.html/);
 });
 
-test("regression: filtered records export uses visible filtered rows", async ({ page }) => {
+test("regression: filtered records export uses visible filtered rows", async ({ page, request, baseURL }) => {
   await authenticate(page, "staff");
 
   const stamp = Date.now();
-  const patient = {
-    firstName: `${TEST_PREFIX}Export${stamp}`,
-    lastName: "Patient",
-    email: `e2e.export.${stamp}@example.test`
-  };
-  const fullName = `${patient.firstName} ${patient.lastName}`;
+  const { fullName } = await createPatientWithRecord(request, baseURL, {
+    patient: {
+      firstName: `${TEST_PREFIX}Export${stamp}`,
+      lastName: "Patient",
+      email: `e2e.export.${stamp}@example.test`
+    },
+    record: {
+      procedure: "Kontrola",
+      status: "Zavrseno",
+      paymentStatus: "Dugovanje",
+      amount: 120,
+      note: `${TEST_PREFIX} filtered export cleanup`
+    }
+  }, "staff");
 
-  const newPatient = new NewPatientPage(page);
-  const newEntry = new NewEntryPage(page);
   const allRecords = new AllRecordsPage(page);
-  const patientDashboard = new PatientDashboardPage(page);
-
-  await newPatient.goto();
-  await newPatient.fillPatient(patient);
-  await newPatient.saveAndAcceptDialog("Pacijent sacuvan");
-
-  await newEntry.goto(null, fullName);
-  await newEntry.fillVisit({
-    patientName: fullName,
-    procedureLabel: "Kontrola",
-    statusIndex: 3,
-    paymentIndex: 1,
-    amountDue: 120,
-    note: `${TEST_PREFIX} filtered export cleanup`
-  });
-  await newEntry.save();
-  await expect(newEntry.alert).toContainText(/Unos je spremljen/i);
 
   await allRecords.goto();
   await allRecords.filterByPatient(fullName);
   await allRecords.filterByPaymentStatus("Dugovanje");
   await allRecords.expectPatientVisible(fullName);
   await allRecords.exportFilteredTable();
-
-  await allRecords.openPatient(fullName);
-  await patientDashboard.deleteFirstRecord();
-  await expect(patientDashboard.recordsBody).toContainText(/Nema zapisa/i);
-  await patientDashboard.deleteCurrentPatient();
 });
 
-test("regression: director-created procedure is available in visit entry and cleans up", async ({ page }) => {
-  await authenticate(page, "director");
-
+test("regression: director-created procedure is available in visit entry and cleans up", async ({ page, request, baseURL }) => {
   const stamp = Date.now();
   const activityName = `${TEST_PREFIX} Delatnost ${stamp}`;
   const procedureName = `${TEST_PREFIX} Procedura ${stamp}`;
 
-  const directorPanel = new DirectorPanelPage(page);
-  await directorPanel.goto();
-  await directorPanel.openCodebookAdmin();
-  await directorPanel.createActivity(activityName);
-  await directorPanel.createProcedure({ name: procedureName, activity: activityName, price: "88" });
+  await createCodebookItem(request, baseURL, {
+    type: "activity",
+    value: activityName,
+    label: activityName,
+    sortOrder: 90,
+    isActive: true,
+    metadata: {}
+  });
+  await createCodebookItem(request, baseURL, {
+    type: "procedure",
+    value: procedureName,
+    label: procedureName,
+    groupName: activityName,
+    price: 88,
+    sortOrder: 91,
+    isActive: true,
+    metadata: {}
+  });
 
   await authenticate(page, "staff");
   const patient = {
@@ -90,15 +84,11 @@ test("regression: director-created procedure is available in visit entry and cle
     email: `e2e.proc.${stamp}@example.test`
   };
   const fullName = `${patient.firstName} ${patient.lastName}`;
+  await createPatient(request, baseURL, patient, "staff");
 
-  const newPatient = new NewPatientPage(page);
   const newEntry = new NewEntryPage(page);
   const allRecords = new AllRecordsPage(page);
   const patientDashboard = new PatientDashboardPage(page);
-
-  await newPatient.goto();
-  await newPatient.fillPatient(patient);
-  await newPatient.saveAndAcceptDialog("Pacijent sacuvan");
 
   await newEntry.goto(null, fullName);
   await newEntry.fillVisit({
