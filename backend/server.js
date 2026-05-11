@@ -836,7 +836,9 @@ function normalizeCodebookMetadata(type, metadata) {
         : Math.max(0, Number(input.exchangeRate || 0)),
       rateDate: cleanText(input.rateDate, { max: 20 }),
       rateBase: cleanText(input.rateBase, { max: 10 }) || 'EUR',
-      rateSource: cleanText(input.rateSource, { max: 80 }) || null
+      rateCurrency: cleanText(input.rateCurrency, { max: 10 }) || null,
+      rateSource: cleanText(input.rateSource, { max: 80 }) || null,
+      autoUpdatedAt: cleanText(input.autoUpdatedAt, { max: 20 }) || null
     };
   }
   if (type !== 'shift') return {};

@@ -651,7 +651,8 @@ function codebookFormElements() {
     groupField: document.querySelector(".codebook-group-field"),
     priceField: document.querySelector(".codebook-price-field"),
     valueField: document.getElementById("codebook-value-field"),
-    detailHeader: document.getElementById("codebook-detail-header")
+    detailHeader: document.getElementById("codebook-detail-header"),
+    priceHeader: document.getElementById("codebook-price-header")
   };
 }
 
@@ -685,6 +686,7 @@ function openCodebookEditor(type) {
   resetCodebookForm();
   updateShiftFieldsVisibility();
   renderCodebooksAdmin();
+  if (type === "currency") refreshCurrencyRatesIfNeeded();
 }
 
 function updateShiftFieldsVisibility() {
@@ -692,11 +694,15 @@ function updateShiftFieldsVisibility() {
   const hideGroupField = ["activity", "currency", "visit_status", "payment_status", "shift"].includes(activeCodebookType);
   const hidePriceField = ["activity", "currency", "visit_status", "payment_status", "shift"].includes(activeCodebookType);
   const hideDetailColumn = ["activity", "visit_status", "payment_status"].includes(activeCodebookType);
+  const showPriceColumn = activeCodebookType === "procedure";
   elements.shiftFields?.classList.toggle("active", activeCodebookType === "shift");
   elements.currencyFields?.classList.toggle("active", activeCodebookType === "currency");
   elements.groupField?.classList.toggle("hidden", hideGroupField);
   elements.priceField?.classList.toggle("hidden", hidePriceField);
   elements.valueField?.classList.toggle("hidden", activeCodebookType !== "currency");
+  if (elements.priceHeader) {
+    elements.priceHeader.hidden = !showPriceColumn;
+  }
   if (elements.detailHeader) {
     elements.detailHeader.hidden = hideDetailColumn;
     elements.detailHeader.textContent = activeCodebookType === "procedure"
@@ -755,11 +761,14 @@ function readShiftMetadata() {
 
 function readCurrencyMetadata() {
   const elements = codebookFormElements();
+  const pair = currencyRatePair(elements.value.value);
   return {
     exchangeRate: elements.currencyRate.value ? Number(elements.currencyRate.value) : null,
     rateDate: elements.currencyRateDate.value || null,
-    rateBase: "EUR",
-    rateSource: elements.currencyRate.value ? "manual" : null
+    rateBase: pair.base,
+    rateCurrency: pair.currency,
+    rateSource: elements.currencyRate.value ? "manual" : null,
+    autoUpdatedAt: null
   };
 }
 
@@ -777,7 +786,79 @@ function formatCurrencyMetadata(item) {
   if (!metadata.exchangeRate) return "-";
   const date = metadata.rateDate ? ` (${metadata.rateDate})` : "";
   const source = metadata.rateSource ? `, ${metadata.rateSource}` : "";
-  return `1 EUR = ${metadata.exchangeRate} ${item.value}${date}${source}`;
+  const pair = currencyRatePair(item.value);
+  const base = metadata.rateBase || pair.base;
+  const currency = metadata.rateCurrency || pair.currency;
+  return `1 ${base} = ${metadata.exchangeRate} ${currency}${date}${source}`;
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function currencyRatePair(value) {
+  const code = String(value || "").trim().toUpperCase();
+  if (code === "RSD") {
+    return { base: "RSD", currency: "EUR" };
+  }
+  return { base: code || "EUR", currency: "RSD" };
+}
+
+function isCurrencyRateFresh(item) {
+  return (item.metadata || {}).autoUpdatedAt === todayIsoDate();
+}
+
+async function fetchCurrencyMetadata(currency) {
+  const pair = currencyRatePair(currency);
+  const rate = await window.DrRosaApi.getExchangeRate(pair.currency, pair.base);
+  return {
+    exchangeRate: Number(rate.rate),
+    rateDate: rate.date || todayIsoDate(),
+    rateBase: rate.base || pair.base,
+    rateCurrency: rate.currency || pair.currency,
+    rateSource: rate.source || "Frankfurter",
+    autoUpdatedAt: todayIsoDate()
+  };
+}
+
+async function refreshCurrencyRatesIfNeeded() {
+  const currencyItems = codebookItems.filter(item => item.type === "currency" && item.isActive !== false);
+  const staleItems = currencyItems.filter(item => !isCurrencyRateFresh(item));
+  if (!staleItems.length) return;
+
+  showCodebookMessage("Osvezavam dnevne kurseve valuta...");
+  let refreshed = 0;
+  for (const item of staleItems) {
+    try {
+      const metadata = await fetchCurrencyMetadata(item.value);
+      await window.DrRosaApi.updateCodebookItem(item.id, { ...item, metadata });
+      item.metadata = metadata;
+      refreshed += 1;
+    } catch (error) {
+      console.error("Currency auto refresh error:", error);
+    }
+  }
+  if (refreshed) {
+    codebookItems = await window.DrRosaApi.getAdminCodebooks();
+    renderCodebooksAdmin();
+    renderCodebookGrid();
+    showCodebookMessage(`Dnevni kurs je osvezen za ${refreshed} valuta.`);
+  } else {
+    showCodebookMessage("Kursevi trenutno nisu mogli da se osveze automatski.", true);
+  }
+}
+
+async function applyAutomaticCurrencyRate(payload) {
+  if (payload.type !== "currency") return payload;
+  try {
+    return {
+      ...payload,
+      metadata: await fetchCurrencyMetadata(payload.value)
+    };
+  } catch (error) {
+    showCodebookMessage(error.message || "Kurs nije povucen automatski. Pokusajte ponovo kasnije.", true);
+    throw error;
+  }
 }
 
 function showCodebookMessage(message, isError = false) {
@@ -862,13 +943,14 @@ function renderCodebooksAdmin() {
     .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || a.label.localeCompare(b.label));
 
   const hideDetailColumn = ["activity", "visit_status", "payment_status"].includes(selectedType);
-  const emptyColspan = hideDetailColumn ? 5 : 6;
+  const showPriceColumn = selectedType === "procedure";
+  const emptyColspan = 4 + (hideDetailColumn ? 0 : 1) + (showPriceColumn ? 1 : 0);
   elements.table.innerHTML = rows.length ? rows.map(item => `
     <tr>
       <td>${escapeHtml(item.value)}</td>
       <td>${escapeHtml(item.label)}</td>
       ${hideDetailColumn ? "" : `<td>${escapeHtml(item.type === "shift" ? formatShiftMetadata(item) : item.type === "currency" ? formatCurrencyMetadata(item) : (item.groupName || "-"))}</td>`}
-      <td>${Number(item.price || 0).toFixed(2)}</td>
+      ${showPriceColumn ? `<td>${Number(item.price || 0).toFixed(2)}</td>` : ""}
       <td>${item.isActive === false ? "Neaktivno" : "Aktivno"}</td>
       <td>
         <button class="secondary-btn edit-codebook-btn" type="button" data-codebook-id="${item.id}">Uredi</button>
@@ -908,10 +990,10 @@ function initializeCodebookAdmin() {
       return;
     }
     try {
-      const rate = await window.DrRosaApi.getExchangeRate(currency, "EUR");
-      elements.currencyRate.value = rate.rate;
-      elements.currencyRateDate.value = rate.date;
-      showCodebookMessage(`Kurs je povucen iz ${rate.source}.`);
+      const metadata = await fetchCurrencyMetadata(currency);
+      elements.currencyRate.value = metadata.exchangeRate;
+      elements.currencyRateDate.value = metadata.rateDate;
+      showCodebookMessage(`Kurs je povucen iz ${metadata.rateSource}.`);
     } catch (error) {
       showCodebookMessage(error.message || "Kurs nije povucen. Unesite ga rucno.", true);
     }
@@ -919,13 +1001,14 @@ function initializeCodebookAdmin() {
 
   elements.form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const payload = readCodebookForm();
+    let payload = readCodebookForm();
     if (!payload.value || !payload.label) {
       showCodebookMessage("Unesite sifru i naziv.", true);
       return;
     }
 
     try {
+      payload = await applyAutomaticCurrencyRate(payload);
       if (elements.id.value) {
         await window.DrRosaApi.updateCodebookItem(elements.id.value, payload);
         showCodebookMessage("Sifra je azurirana.");
