@@ -13,24 +13,50 @@
     return localStorage.getItem("drrosa-token");
   }
 
+  function getRefreshToken() {
+    return localStorage.getItem("drrosa-refresh-token");
+  }
+
   function getSession() {
     return JSON.parse(localStorage.getItem("drrosa-session") || "null");
   }
 
   function setSession(data) {
     localStorage.setItem("drrosa-token", data.token);
+    if (data.refreshToken) {
+      localStorage.setItem("drrosa-refresh-token", data.refreshToken);
+    }
     localStorage.setItem("drrosa-session", JSON.stringify({
       ...(data.user || data),
-      loginTime: new Date().toISOString()
+      loginTime: new Date().toISOString(),
+      refreshExpiresAt: data.refreshExpiresAt || null
     }));
   }
 
   function clearSession() {
     localStorage.removeItem("drrosa-token");
+    localStorage.removeItem("drrosa-refresh-token");
     localStorage.removeItem("drrosa-session");
   }
 
-  async function request(path, options = {}) {
+  async function refreshSession() {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) return null;
+    const response = await fetch(`${API_BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken })
+    });
+    if (!response.ok) {
+      clearSession();
+      return null;
+    }
+    const data = await response.json();
+    setSession(data);
+    return data;
+  }
+
+  async function request(path, options = {}, retry = true) {
     const headers = {
       "Content-Type": "application/json",
       ...(options.headers || {})
@@ -47,6 +73,10 @@
     });
 
     if (!response.ok) {
+      if ((response.status === 401 || response.status === 403) && retry && path !== "/auth/refresh") {
+        const refreshed = await refreshSession();
+        if (refreshed) return request(path, options, false);
+      }
       const message = await response.json().catch(() => ({}));
       throw new Error(message.error || "API request failed");
     }
@@ -92,13 +122,39 @@
     return JSON.parse(localStorage.getItem("drrosa-patients") || "[]");
   }
 
-  async function login(email, password, role) {
-    const data = await request("/auth/login", {
+  async function login(email, password, role, twoFactorCode) {
+    const response = await fetch(`${API_BASE}/auth/login`, {
       method: "POST",
-      body: JSON.stringify({ email, password, role })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, role, twoFactorCode })
     });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok && data.requires2fa) return data;
+    if (!response.ok) throw new Error(data.error || "API request failed");
+    if (data.requires2fa) return data;
     setSession(data);
     return data.user;
+  }
+
+  async function logout() {
+    const refreshToken = getRefreshToken();
+    try {
+      if (getToken()) {
+        await request("/auth/logout", {
+          method: "POST",
+          body: JSON.stringify({ refreshToken })
+        }, false);
+      }
+    } finally {
+      clearSession();
+    }
+  }
+
+  async function changePassword(currentPassword, newPassword) {
+    return request("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
   }
 
   async function verifySession(requiredRole) {
@@ -166,8 +222,204 @@
     return request(`/patients/${patientId}`, { method: "DELETE" });
   }
 
+  async function getMedicalProfile(patientId) {
+    return request(`/patients/${patientId}/medical-profile`);
+  }
+
+  async function updateMedicalProfile(patientId, profile) {
+    return request(`/patients/${patientId}/medical-profile`, {
+      method: "PUT",
+      body: JSON.stringify(profile)
+    });
+  }
+
+  async function getPatientDocuments(patientId) {
+    return request(`/patients/${patientId}/documents`);
+  }
+
+  async function createPatientDocument(patientId, document) {
+    return request(`/patients/${patientId}/documents`, {
+      method: "POST",
+      body: JSON.stringify(document)
+    });
+  }
+
+  async function importPatientScan(patientId, payload) {
+    return request(`/patients/${patientId}/documents/import-scan`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function deleteDocument(documentId) {
+    return request(`/documents/${documentId}`, { method: "DELETE" });
+  }
+
   async function getDoctors() {
     return request("/doctors");
+  }
+
+  async function getChairs() {
+    return request("/chairs");
+  }
+
+  async function getAppointments(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") query.set(key, value);
+    });
+    return request(`/appointments${query.toString() ? `?${query}` : ""}`);
+  }
+
+  async function createAppointment(appointment) {
+    return request("/appointments", {
+      method: "POST",
+      body: JSON.stringify(appointment)
+    });
+  }
+
+  async function updateAppointment(appointmentId, appointment) {
+    return request(`/appointments/${appointmentId}`, {
+      method: "PUT",
+      body: JSON.stringify(appointment)
+    });
+  }
+
+  async function updateAppointmentStatus(appointmentId, status) {
+    return request(`/appointments/${appointmentId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status })
+    });
+  }
+
+  async function deleteAppointment(appointmentId, { hard = false } = {}) {
+    return request(`/appointments/${appointmentId}${hard ? "?hard=1" : ""}`, { method: "DELETE" });
+  }
+
+  async function createVisitFromAppointment(appointmentId, payload = {}) {
+    return request(`/appointments/${appointmentId}/create-visit`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function getGoogleCalendarSettings() {
+    return request("/director/google-calendar/settings");
+  }
+
+  async function updateGoogleCalendarSettings(settings) {
+    return request("/director/google-calendar/settings", {
+      method: "PUT",
+      body: JSON.stringify(settings)
+    });
+  }
+
+  async function retryCalendarSync() {
+    return request("/director/calendar-sync/retry", { method: "POST" });
+  }
+
+  async function testGoogleCalendarSync() {
+    return request("/director/google-calendar/test-sync", { method: "POST" });
+  }
+
+  async function exchangeGoogleCalendarCode(code) {
+    return request("/director/google-calendar/oauth/exchange", {
+      method: "POST",
+      body: JSON.stringify({ code })
+    });
+  }
+
+  async function getPublicBookingOptions() {
+    const response = await fetch(`${API_BASE}/public/booking/options`);
+    if (!response.ok) throw new Error("Booking options unavailable");
+    return response.json();
+  }
+
+  async function getPublicAvailability(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") query.set(key, value);
+    });
+    const response = await fetch(`${API_BASE}/public/booking/availability?${query}`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Availability unavailable");
+    return data;
+  }
+
+  async function createPublicBooking(payload) {
+    const response = await fetch(`${API_BASE}/public/booking`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Booking failed");
+    return data;
+  }
+
+  async function getTreatmentPlans(patientId) {
+    return request(`/patients/${patientId}/treatment-plans`);
+  }
+
+  async function createTreatmentPlan(patientId, plan) {
+    return request(`/patients/${patientId}/treatment-plans`, {
+      method: "POST",
+      body: JSON.stringify(plan)
+    });
+  }
+
+  async function updateTreatmentPlan(planId, plan) {
+    return request(`/treatment-plans/${planId}`, {
+      method: "PUT",
+      body: JSON.stringify(plan)
+    });
+  }
+
+  async function acceptTreatmentPlan(planId, payload) {
+    return request(`/treatment-plans/${planId}/accept`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function getPerioCharts(patientId) {
+    return request(`/patients/${patientId}/perio-charts`);
+  }
+
+  async function createPerioChart(patientId, chart) {
+    return request(`/patients/${patientId}/perio-charts`, {
+      method: "POST",
+      body: JSON.stringify(chart)
+    });
+  }
+
+  async function getInvoices(patientId) {
+    return request(`/patients/${patientId}/invoices`);
+  }
+
+  async function createInvoice(patientId, invoice) {
+    return request(`/patients/${patientId}/invoices`, {
+      method: "POST",
+      body: JSON.stringify(invoice)
+    });
+  }
+
+  async function addInvoicePayment(invoiceId, payment) {
+    return request(`/invoices/${invoiceId}/payments`, {
+      method: "POST",
+      body: JSON.stringify(payment)
+    });
+  }
+
+  async function getInsuranceClaims(patientId) {
+    return request(`/patients/${patientId}/insurance-claims`);
+  }
+
+  async function createInsuranceClaim(patientId, claim) {
+    return request(`/patients/${patientId}/insurance-claims`, {
+      method: "POST",
+      body: JSON.stringify(claim)
+    });
   }
 
   async function getRecords() {
@@ -245,16 +497,83 @@
     return request(`/director/exchange-rate?base=${encodeURIComponent(base)}&currency=${encodeURIComponent(currency)}`);
   }
 
+  async function getBackupStatus() {
+    return request("/director/backups/status");
+  }
+
+  async function getBackups() {
+    return request("/director/backups");
+  }
+
+  async function createBackup() {
+    return request("/director/backups", { method: "POST" });
+  }
+
+  async function restoreBackup(backupId, confirmation) {
+    return request(`/director/backups/${backupId}/restore`, {
+      method: "POST",
+      body: JSON.stringify({ confirmation })
+    });
+  }
+
+  async function getSecurityStatus() {
+    return request("/director/security/status");
+  }
+
+  async function unlockUser(userId) {
+    return request(`/director/security/users/${userId}/unlock`, { method: "POST" });
+  }
+
+  async function resetUserPassword(userId, newPassword) {
+    return request(`/director/security/users/${userId}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ newPassword })
+    });
+  }
+
+  async function setupTwoFactor() {
+    return request("/auth/2fa/setup", { method: "POST" });
+  }
+
+  async function verifyTwoFactor(code) {
+    return request("/auth/2fa/verify", {
+      method: "POST",
+      body: JSON.stringify({ code })
+    });
+  }
+
+  async function disableTwoFactor(password) {
+    return request("/auth/2fa/disable", {
+      method: "POST",
+      body: JSON.stringify({ password })
+    });
+  }
+
   window.DrRosaApi = {
     login,
+    logout,
     verifySession,
+    changePassword,
     clearSession,
     getSession,
     getPatients,
     createPatient,
     updatePatient,
     deletePatient,
+    getMedicalProfile,
+    updateMedicalProfile,
+    getPatientDocuments,
+    createPatientDocument,
+    importPatientScan,
+    deleteDocument,
     getDoctors,
+    getChairs,
+    getAppointments,
+    createAppointment,
+    updateAppointment,
+    updateAppointmentStatus,
+    deleteAppointment,
+    createVisitFromAppointment,
     getRecords,
     createRecord,
     updateRecord,
@@ -265,7 +584,36 @@
     createCodebookItem,
     updateCodebookItem,
     deleteCodebookItem,
+    getGoogleCalendarSettings,
+    updateGoogleCalendarSettings,
+    retryCalendarSync,
+    testGoogleCalendarSync,
+    exchangeGoogleCalendarCode,
+    getPublicBookingOptions,
+    getPublicAvailability,
+    createPublicBooking,
+    getTreatmentPlans,
+    createTreatmentPlan,
+    updateTreatmentPlan,
+    acceptTreatmentPlan,
+    getPerioCharts,
+    createPerioChart,
+    getInvoices,
+    createInvoice,
+    addInvoicePayment,
+    getInsuranceClaims,
+    createInsuranceClaim,
     getExchangeRate,
+    getBackupStatus,
+    getBackups,
+    createBackup,
+    restoreBackup,
+    getSecurityStatus,
+    unlockUser,
+    resetUserPassword,
+    setupTwoFactor,
+    verifyTwoFactor,
+    disableTwoFactor,
     normalizeRecord,
     getLocalRecords
   };

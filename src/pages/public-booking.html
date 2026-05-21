@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Online zakazivanje | Dr Rosa</title>
+  <link rel="stylesheet" href="../styles/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        <div>
+          <p class="eyebrow">Online booking</p>
+          <h1>Zakazivanje termina</h1>
+        </div>
+      </div>
+      <nav class="topbar-actions" aria-label="Navigacija">
+        <a href="login.html" class="secondary-btn">Login</a>
+      </nav>
+    </header>
+
+    <main class="form-page">
+      <section class="form-card">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Pacijent</p>
+            <h2>Izaberite slobodan termin</h2>
+          </div>
+        </div>
+        <form id="public-booking-form">
+          <div class="input-grid">
+            <label>
+              Ime
+              <input id="booking-first-name" required />
+            </label>
+            <label>
+              Prezime
+              <input id="booking-last-name" required />
+            </label>
+            <label>
+              Email
+              <input id="booking-email" type="email" />
+            </label>
+            <label>
+              Telefon
+              <input id="booking-phone" />
+            </label>
+            <label>
+              Datum
+              <input id="booking-date" type="date" required />
+            </label>
+            <label>
+              Doktor
+              <select id="booking-doctor"></select>
+            </label>
+            <label>
+              Postupak
+              <select id="booking-procedure"></select>
+            </label>
+            <label>
+              Slobodan termin
+              <select id="booking-slot" required></select>
+            </label>
+            <label class="full-width">
+              Napomena
+              <textarea id="booking-notes" rows="3"></textarea>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="primary-btn" type="submit">Zakazi termin</button>
+            <button class="secondary-btn" id="refresh-slots" type="button">Osvezi termine</button>
+          </div>
+          <p id="booking-message" class="form-alert" role="status"></p>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script src="../scripts/api.js"></script>
+  <script src="../scripts/public-booking.js"></script>
+</body>
+</html>

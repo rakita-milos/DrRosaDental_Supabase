@@ -17,6 +17,7 @@
       </div>
       <nav class="topbar-actions" aria-label="Glavna navigacija">
         <a href="index.html" class="secondary-btn">Dashboard</a>
+        <a href="calendar.html" class="secondary-btn">Kalendar</a>
         <a href="all-records.html" class="secondary-btn">Evidencija</a>
         <button id="logout-btn" class="secondary-btn" type="button">Odjava</button>
       </nav>
@@ -326,6 +327,212 @@
             </table>
           </div>
         </div>
+      </section>
+
+      <section class="list-section report-content" id="backup-security-report">
+        <button class="secondary-btn back-to-reports" type="button">Nazad na izvjestaje</button>
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Sistem</p>
+            <h2>Backup i sigurnost</h2>
+          </div>
+        </div>
+
+        <div class="cards-grid system-status-grid">
+          <article class="stat-card">
+            <h3>Poslednji backup</h3>
+            <p class="stat-number" id="backup-last-status">-</p>
+          </article>
+          <article class="stat-card">
+            <h3>Backup fajlovi</h3>
+            <p class="stat-number" id="backup-count-status">0</p>
+          </article>
+          <article class="stat-card">
+            <h3>Sesije</h3>
+            <p class="stat-number" id="security-session-status">15m</p>
+          </article>
+        </div>
+
+        <div id="backup-warning" class="form-alert system-warning" role="status"></div>
+
+        <div class="system-admin-grid">
+          <section class="list-section system-panel">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Backup</p>
+                <h2>Backup baze</h2>
+              </div>
+              <button class="primary-btn" id="create-backup-btn" type="button">Napravi backup sada</button>
+            </div>
+            <p id="backup-message" class="form-alert" role="status"></p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Datum</th>
+                    <th>Tip</th>
+                    <th>Velicina</th>
+                    <th>Status</th>
+                    <th>Akcije</th>
+                  </tr>
+                </thead>
+                <tbody id="backup-table"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="list-section system-panel">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Sigurnost</p>
+                <h2>Nalozi i pristup</h2>
+              </div>
+            </div>
+            <p id="security-message" class="form-alert" role="status"></p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nalog</th>
+                    <th>Uloga</th>
+                    <th>Pokusaji</th>
+                    <th>2FA</th>
+                    <th>Akcije</th>
+                  </tr>
+                </thead>
+                <tbody id="security-users-table"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div class="system-admin-grid">
+          <section class="list-section system-panel">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Direktor</p>
+                <h2>Promena lozinke i 2FA</h2>
+              </div>
+            </div>
+            <form id="change-password-form" class="admin-codebook-form">
+              <div class="input-grid">
+                <label>
+                  Trenutna lozinka
+                  <input id="current-password" type="password" autocomplete="current-password" />
+                </label>
+                <label>
+                  Nova lozinka
+                  <input id="new-password" type="password" autocomplete="new-password" />
+                </label>
+              </div>
+              <button class="secondary-btn" type="submit">Promeni lozinku</button>
+            </form>
+            <div class="two-factor-box">
+              <div class="form-actions">
+                <button class="secondary-btn" id="setup-2fa-btn" type="button">Pripremi 2FA</button>
+                <button class="secondary-btn danger-btn" id="disable-2fa-btn" type="button">Iskljuci 2FA</button>
+              </div>
+              <div id="two-factor-setup" class="two-factor-setup" hidden>
+                <p id="two-factor-secret"></p>
+                <label>
+                  Kod iz aplikacije
+                  <input id="two-factor-verify-code" type="text" inputmode="numeric" />
+                </label>
+                <button class="primary-btn" id="verify-2fa-btn" type="button">Aktiviraj 2FA</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="list-section system-panel">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Audit</p>
+                <h2>Poslednje sigurnosne aktivnosti</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Datum</th>
+                    <th>Nalog</th>
+                    <th>Akcija</th>
+                  </tr>
+                </thead>
+                <tbody id="audit-log-table"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="list-section report-content" id="google-calendar-report">
+        <button class="secondary-btn back-to-reports" type="button">â† Nazad na izvjeÅ¡taje</button>
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Integracije</p>
+            <h2>Google Calendar</h2>
+          </div>
+        </div>
+
+        <form id="google-calendar-form" class="admin-codebook-form">
+          <div class="input-grid">
+            <label>
+              Gmail nalog ordinacije
+              <input id="google-connected-email" type="email" placeholder="ordinacija.drrosa@gmail.com" />
+            </label>
+            <label>
+              Google Calendar ID
+              <input id="google-calendar-id" type="text" placeholder="primary ili calendar id" />
+            </label>
+            <label>
+              Naziv kalendara
+              <input id="google-calendar-name" type="text" placeholder="Dr Rosa - Termini" />
+            </label>
+            <label>
+              OAuth Client ID
+              <input id="google-client-id" type="text" placeholder="Google OAuth client id" />
+            </label>
+            <label>
+              OAuth Client Secret
+              <input id="google-client-secret" type="password" placeholder="Ostavite prazno ako se ne menja" />
+            </label>
+            <label>
+              Redirect URI
+              <input id="google-redirect-uri" type="url" placeholder="http://localhost:3000/src/pages/director-panel.html" />
+            </label>
+            <label class="full-width">
+              OAuth kod
+              <input id="google-oauth-code" type="text" placeholder="Kod dobijen iz Google OAuth ekrana" />
+            </label>
+            <label>
+              Smer sinhronizacije
+              <select id="google-sync-direction">
+                <option value="app_to_google">Aplikacija ka Google Calendaru</option>
+                <option value="two_way">Dvosmerno pripremljeno</option>
+              </select>
+            </label>
+            <label>
+              Podsetnik
+              <select id="google-reminder-minutes">
+                <option value="60">1 sat pre termina</option>
+                <option value="1440">24 sata pre termina</option>
+                <option value="2880">48 sati pre termina</option>
+              </select>
+            </label>
+          </div>
+          <label class="checkbox-row">
+            <input id="google-sync-enabled" type="checkbox" />
+            Ukljuci automatsku sinhronizaciju termina
+          </label>
+          <div class="form-actions">
+            <button class="primary-btn" type="submit">Sacuvaj podesavanja</button>
+            <button class="secondary-btn" id="google-connect-oauth" type="button">Povezi OAuth kod</button>
+            <button class="secondary-btn" id="google-test-sync" type="button">Testiraj sync</button>
+          </div>
+          <p id="google-calendar-message" class="form-alert" role="status"></p>
+          <div class="google-sync-summary" id="google-sync-summary"></div>
+        </form>
       </section>
     </main>
   </div>

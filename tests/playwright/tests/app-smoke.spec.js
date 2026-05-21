@@ -3,6 +3,7 @@ const { authenticate } = require("../utils/auth");
 
 const STAFF_PAGES = [
   { path: "/src/pages/index.html", heading: /Dr Rosa|Moderna klinika/i },
+  { path: "/src/pages/calendar.html", heading: /Kalendar termina/i },
   { path: "/src/pages/new-entry.html", heading: /Dodaj pregled/i },
   { path: "/src/pages/new-patient.html", heading: /Unos novog pacijenta/i },
   { path: "/src/pages/all-records.html", heading: /Pregled svih zapisa/i }
@@ -16,6 +17,14 @@ const DIRECTOR_PAGES = [
 test.beforeEach(async ({ page }) => {
   await page.goto("/src/pages/login.html");
   await page.evaluate(() => localStorage.clear());
+});
+
+test("public booking page loads without authentication", async ({ page }) => {
+  await page.goto("/src/pages/public-booking.html");
+  await expect(page.getByRole("heading", { name: /Zakazivanje termina/i })).toBeVisible();
+  await expect(page.locator("#public-booking-form")).toBeVisible();
+  await expect(page.locator("#booking-first-name")).toBeVisible();
+  await expect(page.locator("#booking-slot")).toBeVisible();
 });
 
 test.describe("page smoke by role", () => {

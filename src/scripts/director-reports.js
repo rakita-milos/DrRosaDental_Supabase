@@ -47,6 +47,7 @@ async function checkDirectorAccess() {
   }
 
   document.getElementById("logout-btn").addEventListener("click", () => {
+    window.DrRosaApi.logout?.();
     window.DrRosaApi.clearSession();
     window.location.href = "login.html";
   });
@@ -97,6 +98,8 @@ async function showReport(reportId) {
   if (reportId === "procedures-report") await loadProceduresReport();
   if (reportId === "excel-report") loadExcelReport();
   if (reportId === "admin-codebooks-report") await loadCodebooksAdmin();
+  if (reportId === "google-calendar-report") await loadGoogleCalendarSettings();
+  if (reportId === "backup-security-report") await loadBackupSecurity();
 }
 
 window.showReports = showReports;
@@ -108,7 +111,9 @@ function initializeReports() {
     { id: "patients-report", tone: "green", icon: "PAC", title: "Pacijenti", description: "Rast, retencija i statusi pacijenata" },
     { id: "doctors-report", tone: "teal", icon: "DR", title: "Doktori", description: "Produktivnost i opterecenje tima" },
     { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosjecna naplata" },
-    { id: "excel-report", tone: "blue", icon: "TAB", title: "Izvještaji po tabovima", description: "PAZARI, hirurgija, protetika, ortodoncija, troškovi i ukupno" }
+    { id: "excel-report", tone: "blue", icon: "TAB", title: "Izvještaji po tabovima", description: "PAZARI, hirurgija, protetika, ortodoncija, troškovi i ukupno" },
+    { id: "google-calendar-report", tone: "green", icon: "GCal", title: "Google Calendar", description: "Nalog ordinacije, kalendar i sync status" },
+    { id: "backup-security-report", tone: "orange", icon: "SEC", title: "Backup i sigurnost", description: "Backup baze, restore, sesije, 2FA i audit log" }
   ];
 
   reports.push({ id: "admin-codebooks-report", tone: "teal", icon: "ADM", title: "Admin sifarnici", description: "Delatnosti, postupci, statusi, valute i smene" });
@@ -213,18 +218,19 @@ async function loadFinancialReport() {
   document.getElementById("total-debt").textContent = formatCurrencyAmounts(totalDebtByCurrency);
   document.getElementById("paid-percentage").textContent = `${totalRevenueComparable ? ((totalPaidComparable / totalRevenueComparable) * 100).toFixed(1) : 0}%`;
 
-  document.getElementById("payment-table").innerHTML = Object.entries(patientPayments).map(([patient, data]) => {
+  const paymentRows = Object.entries(patientPayments);
+  document.getElementById("payment-table").innerHTML = paymentRows.length ? paymentRows.map(([patient, data]) => {
     const percentage = data.amountTotal > 0 ? ((data.paidTotal / data.amountTotal) * 100).toFixed(0) : 0;
     return `<tr><td>${escapeHtml(patient)}</td><td>${data.visits}</td><td>${formatCurrencyAmounts(data.amount)}</td><td>${formatCurrencyAmounts(data.paid)}</td><td>${formatCurrencyAmounts(data.debt)}</td><td>${percentage}%</td></tr>`;
-  }).join("");
+  }).join("") : `<tr><td colspan="6" class="empty-row">Nema podataka za prikaz.</td></tr>`;
 
   currentReportExport = {
     title: "Finansijski izvjestaj",
     headers: ["Pacijent", "Broj pregleda", "Ukupan iznos", "Placeno", "Dugovanje", "Procenat"],
-    rows: Object.entries(patientPayments).map(([patient, data]) => {
+    rows: paymentRows.length ? paymentRows.map(([patient, data]) => {
       const percentage = data.amountTotal > 0 ? ((data.paidTotal / data.amountTotal) * 100).toFixed(0) : 0;
       return [patient, data.visits, formatCurrencyAmounts(data.amount), formatCurrencyAmounts(data.paid), formatCurrencyAmounts(data.debt), `${percentage}%`];
-    })
+    }) : [["Nema podataka", "-", "-", "-", "-", "-"]]
   };
 }
 
@@ -249,20 +255,20 @@ async function loadPatientsReport() {
   document.getElementById("regular-patients").textContent = apiReport?.regular ?? regularPatients;
   document.getElementById("new-patients").textContent = apiReport?.new ?? newPatients;
 
-  document.getElementById("patients-table").innerHTML = patients.map(([patient, data]) => `
+  document.getElementById("patients-table").innerHTML = patients.length ? patients.map(([patient, data]) => `
     <tr><td>${escapeHtml(patient)}</td><td>${data.visits}</td><td>${formatDate(data.lastVisit)}</td><td>${data.debtTotal > 0 ? "Dugovanje" : "Placeno"}</td><td>${formatCurrencyAmounts(data.debt)}</td></tr>
-  `).join("");
+  `).join("") : `<tr><td colspan="5" class="empty-row">Nema podataka za prikaz.</td></tr>`;
 
   currentReportExport = {
     title: "Izvjestaj o pacijentima",
     headers: ["Pacijent", "Broj posjeta", "Zadnja posjeta", "Status", "Dugovanje"],
-    rows: patients.map(([patient, data]) => [
+    rows: patients.length ? patients.map(([patient, data]) => [
       patient,
       data.visits,
       formatDate(data.lastVisit),
       data.debtTotal > 0 ? "Dugovanje" : "Placeno",
       formatCurrencyAmounts(data.debt)
-    ])
+    ]) : [["Nema podataka", "-", "-", "-", "-"]]
   };
 }
 
@@ -291,19 +297,19 @@ async function loadDoctorsReport() {
     };
   });
 
-  document.getElementById("doctors-table").innerHTML = rows.map(row => `
+  document.getElementById("doctors-table").innerHTML = rows.length ? rows.map(row => `
     <tr><td>${escapeHtml(row.doctor)}</td><td>${row.visits}</td><td>${row.patients}</td><td>${Number(row.percentage || 0).toFixed(1)}%</td></tr>
-  `).join("");
+  `).join("") : `<tr><td colspan="4" class="empty-row">Nema podataka za prikaz.</td></tr>`;
 
   currentReportExport = {
     title: "Izvjestaj o doktorima",
     headers: ["Doktor", "Broj pregleda", "Broj pacijenata", "Procenat ukupnog rada"],
-    rows: rows.map(row => [
+    rows: rows.length ? rows.map(row => [
       row.doctor,
       row.visits,
       row.patients,
       `${Number(row.percentage || 0).toFixed(1)}%`
-    ])
+    ]) : [["Nema podataka", "-", "-", "-"]]
   };
 }
 
@@ -327,20 +333,20 @@ async function loadProceduresReport() {
     avgCost: data.count ? data.totalAmount / data.count : 0
   })).sort((a, b) => a.activity.localeCompare(b.activity) || a.procedure.localeCompare(b.procedure));
 
-  document.getElementById("procedures-table").innerHTML = rows.map(row => `
+  document.getElementById("procedures-table").innerHTML = rows.length ? rows.map(row => `
     <tr><td>${escapeHtml(row.procedure)}</td><td>${escapeHtml(row.activity || procedureCatalog.findActivityForProcedure(row.procedure) || "-")}</td><td>${row.count}</td><td>${Number(row.percentage || 0).toFixed(1)}%</td><td>${Number(row.avgCost || 0).toFixed(2)} EUR</td></tr>
-  `).join("");
+  `).join("") : `<tr><td colspan="5" class="empty-row">Nema podataka za prikaz.</td></tr>`;
 
   currentReportExport = {
     title: "Izvjestaj o postupcima",
     headers: ["Postupak", "Delatnost", "Broj izvrsenih", "Procenat", "Prosjecna naplata"],
-    rows: rows.map(row => [
+    rows: rows.length ? rows.map(row => [
       row.procedure,
       row.activity || procedureCatalog.findActivityForProcedure(row.procedure) || "-",
       row.count,
       `${Number(row.percentage || 0).toFixed(1)}%`,
       `${Number(row.avgCost || 0).toFixed(2)} EUR`
-    ])
+    ]) : [["Nema podataka", "-", "-", "-", "-"]]
   };
 }
 
@@ -1049,6 +1055,301 @@ function initializeCodebookAdmin() {
   });
 }
 
+function showGoogleMessage(message, isError = false) {
+  const element = document.getElementById("google-calendar-message");
+  if (!element) return;
+  element.textContent = message || "";
+  element.className = `form-alert ${isError ? "alert-error" : "alert-success"}`;
+}
+
+function renderGoogleSummary(settings) {
+  const summary = document.getElementById("google-sync-summary");
+  if (!summary) return;
+  summary.innerHTML = `
+    <div class="sync-pill"><strong>Status</strong><span>${settings.syncEnabled ? "Ukljuceno" : "Iskljuceno"}</span></div>
+    <div class="sync-pill"><strong>Nalog</strong><span>${escapeHtml(settings.connectedEmail || "Nije povezan")}</span></div>
+    <div class="sync-pill"><strong>Kalendar</strong><span>${escapeHtml(settings.calendarName || settings.calendarId || "-")}</span></div>
+    <div class="sync-pill"><strong>OAuth</strong><span>${settings.oauthConnected ? "Povezan" : "Nije povezan"}</span></div>
+    <div class="sync-pill"><strong>Queue</strong><span>${Number(settings.pendingSyncItems || 0)} otvoreno</span></div>
+    <div class="sync-pill"><strong>Zadnji sync</strong><span>${settings.lastSyncAt ? formatDate(settings.lastSyncAt) : "-"}</span></div>
+  `;
+}
+
+async function loadGoogleCalendarSettings() {
+  try {
+    const settings = await window.DrRosaApi.getGoogleCalendarSettings();
+    document.getElementById("google-connected-email").value = settings.connectedEmail || "";
+    document.getElementById("google-calendar-id").value = settings.calendarId || "";
+    document.getElementById("google-calendar-name").value = settings.calendarName || "";
+    document.getElementById("google-client-id").value = settings.clientId || "";
+    document.getElementById("google-redirect-uri").value = settings.redirectUri || `${window.location.origin}${window.location.pathname}`;
+    document.getElementById("google-sync-enabled").checked = Boolean(settings.syncEnabled);
+    document.getElementById("google-sync-direction").value = settings.syncDirection || "app_to_google";
+    document.getElementById("google-reminder-minutes").value = String(settings.defaultReminderMinutes || 1440);
+    renderGoogleSummary(settings);
+  } catch (error) {
+    showGoogleMessage(error.message || "Google Calendar podesavanja nisu ucitana.", true);
+  }
+}
+
+function initializeGoogleCalendarSettings() {
+  const form = document.getElementById("google-calendar-form");
+  if (!form) return;
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await window.DrRosaApi.updateGoogleCalendarSettings({
+        connectedEmail: document.getElementById("google-connected-email").value,
+        calendarId: document.getElementById("google-calendar-id").value,
+        calendarName: document.getElementById("google-calendar-name").value,
+        clientId: document.getElementById("google-client-id").value,
+        clientSecret: document.getElementById("google-client-secret").value,
+        redirectUri: document.getElementById("google-redirect-uri").value,
+        syncEnabled: document.getElementById("google-sync-enabled").checked,
+        syncDirection: document.getElementById("google-sync-direction").value,
+        defaultReminderMinutes: Number(document.getElementById("google-reminder-minutes").value)
+      });
+      showGoogleMessage("Google Calendar podesavanja su sacuvana.");
+      await loadGoogleCalendarSettings();
+    } catch (error) {
+      showGoogleMessage(error.message || "Podesavanja nisu sacuvana.", true);
+    }
+  });
+
+  document.getElementById("google-test-sync")?.addEventListener("click", async () => {
+    try {
+      const result = await window.DrRosaApi.testGoogleCalendarSync();
+      showGoogleMessage(`Test sync zavrsen. Obradjeno: ${result.processed || 0}.`);
+      await loadGoogleCalendarSettings();
+    } catch (error) {
+      showGoogleMessage(error.message || "Test sync nije uspeo.", true);
+    }
+  });
+
+  document.getElementById("google-connect-oauth")?.addEventListener("click", async () => {
+    try {
+      const code = document.getElementById("google-oauth-code").value.trim();
+      if (!code) {
+        showGoogleMessage("Unesite OAuth kod.", true);
+        return;
+      }
+      await window.DrRosaApi.exchangeGoogleCalendarCode(code);
+      document.getElementById("google-oauth-code").value = "";
+      showGoogleMessage("Google OAuth je povezan.");
+      await loadGoogleCalendarSettings();
+    } catch (error) {
+      showGoogleMessage(error.message || "OAuth povezivanje nije uspelo.", true);
+    }
+  });
+}
+
+function formatDateTime(dateString) {
+  if (!dateString) return "-";
+  return new Date(dateString).toLocaleString("sr-RS", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function formatFileSize(bytes) {
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function showSystemMessage(id, message, isError = false) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.textContent = message || "";
+  element.className = `form-alert ${isError ? "alert-error" : "alert-success"}`;
+}
+
+async function loadBackupSecurity() {
+  await Promise.all([loadBackupsPanel(), loadSecurityPanel()]);
+}
+
+async function loadBackupsPanel() {
+  try {
+    const [status, backups] = await Promise.all([
+      window.DrRosaApi.getBackupStatus(),
+      window.DrRosaApi.getBackups()
+    ]);
+    document.getElementById("backup-last-status").textContent = status.lastBackup ? formatDateTime(status.lastBackup.createdAt) : "-";
+    document.getElementById("backup-count-status").textContent = String(status.backupCount || backups.length || 0);
+    const warning = document.getElementById("backup-warning");
+    warning.textContent = status.warningMessage || "";
+    warning.style.display = status.warning ? "block" : "none";
+    document.getElementById("backup-table").innerHTML = backups.length ? backups.map(backup => `
+      <tr>
+        <td>${formatDateTime(backup.createdAt)}</td>
+        <td>${escapeHtml(backup.backupType)}</td>
+        <td>${formatFileSize(backup.fileSize)}</td>
+        <td>${escapeHtml(backup.status)}</td>
+        <td class="table-actions">
+          <button class="secondary-btn" type="button" data-download-backup="${backup.id}" data-backup-filename="${escapeHtml(backup.filename)}">Preuzmi</button>
+          <button class="secondary-btn danger-btn" type="button" data-restore-backup="${backup.id}">Restore</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-row">Nema backup fajlova.</td></tr>`;
+  } catch (error) {
+    showSystemMessage("backup-message", error.message || "Backup status nije ucitan.", true);
+  }
+}
+
+async function loadSecurityPanel() {
+  try {
+    const status = await window.DrRosaApi.getSecurityStatus();
+    document.getElementById("security-session-status").textContent = `${status.accessTokenTtl} / ${status.refreshTokenDays}d`;
+    document.getElementById("security-users-table").innerHTML = status.users.map(user => `
+      <tr>
+        <td>${escapeHtml(user.name)}<br><small>${escapeHtml(user.email)}</small></td>
+        <td>${escapeHtml(user.role)}</td>
+        <td>${user.failedLoginAttempts}${user.lockedUntil ? `<br><small>Zakljucan do ${formatDateTime(user.lockedUntil)}</small>` : ""}</td>
+        <td>${user.twoFactorEnabled ? "Ukljucen" : "Iskljucen"}</td>
+        <td class="table-actions">
+          <button class="secondary-btn" type="button" data-unlock-user="${user.id}">Otkljucaj</button>
+          <button class="secondary-btn" type="button" data-reset-user-password="${user.id}">Reset lozinke</button>
+        </td>
+      </tr>
+    `).join("");
+    document.getElementById("audit-log-table").innerHTML = status.auditLog.length ? status.auditLog.map(item => `
+      <tr>
+        <td>${formatDateTime(item.createdAt)}</td>
+        <td>${escapeHtml(item.email || "-")}</td>
+        <td>${escapeHtml(item.action)}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="3" class="empty-row">Nema audit aktivnosti.</td></tr>`;
+  } catch (error) {
+    showSystemMessage("security-message", error.message || "Sigurnosni status nije ucitan.", true);
+  }
+}
+
+function initializeBackupSecurity() {
+  document.getElementById("create-backup-btn")?.addEventListener("click", async event => {
+    event.currentTarget.disabled = true;
+    try {
+      await window.DrRosaApi.createBackup();
+      showSystemMessage("backup-message", "Backup je napravljen.");
+      await loadBackupsPanel();
+    } catch (error) {
+      showSystemMessage("backup-message", error.message || "Backup nije napravljen.", true);
+    } finally {
+      event.currentTarget.disabled = false;
+    }
+  });
+
+  document.getElementById("backup-table")?.addEventListener("click", async event => {
+    const button = event.target.closest("[data-restore-backup]");
+    const download = event.target.closest("[data-download-backup]");
+    if (download) {
+      try {
+        await downloadBackup(download.dataset.downloadBackup, download.dataset.backupFilename);
+      } catch (error) {
+        showSystemMessage("backup-message", error.message || "Backup nije preuzet.", true);
+      }
+      return;
+    }
+    if (!button) return;
+    const confirmation = window.prompt("Za restore unesite tacno: VRATI BACKUP");
+    if (confirmation !== "VRATI BACKUP") return;
+    try {
+      await window.DrRosaApi.restoreBackup(button.dataset.restoreBackup, confirmation);
+      showSystemMessage("backup-message", "Backup je vracen. Osvezite aplikaciju pre nastavka rada.");
+      await loadBackupsPanel();
+    } catch (error) {
+      showSystemMessage("backup-message", error.message || "Restore nije uspeo.", true);
+    }
+  });
+
+  document.getElementById("security-users-table")?.addEventListener("click", async event => {
+    const unlock = event.target.closest("[data-unlock-user]");
+    const reset = event.target.closest("[data-reset-user-password]");
+    try {
+      if (unlock) {
+        await window.DrRosaApi.unlockUser(unlock.dataset.unlockUser);
+        showSystemMessage("security-message", "Nalog je otkljucan.");
+      }
+      if (reset) {
+        const newPassword = window.prompt("Unesite novu lozinku, najmanje 12 karaktera.");
+        if (!newPassword) return;
+        await window.DrRosaApi.resetUserPassword(reset.dataset.resetUserPassword, newPassword);
+        showSystemMessage("security-message", "Lozinka je resetovana.");
+      }
+      await loadSecurityPanel();
+    } catch (error) {
+      showSystemMessage("security-message", error.message || "Akcija nije uspela.", true);
+    }
+  });
+
+  document.getElementById("change-password-form")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await window.DrRosaApi.changePassword(
+        document.getElementById("current-password").value,
+        document.getElementById("new-password").value
+      );
+      event.currentTarget.reset();
+      showSystemMessage("security-message", "Lozinka je promenjena. Prijavite se ponovo na drugim uredjajima.");
+    } catch (error) {
+      showSystemMessage("security-message", error.message || "Lozinka nije promenjena.", true);
+    }
+  });
+
+  document.getElementById("setup-2fa-btn")?.addEventListener("click", async () => {
+    try {
+      const setup = await window.DrRosaApi.setupTwoFactor();
+      document.getElementById("two-factor-setup").hidden = false;
+      document.getElementById("two-factor-secret").textContent = `Secret: ${setup.secret}`;
+      showSystemMessage("security-message", "Unesite secret u autentifikator aplikaciju, pa potvrdite kod.");
+    } catch (error) {
+      showSystemMessage("security-message", error.message || "2FA setup nije uspeo.", true);
+    }
+  });
+
+  document.getElementById("verify-2fa-btn")?.addEventListener("click", async () => {
+    try {
+      await window.DrRosaApi.verifyTwoFactor(document.getElementById("two-factor-verify-code").value);
+      showSystemMessage("security-message", "2FA je ukljucen za direktora.");
+      await loadSecurityPanel();
+    } catch (error) {
+      showSystemMessage("security-message", error.message || "2FA kod nije ispravan.", true);
+    }
+  });
+
+  document.getElementById("disable-2fa-btn")?.addEventListener("click", async () => {
+    const password = window.prompt("Unesite direktor lozinku za iskljucivanje 2FA.");
+    if (!password) return;
+    try {
+      await window.DrRosaApi.disableTwoFactor(password);
+      showSystemMessage("security-message", "2FA je iskljucen.");
+      await loadSecurityPanel();
+    } catch (error) {
+      showSystemMessage("security-message", error.message || "2FA nije iskljucen.", true);
+    }
+  });
+}
+
+async function downloadBackup(backupId, filename) {
+  const token = localStorage.getItem("drrosa-token");
+  const response = await fetch(`/api/director/backups/${backupId}/download`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error("Backup nije preuzet.");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename || "drrosa-backup.sqlite.enc";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 (async function init() {
   if (!await checkDirectorAccess()) return;
   await procedureCatalog.loadFromApi?.();
@@ -1056,6 +1357,8 @@ function initializeCodebookAdmin() {
   initializeReportNavigation();
   initializeExportActions();
   initializeCodebookAdmin();
+  initializeGoogleCalendarSettings();
+  initializeBackupSecurity();
   try {
     cachedRecords = await window.DrRosaApi.getRecords();
   } catch (error) {

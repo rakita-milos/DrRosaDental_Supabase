@@ -120,10 +120,491 @@ const treatmentList = document.getElementById("treatment-list");
 const editPatientLink = document.getElementById("edit-patient-link");
 const deletePatientBtn = document.getElementById("delete-patient-btn");
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
+const clinicalSection = document.getElementById("patient-clinical-section");
+const patientAlerts = document.getElementById("patient-alerts");
+const medicalForm = document.getElementById("medical-profile-form");
+const documentForm = document.getElementById("document-form");
+const documentsBody = document.getElementById("patient-documents-body");
+let planItemsDraft = [];
+let perioMeasurementsDraft = [];
+let invoiceItemsDraft = [];
 
 function renderEmpty(message) {
   recordsBody.innerHTML = `<tr><td colspan="10" class="empty-row">${message}</td></tr>`;
   treatmentList.innerHTML = `<p>Nema unesene historije tretmana.</p>`;
+}
+
+function setMessage(id, message, isError = false) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.textContent = message || "";
+  element.className = `form-alert ${isError ? "alert-error" : "alert-success"}`;
+}
+
+function fillMedicalProfile(profile) {
+  document.getElementById("medical-blood-type").value = profile.bloodType || "";
+  document.getElementById("medical-pregnancy-status").value = profile.pregnancyStatus || "";
+  document.getElementById("medical-allergies").value = profile.allergies || "";
+  document.getElementById("medical-medications").value = profile.medications || "";
+  document.getElementById("medical-chronic-conditions").value = profile.chronicConditions || "";
+  document.getElementById("medical-contraindications").value = profile.contraindications || "";
+  document.getElementById("medical-previous-surgeries").value = profile.previousSurgeries || "";
+  document.getElementById("medical-smoker").checked = Boolean(profile.smoker);
+  document.getElementById("medical-diabetes").checked = Boolean(profile.diabetes);
+  document.getElementById("medical-high-blood-pressure").checked = Boolean(profile.highBloodPressure);
+  document.getElementById("medical-heart-condition").checked = Boolean(profile.heartCondition);
+  document.getElementById("medical-anesthesia-warning").value = profile.anesthesiaWarning || "";
+  document.getElementById("medical-dental-notes").value = profile.dentalNotes || "";
+  document.getElementById("medical-internal-notes").value = profile.internalNotes || "";
+  renderMedicalAlerts(profile);
+}
+
+function readMedicalProfileForm() {
+  return {
+    bloodType: document.getElementById("medical-blood-type").value,
+    pregnancyStatus: document.getElementById("medical-pregnancy-status").value,
+    allergies: document.getElementById("medical-allergies").value,
+    medications: document.getElementById("medical-medications").value,
+    chronicConditions: document.getElementById("medical-chronic-conditions").value,
+    contraindications: document.getElementById("medical-contraindications").value,
+    previousSurgeries: document.getElementById("medical-previous-surgeries").value,
+    smoker: document.getElementById("medical-smoker").checked,
+    diabetes: document.getElementById("medical-diabetes").checked,
+    highBloodPressure: document.getElementById("medical-high-blood-pressure").checked,
+    heartCondition: document.getElementById("medical-heart-condition").checked,
+    anesthesiaWarning: document.getElementById("medical-anesthesia-warning").value,
+    dentalNotes: document.getElementById("medical-dental-notes").value,
+    internalNotes: document.getElementById("medical-internal-notes").value
+  };
+}
+
+function renderMedicalAlerts(profile) {
+  const alerts = [
+    profile.allergies ? `Alergije: ${profile.allergies}` : "",
+    profile.contraindications ? `Kontraindikacije: ${profile.contraindications}` : "",
+    profile.anesthesiaWarning ? `Anestezija: ${profile.anesthesiaWarning}` : "",
+    profile.diabetes ? "Dijabetes" : "",
+    profile.heartCondition ? "Srcani problemi" : ""
+  ].filter(Boolean);
+  patientAlerts.innerHTML = alerts.length
+    ? alerts.map(alert => `<div class="patient-alert">${escapeHtml(alert)}</div>`).join("")
+    : "";
+}
+
+function fillVisitOptions(records) {
+  const select = document.getElementById("document-visit");
+  select.innerHTML = `<option value="">Bez vezane posete</option>${records.map(record => `
+    <option value="${escapeHtml(record.id)}">${formatDate(record.lastVisit)} - ${escapeHtml(record.procedure)}</option>
+  `).join("")}`;
+}
+
+function formatFileSize(size) {
+  const bytes = Number(size || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function documentTypeLabel(type) {
+  return {
+    rtg: "RTG",
+    ortopan: "Ortopan",
+    photo: "Fotografija",
+    finding: "Nalaz",
+    lab: "Laboratorija",
+    consent: "Saglasnost",
+    invoice: "Racun",
+    other: "Ostalo"
+  }[type] || type || "-";
+}
+
+function renderDocuments(documents) {
+  documentsBody.innerHTML = documents.length ? documents.map(document => `
+    <tr>
+      <td>${escapeHtml(document.title)}</td>
+      <td>${escapeHtml(documentTypeLabel(document.documentType))}</td>
+      <td>${formatDate(document.documentDate || document.createdAt)}</td>
+      <td>${document.source === "scanner" ? "Skener" : "Upload"}</td>
+      <td>${formatFileSize(document.fileSize)}</td>
+      <td>
+        <button class="secondary-btn view-document-btn" type="button" data-document-id="${document.id}">Pogledaj</button>
+        <button class="secondary-btn download-document-btn" type="button" data-document-id="${document.id}">Preuzmi</button>
+        <button class="danger-btn delete-document-btn" type="button" data-document-id="${document.id}">Obrisi</button>
+      </td>
+    </tr>
+  `).join("") : `<tr><td colspan="6" class="empty-row">Nema dokumenata za ovog pacijenta.</td></tr>`;
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function openDocument(documentId, download = false) {
+  const token = localStorage.getItem("drrosa-token");
+  const response = await fetch(`/api/documents/${documentId}/${download ? "download" : "view"}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error("Dokument nije dostupan.");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  if (download) link.download = "drrosa-dokument";
+  link.target = "_blank";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function loadDocuments(patientId) {
+  const documents = await window.DrRosaApi.getPatientDocuments(patientId);
+  renderDocuments(documents);
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function renderPlanItemsDraft() {
+  const preview = document.getElementById("plan-items-preview");
+  preview.innerHTML = planItemsDraft.length
+    ? planItemsDraft.map((item, index) => `<p><strong>Faza ${item.phase}</strong> ${escapeHtml(item.toothNumber || "-")} - ${escapeHtml(item.procedureName)} (${formatMoney(item.unitPrice)}) <button class="danger-btn remove-plan-item" type="button" data-index="${index}">x</button></p>`).join("")
+    : "<p>Nema stavki u planu.</p>";
+}
+
+function renderPlans(plans) {
+  document.getElementById("treatment-plans-body").innerHTML = plans.length ? plans.map(plan => `
+    <tr>
+      <td>${escapeHtml(plan.title)}<br><small>${plan.items.length} stavki</small></td>
+      <td>${escapeHtml(plan.status)}</td>
+      <td>${formatMoney(plan.total, plan.currency)}</td>
+      <td>
+        <button class="secondary-btn edit-plan-btn" type="button" data-plan-id="${plan.id}">Uredi</button>
+        <button class="primary-btn accept-plan-btn" type="button" data-plan-id="${plan.id}">Potpis</button>
+      </td>
+    </tr>
+  `).join("") : `<tr><td colspan="4" class="empty-row">Nema planova terapije.</td></tr>`;
+}
+
+function renderPerioDraft() {
+  const preview = document.getElementById("perio-measurements-preview");
+  preview.innerHTML = perioMeasurementsDraft.length
+    ? perioMeasurementsDraft.map((item, index) => `<p>Zub ${escapeHtml(item.toothNumber)} ${escapeHtml(item.site)}: dzep ${item.pocketDepth}mm, recesija ${item.recession}mm, mob ${item.mobility}, fur ${item.furcation}${item.bleeding ? ", krvarenje" : ""} <button class="danger-btn remove-perio-item" type="button" data-index="${index}">x</button></p>`).join("")
+    : "<p>Nema dodatih merenja.</p>";
+}
+
+function renderPerioCharts(charts) {
+  document.getElementById("perio-charts-body").innerHTML = charts.length ? charts.map(chart => {
+    const deep = chart.measurements.filter(item => item.pocketDepth >= 5).length;
+    const bleeding = chart.measurements.filter(item => item.bleeding).length;
+    return `<tr><td>${formatDate(chart.chartDate)}</td><td>${chart.measurements.length}</td><td>${deep} dubokih dzepova / ${bleeding} krvarenja</td></tr>`;
+  }).join("") : `<tr><td colspan="3" class="empty-row">Nema perio chartova.</td></tr>`;
+}
+
+function renderInvoiceDraft() {
+  const preview = document.getElementById("invoice-items-preview");
+  preview.innerHTML = invoiceItemsDraft.length
+    ? invoiceItemsDraft.map((item, index) => `<p>${escapeHtml(item.description)} - ${formatMoney(item.unitPrice)} <button class="danger-btn remove-invoice-item" type="button" data-index="${index}">x</button></p>`).join("")
+    : "<p>Nema stavki racuna.</p>";
+}
+
+function renderInvoices(invoices) {
+  document.getElementById("invoices-body").innerHTML = invoices.length ? invoices.map(invoice => `
+    <tr>
+      <td>${escapeHtml(invoice.invoiceNumber)}</td>
+      <td>${escapeHtml(invoice.status)}</td>
+      <td>${formatMoney(invoice.total, invoice.currency)}</td>
+      <td>${formatMoney(invoice.amountPaid, invoice.currency)}</td>
+      <td>
+        <button class="secondary-btn invoice-payment-btn" type="button" data-invoice-id="${invoice.id}">Uplata</button>
+        <button class="secondary-btn invoice-pdf-btn" type="button" data-invoice-id="${invoice.id}">PDF</button>
+      </td>
+    </tr>
+  `).join("") : `<tr><td colspan="5" class="empty-row">Nema racuna.</td></tr>`;
+}
+
+function renderInsuranceClaims(claims) {
+  document.getElementById("insurance-claims-body").innerHTML = claims.length ? claims.map(claim => `
+    <tr>
+      <td>${escapeHtml(claim.provider)}<br><small>${escapeHtml(claim.policyNumber || "-")}</small></td>
+      <td>${escapeHtml(claim.status)}</td>
+      <td>${formatMoney(claim.requestedAmount)}</td>
+      <td>${escapeHtml(claim.eligibilityNotes || claim.preauthorizationNotes || claim.notes || "-")}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="4" class="empty-row">Nema insurance claimova.</td></tr>`;
+}
+
+async function initializeAdvancedWorkflows(patientId) {
+  document.getElementById("perio-date").value = today();
+  document.getElementById("invoice-date").value = today();
+
+  async function refreshPlans() {
+    renderPlans(await window.DrRosaApi.getTreatmentPlans(patientId));
+  }
+  async function refreshPerio() {
+    renderPerioCharts(await window.DrRosaApi.getPerioCharts(patientId));
+  }
+  async function refreshInvoices() {
+    renderInvoices(await window.DrRosaApi.getInvoices(patientId));
+  }
+  async function refreshClaims() {
+    renderInsuranceClaims(await window.DrRosaApi.getInsuranceClaims(patientId));
+  }
+
+  renderPlanItemsDraft();
+  renderPerioDraft();
+  renderInvoiceDraft();
+  await Promise.all([refreshPlans(), refreshPerio(), refreshInvoices(), refreshClaims()]);
+
+  document.getElementById("add-plan-item-btn").addEventListener("click", () => {
+    const procedureName = document.getElementById("plan-item-procedure").value.trim();
+    if (!procedureName) return setMessage("treatment-plan-message", "Unesite proceduru.", true);
+    planItemsDraft.push({
+      phase: Number(document.getElementById("plan-item-phase").value || 1),
+      toothNumber: document.getElementById("plan-item-tooth").value,
+      procedureName,
+      description: document.getElementById("plan-item-description").value,
+      quantity: 1,
+      unitPrice: Number(document.getElementById("plan-item-price").value || 0),
+      discount: 0
+    });
+    renderPlanItemsDraft();
+  });
+  document.getElementById("plan-items-preview").addEventListener("click", event => {
+    const button = event.target.closest(".remove-plan-item");
+    if (!button) return;
+    planItemsDraft.splice(Number(button.dataset.index), 1);
+    renderPlanItemsDraft();
+  });
+  document.getElementById("treatment-plan-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await window.DrRosaApi.createTreatmentPlan(patientId, {
+        title: document.getElementById("plan-title").value || "Plan terapije",
+        status: document.getElementById("plan-status").value,
+        currency: "EUR",
+        items: planItemsDraft
+      });
+      planItemsDraft = [];
+      event.target.reset();
+      renderPlanItemsDraft();
+      await refreshPlans();
+      setMessage("treatment-plan-message", "Plan terapije je sacuvan.");
+    } catch (error) {
+      setMessage("treatment-plan-message", error.message || "Plan nije sacuvan.", true);
+    }
+  });
+  document.getElementById("treatment-plans-body").addEventListener("click", async event => {
+    const accept = event.target.closest(".accept-plan-btn");
+    if (!accept) return;
+    const signatureName = prompt("Ime i prezime za potpis plana:");
+    if (!signatureName) return;
+    await window.DrRosaApi.acceptTreatmentPlan(accept.dataset.planId, { signatureName, signatureData: signatureName });
+    await refreshPlans();
+  });
+
+  document.getElementById("add-perio-measurement-btn").addEventListener("click", () => {
+    const toothNumber = document.getElementById("perio-tooth").value.trim();
+    if (!toothNumber) return setMessage("perio-message", "Unesite zub.", true);
+    perioMeasurementsDraft.push({
+      toothNumber,
+      site: document.getElementById("perio-site").value,
+      pocketDepth: Number(document.getElementById("perio-pocket").value || 0),
+      recession: Number(document.getElementById("perio-recession").value || 0),
+      mobility: Number(document.getElementById("perio-mobility").value || 0),
+      furcation: Number(document.getElementById("perio-furcation").value || 0),
+      bleeding: document.getElementById("perio-bleeding").checked
+    });
+    renderPerioDraft();
+  });
+  document.getElementById("perio-measurements-preview").addEventListener("click", event => {
+    const button = event.target.closest(".remove-perio-item");
+    if (!button) return;
+    perioMeasurementsDraft.splice(Number(button.dataset.index), 1);
+    renderPerioDraft();
+  });
+  document.getElementById("perio-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await window.DrRosaApi.createPerioChart(patientId, {
+        chartDate: document.getElementById("perio-date").value || today(),
+        measurements: perioMeasurementsDraft
+      });
+      perioMeasurementsDraft = [];
+      renderPerioDraft();
+      await refreshPerio();
+      setMessage("perio-message", "Perio chart je sacuvan.");
+    } catch (error) {
+      setMessage("perio-message", error.message || "Perio chart nije sacuvan.", true);
+    }
+  });
+
+  document.getElementById("add-invoice-item-btn").addEventListener("click", () => {
+    const description = document.getElementById("invoice-item-description").value.trim();
+    if (!description) return setMessage("invoice-message", "Unesite stavku.", true);
+    invoiceItemsDraft.push({ description, quantity: 1, unitPrice: Number(document.getElementById("invoice-item-price").value || 0), discount: 0 });
+    renderInvoiceDraft();
+  });
+  document.getElementById("invoice-items-preview").addEventListener("click", event => {
+    const button = event.target.closest(".remove-invoice-item");
+    if (!button) return;
+    invoiceItemsDraft.splice(Number(button.dataset.index), 1);
+    renderInvoiceDraft();
+  });
+  document.getElementById("invoice-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await window.DrRosaApi.createInvoice(patientId, {
+        issueDate: document.getElementById("invoice-date").value || today(),
+        dueDate: document.getElementById("invoice-due-date").value,
+        currency: "EUR",
+        items: invoiceItemsDraft
+      });
+      invoiceItemsDraft = [];
+      event.target.reset();
+      document.getElementById("invoice-date").value = today();
+      renderInvoiceDraft();
+      await refreshInvoices();
+      setMessage("invoice-message", "Racun je kreiran.");
+    } catch (error) {
+      setMessage("invoice-message", error.message || "Racun nije kreiran.", true);
+    }
+  });
+  document.getElementById("invoices-body").addEventListener("click", async event => {
+    const button = event.target.closest(".invoice-payment-btn");
+    const pdf = event.target.closest(".invoice-pdf-btn");
+    if (button) {
+      const amount = Number(prompt("Iznos uplate:") || 0);
+      if (amount <= 0) return;
+      await window.DrRosaApi.addInvoicePayment(button.dataset.invoiceId, { amount, paymentType: "payment", paymentDate: today(), paymentMethod: "cash" });
+      await refreshInvoices();
+    }
+    if (pdf) {
+      const response = await fetch(`/api/invoices/${pdf.dataset.invoiceId}/pdf`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("drrosa-token")}` }
+      });
+      const html = await response.text();
+      const win = window.open("", "_blank");
+      win.document.write(html);
+      win.document.close();
+    }
+  });
+
+  document.getElementById("insurance-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await window.DrRosaApi.createInsuranceClaim(patientId, {
+        provider: document.getElementById("insurance-provider").value,
+        policyNumber: document.getElementById("insurance-policy").value,
+        status: document.getElementById("insurance-status").value,
+        requestedAmount: Number(document.getElementById("insurance-requested").value || 0),
+        eligibilityNotes: document.getElementById("insurance-notes").value,
+        preauthorizationNotes: document.getElementById("insurance-notes").value
+      });
+      event.target.reset();
+      await refreshClaims();
+      setMessage("insurance-message", "Insurance claim je sacuvan.");
+    } catch (error) {
+      setMessage("insurance-message", error.message || "Claim nije sacuvan.", true);
+    }
+  });
+}
+
+async function initializeClinicalSection(patientDetails, patientRecords) {
+  if (!patientDetails?.id) return;
+  clinicalSection.style.display = "block";
+  fillVisitOptions(patientRecords);
+  const patientId = patientDetails.id;
+  const profile = await window.DrRosaApi.getMedicalProfile(patientId);
+  fillMedicalProfile(profile);
+  await loadDocuments(patientId);
+  await initializeAdvancedWorkflows(patientId);
+
+  document.querySelectorAll(".patient-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".patient-tab").forEach(item => item.classList.toggle("active", item === tab));
+      document.querySelectorAll(".patient-tab-panel").forEach(panel => panel.classList.toggle("active", panel.id === tab.dataset.patientTab));
+    });
+  });
+
+  medicalForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      const updated = await window.DrRosaApi.updateMedicalProfile(patientId, readMedicalProfileForm());
+      fillMedicalProfile(updated);
+      setMessage("medical-profile-message", "Karton je sacuvan.");
+    } catch (error) {
+      setMessage("medical-profile-message", error.message || "Karton nije sacuvan.", true);
+    }
+  });
+
+  documentForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const file = document.getElementById("document-file").files[0];
+    if (!file) {
+      setMessage("document-message", "Izaberite fajl za upload.", true);
+      return;
+    }
+    try {
+      await window.DrRosaApi.createPatientDocument(patientId, {
+        documentType: document.getElementById("document-type").value,
+        title: document.getElementById("document-title").value || file.name,
+        documentDate: document.getElementById("document-date").value,
+        visitRecordId: document.getElementById("document-visit").value,
+        description: document.getElementById("document-description").value,
+        originalFilename: file.name,
+        mimeType: file.type,
+        fileBase64: await fileToBase64(file)
+      });
+      documentForm.reset();
+      fillVisitOptions(patientRecords);
+      await loadDocuments(patientId);
+      setMessage("document-message", "Dokument je dodat.");
+    } catch (error) {
+      setMessage("document-message", error.message || "Dokument nije dodat.", true);
+    }
+  });
+
+  document.getElementById("import-scan-btn").addEventListener("click", async () => {
+    try {
+      await window.DrRosaApi.importPatientScan(patientId, {
+        documentType: document.getElementById("document-type").value,
+        title: document.getElementById("document-title").value || "Skenirani dokument",
+        documentDate: document.getElementById("document-date").value,
+        visitRecordId: document.getElementById("document-visit").value,
+        description: document.getElementById("document-description").value
+      });
+      documentForm.reset();
+      fillVisitOptions(patientRecords);
+      await loadDocuments(patientId);
+      setMessage("document-message", "Poslednji sken je uvezen.");
+    } catch (error) {
+      setMessage("document-message", error.message || "Sken nije uvezen.", true);
+    }
+  });
+
+  documentsBody.addEventListener("click", async event => {
+    const viewButton = event.target.closest(".view-document-btn");
+    const downloadButton = event.target.closest(".download-document-btn");
+    const deleteButton = event.target.closest(".delete-document-btn");
+    try {
+      if (viewButton) await openDocument(viewButton.dataset.documentId, false);
+      if (downloadButton) await openDocument(downloadButton.dataset.documentId, true);
+      if (deleteButton) {
+        if (!confirm("Da li zelite da obrisete ovaj dokument?")) return;
+        await window.DrRosaApi.deleteDocument(deleteButton.dataset.documentId);
+        await loadDocuments(patientId);
+      }
+    } catch (error) {
+      setMessage("document-message", error.message || "Akcija nije uspela.", true);
+    }
+  });
 }
 
 (async function init() {
@@ -188,6 +669,12 @@ function renderEmpty(message) {
       <p><strong>Alergije:</strong> ${escapeHtml(patientDetails.allergies || "-")}</p>
       <p><strong>Medicinska istorija:</strong> ${escapeHtml(patientDetails.medicalHistory || patientDetails.medical_history || "-")}</p>
     `;
+    try {
+      await initializeClinicalSection(patientDetails, patientRecords);
+    } catch (error) {
+      console.error("Clinical section load error:", error);
+      setMessage("medical-profile-message", "Karton trenutno nije ucitan.", true);
+    }
   }
 
   if (patientRecords.length === 0) {

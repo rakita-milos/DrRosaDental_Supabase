@@ -4,7 +4,10 @@ node_modules/
 *.log
 npm-debug.log*
 data/
+uploads/
+backend/uploads/
 backups/
+backend/backups/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
