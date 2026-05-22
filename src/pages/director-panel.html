@@ -401,12 +401,60 @@
                   <tr>
                     <th>Nalog</th>
                     <th>Uloga</th>
+                    <th>Permisije</th>
                     <th>Pokusaji</th>
                     <th>2FA</th>
                     <th>Akcije</th>
                   </tr>
                 </thead>
                 <tbody id="security-users-table"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div class="system-admin-grid">
+          <section class="list-section system-panel">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Sesije</p>
+                <h2>Aktivne sesije</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nalog</th>
+                    <th>IP</th>
+                    <th>Istice</th>
+                    <th>Akcije</th>
+                  </tr>
+                </thead>
+                <tbody id="security-sessions-table"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="list-section system-panel">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Legal</p>
+                <h2>Export i restore provera</h2>
+              </div>
+              <button class="secondary-btn" id="legal-export-btn" type="button">Legal export JSON</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Datum</th>
+                    <th>Backup</th>
+                    <th>Status</th>
+                    <th>Poruka</th>
+                  </tr>
+                </thead>
+                <tbody id="restore-test-table"></tbody>
               </table>
             </div>
           </section>
@@ -463,6 +511,8 @@
                     <th>Datum</th>
                     <th>Nalog</th>
                     <th>Akcija</th>
+                    <th>Entitet</th>
+                    <th>IP</th>
                   </tr>
                 </thead>
                 <tbody id="audit-log-table"></tbody>

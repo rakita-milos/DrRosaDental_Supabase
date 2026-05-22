@@ -66,6 +66,9 @@
         </div>
         <div class="patient-tabs" role="tablist" aria-label="Karton pacijenta">
           <button class="patient-tab active" type="button" data-patient-tab="medical-card">Karton</button>
+          <button class="patient-tab" type="button" data-patient-tab="clinical-chart-card">Charting</button>
+          <button class="patient-tab" type="button" data-patient-tab="clinical-notes-card">Clinical notes</button>
+          <button class="patient-tab" type="button" data-patient-tab="consents-card">Consent</button>
           <button class="patient-tab" type="button" data-patient-tab="documents-card">Dokumenti</button>
           <button class="patient-tab" type="button" data-patient-tab="plans-card">Plan terapije</button>
           <button class="patient-tab" type="button" data-patient-tab="perio-card">Perio</button>
@@ -128,6 +131,107 @@
           </form>
         </div>
 
+        <div class="patient-tab-panel" id="clinical-chart-card">
+          <form id="clinical-chart-form" class="admin-codebook-form">
+            <div class="input-grid">
+              <label>Zub
+                <input id="clinical-tooth" placeholder="16" required />
+              </label>
+              <label>Povrsine
+                <input id="clinical-surfaces" placeholder="MO, DO, B" />
+              </label>
+              <label>CDT kod
+                <input id="clinical-cdt" placeholder="D2391" />
+              </label>
+              <label>ADA kod
+                <input id="clinical-ada" placeholder="2391" />
+              </label>
+              <label>Status
+                <select id="clinical-status">
+                  <option value="planned">Planirano</option>
+                  <option value="in_progress">U toku</option>
+                  <option value="completed">Zavrseno</option>
+                  <option value="watch">Pracenje</option>
+                  <option value="referred">Upucen</option>
+                </select>
+              </label>
+              <label>Faza plana
+                <input id="clinical-phase" type="number" min="1" value="1" />
+              </label>
+              <label>Dijagnoza
+                <input id="clinical-diagnosis" />
+              </label>
+              <label>Procedura
+                <input id="clinical-procedure-code" />
+              </label>
+            </div>
+            <label>Napomena
+              <textarea id="clinical-notes" rows="3"></textarea>
+            </label>
+            <div class="form-actions">
+              <button class="primary-btn" type="submit">Sacuvaj charting</button>
+            </div>
+            <p id="clinical-chart-message" class="form-alert" role="status"></p>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>Zub</th><th>Kodovi</th><th>Status</th><th>Dijagnoza</th><th>Akcije</th></tr></thead><tbody id="clinical-chart-body"></tbody></table></div>
+        </div>
+
+        <div class="patient-tab-panel" id="clinical-notes-card">
+          <form id="clinical-note-form" class="admin-codebook-form">
+            <div class="input-grid">
+              <label>Template
+                <select id="clinical-note-template"></select>
+              </label>
+              <label>Naslov
+                <input id="clinical-note-title" required />
+              </label>
+              <label>Potpisuje
+                <input id="clinical-note-signed-by" placeholder="Dr Rosa" />
+              </label>
+            </div>
+            <label>Clinical note
+              <textarea id="clinical-note-body" rows="8" required></textarea>
+            </label>
+            <div class="form-actions">
+              <button class="primary-btn" type="submit">Sacuvaj note</button>
+            </div>
+            <p id="clinical-note-message" class="form-alert" role="status"></p>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>Note</th><th>Potpis</th><th>Datum</th><th>Akcije</th></tr></thead><tbody id="clinical-notes-body"></tbody></table></div>
+        </div>
+
+        <div class="patient-tab-panel" id="consents-card">
+          <form id="patient-consent-form" class="admin-codebook-form">
+            <div class="input-grid">
+              <label>Tip saglasnosti
+                <select id="consent-type">
+                  <option value="treatment">Terapija</option>
+                  <option value="surgery">Hirurgija</option>
+                  <option value="privacy">Privatnost</option>
+                  <option value="financial">Finansije</option>
+                </select>
+              </label>
+              <label>Naslov
+                <input id="consent-title" required />
+              </label>
+              <label>Potpisnik
+                <input id="consent-signer" required />
+              </label>
+            </div>
+            <label>Tekst saglasnosti
+              <textarea id="consent-body" rows="6" required></textarea>
+            </label>
+            <label>Potpis
+              <input id="consent-signature" placeholder="Ime i prezime / digitalni potpis" required />
+            </label>
+            <div class="form-actions">
+              <button class="primary-btn" type="submit">Sacuvaj consent</button>
+            </div>
+            <p id="consent-message" class="form-alert" role="status"></p>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>Saglasnost</th><th>Potpisnik</th><th>Datum</th></tr></thead><tbody id="patient-consents-body"></tbody></table></div>
+        </div>
+
         <div class="patient-tab-panel" id="documents-card">
           <form id="document-form" class="admin-codebook-form">
             <div class="input-grid">
@@ -151,6 +255,24 @@
               <label>
                 Datum dokumenta
                 <input id="document-date" type="date" />
+              </label>
+              <label>
+                Modalitet snimka
+                <select id="document-imaging-modality">
+                  <option value="">Nije snimak</option>
+                  <option value="intraoral_xray">Intraoralni RTG</option>
+                  <option value="panoramic_xray">Ortopan</option>
+                  <option value="cbct">CBCT</option>
+                  <option value="photo">Foto</option>
+                </select>
+              </label>
+              <label>
+                Zub / regija
+                <input id="document-tooth-number" placeholder="npr. 16 ili gornja vilica" />
+              </label>
+              <label>
+                DICOM Study UID
+                <input id="document-dicom-study-uid" placeholder="opciono" />
               </label>
               <label>
                 Vezi za posetu
@@ -180,6 +302,7 @@
                   <th>Tip</th>
                   <th>Datum</th>
                   <th>Izvor</th>
+                  <th>Snimak</th>
                   <th>Velicina</th>
                   <th>Akcije</th>
                 </tr>
@@ -311,6 +434,7 @@
             <div id="invoice-items-preview" class="info-card"></div>
             <p id="invoice-message" class="form-alert" role="status"></p>
           </form>
+          <div id="patient-ledger-summary" class="info-card"></div>
           <div class="table-wrap"><table><thead><tr><th>Broj</th><th>Status</th><th>Ukupno</th><th>Placeno</th><th>Akcije</th></tr></thead><tbody id="invoices-body"></tbody></table></div>
         </div>
 
@@ -351,7 +475,7 @@
             </div>
             <p id="insurance-message" class="form-alert" role="status"></p>
           </form>
-          <div class="table-wrap"><table><thead><tr><th>Osiguranje</th><th>Status</th><th>Trazeno</th><th>Napomene</th></tr></thead><tbody id="insurance-claims-body"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Osiguranje</th><th>Status</th><th>Trazeno</th><th>ERA/EOB</th><th>Akcije</th></tr></thead><tbody id="insurance-claims-body"></tbody></table></div>
         </div>
       </section>
 

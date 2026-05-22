@@ -230,14 +230,16 @@ function renderDocuments(documents) {
       <td>${escapeHtml(documentTypeLabel(document.documentType))}</td>
       <td>${formatDate(document.documentDate || document.createdAt)}</td>
       <td>${document.source === "scanner" ? "Skener" : "Upload"}</td>
+      <td>${escapeHtml([document.imagingModality, document.toothNumber].filter(Boolean).join(" / ") || "-")}</td>
       <td>${formatFileSize(document.fileSize)}</td>
       <td>
         <button class="secondary-btn view-document-btn" type="button" data-document-id="${document.id}">Pogledaj</button>
+        <button class="secondary-btn analyze-imaging-btn" type="button" data-document-id="${document.id}">AI pregled</button>
         <button class="secondary-btn download-document-btn" type="button" data-document-id="${document.id}">Preuzmi</button>
         <button class="danger-btn delete-document-btn" type="button" data-document-id="${document.id}">Obrisi</button>
       </td>
     </tr>
-  `).join("") : `<tr><td colspan="6" class="empty-row">Nema dokumenata za ovog pacijenta.</td></tr>`;
+  `).join("") : `<tr><td colspan="7" class="empty-row">Nema dokumenata za ovog pacijenta.</td></tr>`;
 }
 
 function fileToBase64(file) {
@@ -334,15 +336,167 @@ function renderInvoices(invoices) {
   `).join("") : `<tr><td colspan="5" class="empty-row">Nema racuna.</td></tr>`;
 }
 
+function renderLedger(ledger) {
+  const summary = document.getElementById("patient-ledger-summary");
+  if (!summary) return;
+  const entries = ledger.entries || [];
+  summary.innerHTML = `<strong>Ledger saldo:</strong> ${formatMoney(ledger.balance || 0)} <span class="muted">(${entries.length} knjiženja)</span>`;
+}
+
 function renderInsuranceClaims(claims) {
   document.getElementById("insurance-claims-body").innerHTML = claims.length ? claims.map(claim => `
     <tr>
       <td>${escapeHtml(claim.provider)}<br><small>${escapeHtml(claim.policyNumber || "-")}</small></td>
-      <td>${escapeHtml(claim.status)}</td>
+      <td>${escapeHtml(claim.status)}${claim.eligibilityStatus ? `<br><small>${escapeHtml(claim.eligibilityStatus)}</small>` : ""}</td>
       <td>${formatMoney(claim.requestedAmount)}</td>
-      <td>${escapeHtml(claim.eligibilityNotes || claim.preauthorizationNotes || claim.notes || "-")}</td>
+      <td>${claim.eob ? `${formatMoney(claim.paidAmount)}<br><small>${escapeHtml(claim.eraStatus || "ERA")}</small>` : escapeHtml(claim.denialReason || claim.eligibilityNotes || "-")}</td>
+      <td>
+        <button class="secondary-btn claim-eligibility-btn" type="button" data-claim-id="${claim.id}">Eligibility</button>
+        <button class="secondary-btn claim-submit-btn" type="button" data-claim-id="${claim.id}">eClaim</button>
+        <button class="secondary-btn claim-era-btn" type="button" data-claim-id="${claim.id}" data-amount="${claim.approvedAmount || claim.requestedAmount || 0}">ERA</button>
+      </td>
     </tr>
-  `).join("") : `<tr><td colspan="4" class="empty-row">Nema insurance claimova.</td></tr>`;
+  `).join("") : `<tr><td colspan="5" class="empty-row">Nema insurance claimova.</td></tr>`;
+}
+
+function renderClinicalChart(entries) {
+  document.getElementById("clinical-chart-body").innerHTML = entries.length ? entries.map(entry => `
+    <tr>
+      <td>${escapeHtml(entry.toothNumber)}<br><small>${escapeHtml((entry.surfaces || []).join(", ") || "-")}</small></td>
+      <td>${escapeHtml([entry.cdtCode, entry.adaCode].filter(Boolean).join(" / ") || "-")}</td>
+      <td>${escapeHtml(entry.status)}<br><small>Faza ${escapeHtml(entry.phase)}</small></td>
+      <td>${escapeHtml(entry.diagnosis || entry.notes || "-")}</td>
+      <td><button class="danger-btn delete-clinical-chart-btn" type="button" data-entry-id="${entry.id}">Obrisi</button></td>
+    </tr>
+  `).join("") : `<tr><td colspan="5" class="empty-row">Nema dental charting unosa.</td></tr>`;
+}
+
+function renderClinicalNoteTemplates(templates) {
+  const select = document.getElementById("clinical-note-template");
+  select.innerHTML = `<option value="">Prazan note</option>${templates.map(template => `
+    <option value="${template.id}" data-title="${escapeHtml(template.title)}" data-body="${escapeHtml(template.body)}">${escapeHtml(template.category)} - ${escapeHtml(template.title)}</option>
+  `).join("")}`;
+}
+
+function renderClinicalNotes(notes) {
+  document.getElementById("clinical-notes-body").innerHTML = notes.length ? notes.map(note => `
+    <tr>
+      <td>${escapeHtml(note.title)}<br><small>${escapeHtml(String(note.body || "").slice(0, 120))}</small></td>
+      <td>${note.signedAt ? `${escapeHtml(note.signedBy || "-")}<br><small>${formatDate(note.signedAt)}</small>` : "Nije potpisano"}</td>
+      <td>${formatDate(note.createdAt)}</td>
+      <td>${note.signedAt ? "-" : `<button class="primary-btn sign-clinical-note-btn" type="button" data-note-id="${note.id}">Potpis</button>`}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="4" class="empty-row">Nema clinical notes.</td></tr>`;
+}
+
+function renderPatientConsents(consents) {
+  document.getElementById("patient-consents-body").innerHTML = consents.length ? consents.map(consent => `
+    <tr>
+      <td>${escapeHtml(consent.title)}<br><small>${escapeHtml(consent.consentType)}</small></td>
+      <td>${escapeHtml(consent.signerName)}<br><small>${escapeHtml(consent.signatureData)}</small></td>
+      <td>${formatDate(consent.signedAt)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="3" class="empty-row">Nema sacuvanih saglasnosti.</td></tr>`;
+}
+
+async function initializeClinicalWorkflows(patientId) {
+  async function refreshClinicalChart() {
+    renderClinicalChart(await window.DrRosaApi.getClinicalChart(patientId));
+  }
+  async function refreshClinicalNotes() {
+    renderClinicalNotes(await window.DrRosaApi.getClinicalNotes(patientId));
+  }
+  async function refreshConsents() {
+    renderPatientConsents(await window.DrRosaApi.getPatientConsents(patientId));
+  }
+
+  const templates = await window.DrRosaApi.getClinicalNoteTemplates();
+  renderClinicalNoteTemplates(templates);
+
+  document.getElementById("clinical-note-template").addEventListener("change", event => {
+    const selected = event.target.selectedOptions[0];
+    if (!selected?.value) return;
+    document.getElementById("clinical-note-title").value = selected.dataset.title || "";
+    document.getElementById("clinical-note-body").value = selected.dataset.body || "";
+  });
+
+  document.getElementById("clinical-chart-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await window.DrRosaApi.createClinicalChartEntry(patientId, {
+        toothNumber: document.getElementById("clinical-tooth").value,
+        surfaces: document.getElementById("clinical-surfaces").value.split(",").map(item => item.trim()).filter(Boolean),
+        cdtCode: document.getElementById("clinical-cdt").value,
+        adaCode: document.getElementById("clinical-ada").value,
+        status: document.getElementById("clinical-status").value,
+        phase: Number(document.getElementById("clinical-phase").value || 1),
+        diagnosis: document.getElementById("clinical-diagnosis").value,
+        procedureCode: document.getElementById("clinical-procedure-code").value,
+        notes: document.getElementById("clinical-notes").value
+      });
+      event.target.reset();
+      document.getElementById("clinical-phase").value = "1";
+      setMessage("clinical-chart-message", "Dental charting je sacuvan.");
+      await refreshClinicalChart();
+    } catch (error) {
+      setMessage("clinical-chart-message", error.message || "Charting nije sacuvan.", true);
+    }
+  });
+
+  document.getElementById("clinical-chart-body").addEventListener("click", async event => {
+    const button = event.target.closest(".delete-clinical-chart-btn");
+    if (!button) return;
+    await window.DrRosaApi.deleteClinicalChartEntry(button.dataset.entryId);
+    setMessage("clinical-chart-message", "Charting unos je obrisan.");
+    await refreshClinicalChart();
+  });
+
+  document.getElementById("clinical-note-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await window.DrRosaApi.createClinicalNote(patientId, {
+        templateId: document.getElementById("clinical-note-template").value,
+        title: document.getElementById("clinical-note-title").value,
+        body: document.getElementById("clinical-note-body").value,
+        signedBy: document.getElementById("clinical-note-signed-by").value
+      });
+      event.target.reset();
+      setMessage("clinical-note-message", "Clinical note je sacuvan.");
+      await refreshClinicalNotes();
+    } catch (error) {
+      setMessage("clinical-note-message", error.message || "Clinical note nije sacuvan.", true);
+    }
+  });
+
+  document.getElementById("clinical-notes-body").addEventListener("click", async event => {
+    const button = event.target.closest(".sign-clinical-note-btn");
+    if (!button) return;
+    const signedBy = window.prompt("Potpisuje:", "Dr Rosa");
+    if (!signedBy) return;
+    await window.DrRosaApi.signClinicalNote(button.dataset.noteId, { signedBy });
+    setMessage("clinical-note-message", "Clinical note je potpisan.");
+    await refreshClinicalNotes();
+  });
+
+  document.getElementById("patient-consent-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      await window.DrRosaApi.createPatientConsent(patientId, {
+        consentType: document.getElementById("consent-type").value,
+        title: document.getElementById("consent-title").value,
+        body: document.getElementById("consent-body").value,
+        signerName: document.getElementById("consent-signer").value,
+        signatureData: document.getElementById("consent-signature").value
+      });
+      event.target.reset();
+      setMessage("consent-message", "Consent je sacuvan i potpisan.");
+      await refreshConsents();
+    } catch (error) {
+      setMessage("consent-message", error.message || "Consent nije sacuvan.", true);
+    }
+  });
+
+  await Promise.all([refreshClinicalChart(), refreshClinicalNotes(), refreshConsents()]);
 }
 
 async function initializeAdvancedWorkflows(patientId) {
@@ -357,6 +511,7 @@ async function initializeAdvancedWorkflows(patientId) {
   }
   async function refreshInvoices() {
     renderInvoices(await window.DrRosaApi.getInvoices(patientId));
+    renderLedger(await window.DrRosaApi.getPatientLedger(patientId));
   }
   async function refreshClaims() {
     renderInsuranceClaims(await window.DrRosaApi.getInsuranceClaims(patientId));
@@ -519,6 +674,31 @@ async function initializeAdvancedWorkflows(patientId) {
       setMessage("insurance-message", error.message || "Claim nije sacuvan.", true);
     }
   });
+
+  document.getElementById("insurance-claims-body").addEventListener("click", async event => {
+    const eligibilityButton = event.target.closest(".claim-eligibility-btn");
+    const submitButton = event.target.closest(".claim-submit-btn");
+    const eraButton = event.target.closest(".claim-era-btn");
+    try {
+      if (eligibilityButton) {
+        await window.DrRosaApi.checkInsuranceEligibility(eligibilityButton.dataset.claimId);
+        setMessage("insurance-message", "Eligibility je proveren.");
+      }
+      if (submitButton) {
+        await window.DrRosaApi.submitInsuranceClaim(submitButton.dataset.claimId);
+        setMessage("insurance-message", "eClaim je poslat u clearinghouse red.");
+      }
+      if (eraButton) {
+        const amount = Number(eraButton.dataset.amount || 0);
+        await window.DrRosaApi.postInsuranceEra(eraButton.dataset.claimId, { paidAmount: amount, approvedAmount: amount });
+        await refreshInvoices();
+        setMessage("insurance-message", "ERA/EOB je proknjizen u ledger.");
+      }
+      await refreshClaims();
+    } catch (error) {
+      setMessage("insurance-message", error.message || "Claim akcija nije uspela.", true);
+    }
+  });
 }
 
 async function initializeClinicalSection(patientDetails, patientRecords) {
@@ -530,6 +710,7 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
   fillMedicalProfile(profile);
   await loadDocuments(patientId);
   await initializeAdvancedWorkflows(patientId);
+  await initializeClinicalWorkflows(patientId);
 
   document.querySelectorAll(".patient-tab").forEach(tab => {
     tab.addEventListener("click", () => {
@@ -563,6 +744,11 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
         documentDate: document.getElementById("document-date").value,
         visitRecordId: document.getElementById("document-visit").value,
         description: document.getElementById("document-description").value,
+        imagingModality: document.getElementById("document-imaging-modality").value,
+        toothNumber: document.getElementById("document-tooth-number").value,
+        acquisitionDate: document.getElementById("document-date").value,
+        dicomStudyUid: document.getElementById("document-dicom-study-uid").value,
+        claimAttachmentReady: Boolean(document.getElementById("document-imaging-modality").value),
         originalFilename: file.name,
         mimeType: file.type,
         fileBase64: await fileToBase64(file)
@@ -583,7 +769,12 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
         title: document.getElementById("document-title").value || "Skenirani dokument",
         documentDate: document.getElementById("document-date").value,
         visitRecordId: document.getElementById("document-visit").value,
-        description: document.getElementById("document-description").value
+        description: document.getElementById("document-description").value,
+        imagingModality: document.getElementById("document-imaging-modality").value,
+        toothNumber: document.getElementById("document-tooth-number").value,
+        acquisitionDate: document.getElementById("document-date").value,
+        dicomStudyUid: document.getElementById("document-dicom-study-uid").value,
+        claimAttachmentReady: Boolean(document.getElementById("document-imaging-modality").value)
       });
       documentForm.reset();
       fillVisitOptions(patientRecords);
@@ -596,10 +787,16 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
 
   documentsBody.addEventListener("click", async event => {
     const viewButton = event.target.closest(".view-document-btn");
+    const analyzeButton = event.target.closest(".analyze-imaging-btn");
     const downloadButton = event.target.closest(".download-document-btn");
     const deleteButton = event.target.closest(".delete-document-btn");
     try {
       if (viewButton) await openDocument(viewButton.dataset.documentId, false);
+      if (analyzeButton) {
+        await window.DrRosaApi.analyzeDocumentImaging(analyzeButton.dataset.documentId);
+        await loadDocuments(patientId);
+        setMessage("document-message", "AI preliminarni pregled je sacuvan.");
+      }
       if (downloadButton) await openDocument(downloadButton.dataset.documentId, true);
       if (deleteButton) {
         if (!confirm("Da li zelite da obrisete ovaj dokument?")) return;

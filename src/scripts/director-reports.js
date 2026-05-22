@@ -1200,6 +1200,7 @@ async function loadBackupsPanel() {
         <td>${escapeHtml(backup.status)}</td>
         <td class="table-actions">
           <button class="secondary-btn" type="button" data-download-backup="${backup.id}" data-backup-filename="${escapeHtml(backup.filename)}">Preuzmi</button>
+          <button class="secondary-btn" type="button" data-test-backup="${backup.id}">Test restore</button>
           <button class="secondary-btn danger-btn" type="button" data-restore-backup="${backup.id}">Restore</button>
         </td>
       </tr>
@@ -1217,21 +1218,41 @@ async function loadSecurityPanel() {
       <tr>
         <td>${escapeHtml(user.name)}<br><small>${escapeHtml(user.email)}</small></td>
         <td>${escapeHtml(user.role)}</td>
+        <td>${escapeHtml((user.permissions || []).slice(0, 4).join(", ") || "-")}${(user.permissions || []).length > 4 ? `<br><small>+${(user.permissions || []).length - 4}</small>` : ""}</td>
         <td>${user.failedLoginAttempts}${user.lockedUntil ? `<br><small>Zakljucan do ${formatDateTime(user.lockedUntil)}</small>` : ""}</td>
         <td>${user.twoFactorEnabled ? "Ukljucen" : "Iskljucen"}</td>
         <td class="table-actions">
           <button class="secondary-btn" type="button" data-unlock-user="${user.id}">Otkljucaj</button>
           <button class="secondary-btn" type="button" data-reset-user-password="${user.id}">Reset lozinke</button>
+          <button class="secondary-btn" type="button" data-edit-user-permissions="${user.id}" data-permissions="${escapeHtml((user.permissions || []).join(","))}">Permisije</button>
         </td>
       </tr>
     `).join("");
+    document.getElementById("security-sessions-table").innerHTML = status.sessions?.length ? status.sessions.map(session => `
+      <tr>
+        <td>${escapeHtml(session.name || session.email || "-")}<br><small>${escapeHtml(session.userAgent || "-")}</small></td>
+        <td>${escapeHtml(session.ipAddress || "-")}</td>
+        <td>${formatDateTime(session.expiresAt)}</td>
+        <td><button class="danger-btn" type="button" data-revoke-session="${session.id}">Opozovi</button></td>
+      </tr>
+    `).join("") : `<tr><td colspan="4" class="empty-row">Nema aktivnih sesija.</td></tr>`;
+    document.getElementById("restore-test-table").innerHTML = status.restoreTests?.length ? status.restoreTests.map(test => `
+      <tr>
+        <td>${formatDateTime(test.checkedAt)}</td>
+        <td>${escapeHtml(test.backupId || "-")}</td>
+        <td>${escapeHtml(test.status)}</td>
+        <td>${escapeHtml(test.message || "-")}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="4" class="empty-row">Nema test restore provera.</td></tr>`;
     document.getElementById("audit-log-table").innerHTML = status.auditLog.length ? status.auditLog.map(item => `
       <tr>
         <td>${formatDateTime(item.createdAt)}</td>
         <td>${escapeHtml(item.email || "-")}</td>
         <td>${escapeHtml(item.action)}</td>
+        <td>${escapeHtml([item.entityType, item.entityId].filter(Boolean).join(" #") || "-")}</td>
+        <td>${escapeHtml(item.ipAddress || "-")}</td>
       </tr>
-    `).join("") : `<tr><td colspan="3" class="empty-row">Nema audit aktivnosti.</td></tr>`;
+    `).join("") : `<tr><td colspan="5" class="empty-row">Nema audit aktivnosti.</td></tr>`;
   } catch (error) {
     showSystemMessage("security-message", error.message || "Sigurnosni status nije ucitan.", true);
   }
@@ -1254,11 +1275,22 @@ function initializeBackupSecurity() {
   document.getElementById("backup-table")?.addEventListener("click", async event => {
     const button = event.target.closest("[data-restore-backup]");
     const download = event.target.closest("[data-download-backup]");
+    const test = event.target.closest("[data-test-backup]");
     if (download) {
       try {
         await downloadBackup(download.dataset.downloadBackup, download.dataset.backupFilename);
       } catch (error) {
         showSystemMessage("backup-message", error.message || "Backup nije preuzet.", true);
+      }
+      return;
+    }
+    if (test) {
+      try {
+        await window.DrRosaApi.testRestoreBackup(test.dataset.testBackup);
+        showSystemMessage("backup-message", "Test restore je zavrsen.");
+        await loadSecurityPanel();
+      } catch (error) {
+        showSystemMessage("backup-message", error.message || "Test restore nije uspeo.", true);
       }
       return;
     }
@@ -1277,6 +1309,7 @@ function initializeBackupSecurity() {
   document.getElementById("security-users-table")?.addEventListener("click", async event => {
     const unlock = event.target.closest("[data-unlock-user]");
     const reset = event.target.closest("[data-reset-user-password]");
+    const permissions = event.target.closest("[data-edit-user-permissions]");
     try {
       if (unlock) {
         await window.DrRosaApi.unlockUser(unlock.dataset.unlockUser);
@@ -1288,9 +1321,49 @@ function initializeBackupSecurity() {
         await window.DrRosaApi.resetUserPassword(reset.dataset.resetUserPassword, newPassword);
         showSystemMessage("security-message", "Lozinka je resetovana.");
       }
+      if (permissions) {
+        const current = permissions.dataset.permissions || "";
+        const raw = window.prompt("Permisije odvojene zarezom (* za sve):", current);
+        if (raw === null) return;
+        await window.DrRosaApi.updateUserPermissions(
+          permissions.dataset.editUserPermissions,
+          raw.split(",").map(item => item.trim()).filter(Boolean)
+        );
+        showSystemMessage("security-message", "Permisije su sacuvane.");
+      }
       await loadSecurityPanel();
     } catch (error) {
       showSystemMessage("security-message", error.message || "Akcija nije uspela.", true);
+    }
+  });
+
+  document.getElementById("security-sessions-table")?.addEventListener("click", async event => {
+    const revoke = event.target.closest("[data-revoke-session]");
+    if (!revoke) return;
+    try {
+      await window.DrRosaApi.revokeSecuritySession(revoke.dataset.revokeSession);
+      showSystemMessage("security-message", "Sesija je opozvana.");
+      await loadSecurityPanel();
+    } catch (error) {
+      showSystemMessage("security-message", error.message || "Sesija nije opozvana.", true);
+    }
+  });
+
+  document.getElementById("legal-export-btn")?.addEventListener("click", async () => {
+    try {
+      const payload = await window.DrRosaApi.getLegalExport();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `drrosa-legal-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showSystemMessage("security-message", "Legal export je napravljen.");
+    } catch (error) {
+      showSystemMessage("security-message", error.message || "Legal export nije napravljen.", true);
     }
   });
 

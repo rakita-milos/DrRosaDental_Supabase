@@ -25,6 +25,14 @@ test("api: director manages encrypted backups and security status", async ({ req
   const backups = await listResponse.json();
   expect(backups.map(item => item.id)).toContain(backup.id);
 
+  const testRestore = await request.post(`${baseURL}/api/director/backups/${backup.id}/test-restore`, {
+    headers: authHeaders("director")
+  });
+  expect(testRestore.status()).toBe(201);
+  const restoreTest = await testRestore.json();
+  expect(["passed", "failed"]).toContain(restoreTest.status);
+  expect(restoreTest.checkedTables).toContain("patients");
+
   const badRestore = await request.post(`${baseURL}/api/director/backups/${backup.id}/restore`, {
     headers: authHeaders("director"),
     data: { confirmation: "NE" }
@@ -38,6 +46,37 @@ test("api: director manages encrypted backups and security status", async ({ req
   const security = await securityResponse.json();
   expect(security.users.some(user => user.role === "director")).toBeTruthy();
   expect(security.accessTokenTtl).toBeTruthy();
+  expect(Array.isArray(security.sessions)).toBeTruthy();
+  expect(Array.isArray(security.restoreTests)).toBeTruthy();
+
+  const auditResponse = await request.get(`${baseURL}/api/director/security/audit-log?limit=20`, {
+    headers: authHeaders("director")
+  });
+  expect(auditResponse.ok()).toBeTruthy();
+  expect(Array.isArray(await auditResponse.json())).toBeTruthy();
+
+  const sessionsResponse = await request.get(`${baseURL}/api/director/security/sessions`, {
+    headers: authHeaders("director")
+  });
+  expect(sessionsResponse.ok()).toBeTruthy();
+  expect(Array.isArray(await sessionsResponse.json())).toBeTruthy();
+
+  const staff = security.users.find(user => user.role === "staff");
+  expect(staff).toBeTruthy();
+  const permissionsResponse = await request.put(`${baseURL}/api/director/security/users/${staff.id}/permissions`, {
+    headers: authHeaders("director"),
+    data: { permissions: staff.permissions || ["patients:read"] }
+  });
+  expect(permissionsResponse.ok()).toBeTruthy();
+  expect(await permissionsResponse.json()).toHaveProperty("permissions");
+
+  const legalExport = await request.get(`${baseURL}/api/director/legal-export`, {
+    headers: authHeaders("director")
+  });
+  expect(legalExport.ok()).toBeTruthy();
+  const exportBody = await legalExport.json();
+  expect(exportBody.generatedAt).toBeTruthy();
+  expect(Array.isArray(exportBody.patients)).toBeTruthy();
 });
 
 test("api: login issues refresh token and failed login increments lockout counter", async ({ request, baseURL }) => {

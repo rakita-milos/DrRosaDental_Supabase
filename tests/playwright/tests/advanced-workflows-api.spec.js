@@ -89,6 +89,66 @@ test("api: treatment plan, perio, invoice and insurance workflows", async ({ req
   expect(perio.measurements).toHaveLength(2);
   expect(perio.measurements[0]).toHaveProperty("pocketDepth");
 
+  const chartResponse = await request.post(`${baseURL}/api/patients/${patient.id}/clinical-chart`, {
+    headers: authHeaders("staff"),
+    data: {
+      toothNumber: "16",
+      surfaces: ["MO"],
+      cdtCode: "D2391",
+      adaCode: "2391",
+      diagnosis: "ADVAPI caries",
+      procedureCode: "restoration",
+      status: "planned",
+      phase: 1,
+      notes: "ADVAPI charting"
+    }
+  });
+  expect(chartResponse.status()).toBe(201);
+  const chartEntry = await chartResponse.json();
+  expect(chartEntry.surfaces).toContain("MO");
+  const chartList = await request.get(`${baseURL}/api/patients/${patient.id}/clinical-chart`, {
+    headers: authHeaders("staff")
+  });
+  expect((await chartList.json()).some(item => item.id === chartEntry.id)).toBeTruthy();
+
+  const templates = await request.get(`${baseURL}/api/clinical-note-templates`, {
+    headers: authHeaders("staff")
+  });
+  expect(templates.ok()).toBeTruthy();
+  expect((await templates.json()).length).toBeGreaterThan(0);
+
+  const noteResponse = await request.post(`${baseURL}/api/patients/${patient.id}/clinical-notes`, {
+    headers: authHeaders("staff"),
+    data: {
+      title: "ADVAPI clinical note",
+      body: "Subjektivno: test. Objektivno: test."
+    }
+  });
+  expect(noteResponse.status()).toBe(201);
+  const note = await noteResponse.json();
+  const signedNote = await request.post(`${baseURL}/api/clinical-notes/${note.id}/sign`, {
+    headers: authHeaders("staff"),
+    data: { signedBy: "ADVAPI Doctor" }
+  });
+  expect(signedNote.ok()).toBeTruthy();
+  expect((await signedNote.json()).signedBy).toBe("ADVAPI Doctor");
+
+  const consentResponse = await request.post(`${baseURL}/api/patients/${patient.id}/consents`, {
+    headers: authHeaders("staff"),
+    data: {
+      consentType: "treatment",
+      title: "ADVAPI consent",
+      body: "Pacijent prihvata predlozeni tretman.",
+      signerName: "ADVAPI Patient",
+      signatureData: "ADVAPI Patient"
+    }
+  });
+  expect(consentResponse.status()).toBe(201);
+  const consents = await request.get(`${baseURL}/api/patients/${patient.id}/consents`, {
+    headers: authHeaders("staff")
+  });
+  expect((await consents.json()).some(item => item.title === "ADVAPI consent")).toBeTruthy();
+
   const invoice = await createInvoice(request, baseURL, patient.id, {
     issueDate: "2026-07-02",
     dueDate: "2026-07-12",
@@ -125,6 +185,64 @@ test("api: treatment plan, perio, invoice and insurance workflows", async ({ req
   });
   expect(claim.status).toBe("eligibility_checked");
   expect(claim.requestedAmount).toBe(550);
+
+  const imagingUpload = await request.post(`${baseURL}/api/patients/${patient.id}/documents`, {
+    headers: authHeaders("staff"),
+    data: {
+      documentType: "rtg",
+      title: "ADVAPI X-ray",
+      originalFilename: "advapi-xray.png",
+      mimeType: "image/png",
+      fileBase64: Buffer.from("png-test").toString("base64"),
+      imagingModality: "intraoral_xray",
+      toothNumber: "16",
+      claimAttachmentReady: true
+    }
+  });
+  expect(imagingUpload.ok()).toBeTruthy();
+  const image = await imagingUpload.json();
+  expect(image.imagingModality).toBe("intraoral_xray");
+
+  const analyzed = await request.post(`${baseURL}/api/documents/${image.id}/imaging/analyze`, {
+    headers: authHeaders("staff")
+  });
+  expect(analyzed.ok()).toBeTruthy();
+  expect((await analyzed.json()).aiFindings.length).toBeGreaterThan(0);
+
+  const attachment = await request.post(`${baseURL}/api/insurance-claims/${claim.id}/attachments`, {
+    headers: authHeaders("staff"),
+    data: { documentId: image.id, attachmentType: "xray" }
+  });
+  expect(attachment.ok()).toBeTruthy();
+  expect((await attachment.json()).claim.attachments).toHaveLength(1);
+
+  const eligibility = await request.post(`${baseURL}/api/insurance-claims/${claim.id}/check-eligibility`, {
+    headers: authHeaders("staff")
+  });
+  expect(eligibility.ok()).toBeTruthy();
+  expect((await eligibility.json()).eligibilityStatus).toBe("active");
+
+  const submitted = await request.post(`${baseURL}/api/insurance-claims/${claim.id}/submit`, {
+    headers: authHeaders("staff")
+  });
+  expect(submitted.ok()).toBeTruthy();
+  expect((await submitted.json()).status).toBe("submitted");
+
+  const era = await request.post(`${baseURL}/api/insurance-claims/${claim.id}/era`, {
+    headers: authHeaders("staff"),
+    data: { paidAmount: 300, approvedAmount: 300 }
+  });
+  expect(era.ok()).toBeTruthy();
+  const posted = await era.json();
+  expect(posted.eraStatus).toBe("received");
+  expect(posted.eob.paidAmount).toBe(300);
+
+  const ledger = await request.get(`${baseURL}/api/patients/${patient.id}/ledger`, {
+    headers: authHeaders("staff")
+  });
+  expect(ledger.ok()).toBeTruthy();
+  const ledgerBody = await ledger.json();
+  expect(ledgerBody.entries.some(entry => entry.entryType === "insurance_payment")).toBeTruthy();
 });
 
 test("api: director saves Google OAuth settings without exposing client secret", async ({ request, baseURL }) => {

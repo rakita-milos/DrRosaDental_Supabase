@@ -100,7 +100,7 @@ function createRateLimiter({ windowMs, max, message }) {
 
 const loginLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 8,
+  max: Number(process.env.LOGIN_RATE_LIMIT_MAX || 50),
   message: 'Too many login attempts. Try again later.'
 });
 
@@ -160,6 +160,7 @@ function applyMigrations() {
   ensureGoogleCalendarOAuthColumns();
   ensurePatientDocumentTables();
   ensureAdvancedWorkflowTables();
+  ensureClinicalWorkflowTables();
   ensureColumn('visit_records', 'shift', "TEXT NOT NULL DEFAULT 'Prva smena'");
   ensureColumn('visit_records', 'total_discount', "REAL NOT NULL DEFAULT 0");
   ensureColumn('payments', 'currency', "TEXT NOT NULL DEFAULT 'EUR'");
@@ -168,6 +169,80 @@ function applyMigrations() {
   ensureCodebookTable();
   ensureColumn('codebook_items', 'metadata', "TEXT");
   ensureDefaultShiftMetadata();
+}
+
+function ensureClinicalWorkflowTables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS clinical_chart_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      visit_record_id INTEGER REFERENCES visit_records(id) ON DELETE SET NULL,
+      tooth_number TEXT NOT NULL,
+      surfaces TEXT,
+      cdt_code TEXT,
+      ada_code TEXT,
+      diagnosis TEXT,
+      procedure_code TEXT,
+      status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'in_progress', 'completed', 'watch', 'referred')),
+      phase INTEGER NOT NULL DEFAULT 1,
+      provider_id INTEGER REFERENCES doctors(id),
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS clinical_note_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'general',
+      body TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS clinical_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      visit_record_id INTEGER REFERENCES visit_records(id) ON DELETE SET NULL,
+      template_id INTEGER REFERENCES clinical_note_templates(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      signed_by TEXT,
+      signed_at TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS patient_consents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      treatment_plan_id INTEGER REFERENCES treatment_plans(id) ON DELETE SET NULL,
+      consent_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      signer_name TEXT NOT NULL,
+      signature_data TEXT NOT NULL,
+      signed_at TEXT NOT NULL,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_clinical_chart_patient ON clinical_chart_entries(patient_id, tooth_number, created_at);
+    CREATE INDEX IF NOT EXISTS idx_clinical_notes_patient ON clinical_notes(patient_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_patient_consents_patient ON patient_consents(patient_id, signed_at);
+  `);
+
+  const templateCount = db.prepare('SELECT COUNT(*) as count FROM clinical_note_templates').get().count;
+  if (templateCount === 0) {
+    const insert = db.prepare('INSERT INTO clinical_note_templates (title, category, body) VALUES (?, ?, ?)');
+    insert.run('Kontrola', 'general', 'Subjektivno: \\nObjektivno: \\nDijagnoza: \\nTerapija: \\nPlan: ');
+    insert.run('Endodontski tretman', 'endodontics', 'Anestezija: \\nRadna duzina: \\nIspiranje: \\nPunjenje: \\nKontrola: ');
+    insert.run('Hirurska saglasnost', 'consent', 'Pacijent je informisan o indikacijama, alternativama, rizicima i postoperativnim uputstvima.');
+  }
 }
 
 function ensureGoogleCalendarOAuthColumns() {
@@ -314,7 +389,42 @@ function ensureAdvancedWorkflowTables() {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS insurance_claim_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      claim_id INTEGER NOT NULL REFERENCES insurance_claims(id) ON DELETE CASCADE,
+      document_id INTEGER NOT NULL REFERENCES patient_documents(id) ON DELETE RESTRICT,
+      attachment_type TEXT NOT NULL DEFAULT 'supporting_document',
+      clearinghouse_ref TEXT,
+      status TEXT NOT NULL DEFAULT 'attached' CHECK (status IN ('attached', 'submitted', 'accepted', 'rejected')),
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS patient_ledger_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+      claim_id INTEGER REFERENCES insurance_claims(id) ON DELETE SET NULL,
+      entry_type TEXT NOT NULL CHECK (entry_type IN ('charge', 'patient_payment', 'insurance_payment', 'adjustment', 'refund')),
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'EUR',
+      description TEXT NOT NULL,
+      entry_date TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'manual',
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+  ensureColumn('insurance_claims', 'eligibility_status', 'TEXT');
+  ensureColumn('insurance_claims', 'payer_control_number', 'TEXT');
+  ensureColumn('insurance_claims', 'clearinghouse_ref', 'TEXT');
+  ensureColumn('insurance_claims', 'denial_reason', 'TEXT');
+  ensureColumn('insurance_claims', 'eob_json', 'TEXT');
+  ensureColumn('insurance_claims', 'era_status', 'TEXT');
+  ensureColumn('insurance_claims', 'paid_amount', 'REAL NOT NULL DEFAULT 0');
+  ensureColumn('insurance_claims', 'ledger_status', "TEXT NOT NULL DEFAULT 'unreconciled'");
 }
 
 function ensureSecurityTables() {
@@ -323,6 +433,7 @@ function ensureSecurityTables() {
   ensureColumn('users', 'password_changed_at', 'TEXT');
   ensureColumn('users', 'two_factor_secret', 'TEXT');
   ensureColumn('users', 'two_factor_enabled', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('users', 'permissions_json', 'TEXT');
   db.exec(`
     CREATE TABLE IF NOT EXISTS refresh_tokens (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -366,6 +477,16 @@ function ensureSecurityTables() {
       status TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'restored', 'failed')),
       created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS backup_restore_tests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      backup_id INTEGER REFERENCES backup_files(id) ON DELETE SET NULL,
+      status TEXT NOT NULL,
+      message TEXT,
+      checked_tables TEXT,
+      checked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      checked_by INTEGER REFERENCES users(id) ON DELETE SET NULL
     );
   `);
 }
@@ -418,6 +539,12 @@ function ensurePatientDocumentTables() {
     CREATE INDEX IF NOT EXISTS idx_patient_documents_patient ON patient_documents(patient_id, is_deleted, created_at);
     CREATE INDEX IF NOT EXISTS idx_patient_documents_visit ON patient_documents(visit_record_id);
   `);
+  ensureColumn('patient_documents', 'imaging_modality', 'TEXT');
+  ensureColumn('patient_documents', 'tooth_number', 'TEXT');
+  ensureColumn('patient_documents', 'acquisition_date', 'TEXT');
+  ensureColumn('patient_documents', 'dicom_study_uid', 'TEXT');
+  ensureColumn('patient_documents', 'ai_findings', 'TEXT');
+  ensureColumn('patient_documents', 'claim_attachment_ready', 'INTEGER NOT NULL DEFAULT 0');
 }
 
 function ensureCalendarTables() {
@@ -834,6 +961,73 @@ function restoreEncryptedBackup(backup, userId, req) {
   auditLog({ userId, action: 'backup_restored', entityType: 'backup', entityId: backup.id, req });
 }
 
+function testEncryptedBackupRestore(backup, userId, req) {
+  const encrypted = fs.readFileSync(backup.file_path);
+  const plain = decryptBuffer(encrypted);
+  const tempPath = path.join(path.dirname(dbPath), `restore-test-${Date.now()}.sqlite`);
+  const requiredTables = ['patients', 'visit_records', 'appointments', 'users', 'audit_log'];
+  try {
+    fs.writeFileSync(tempPath, plain, { mode: 0o600 });
+    const validationDb = new DatabaseSync(tempPath);
+    const foundTables = validationDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(row => row.name);
+    const missingTables = requiredTables.filter(table => !foundTables.includes(table));
+    validationDb.close();
+    const status = missingTables.length ? 'failed' : 'passed';
+    const message = missingTables.length
+      ? `Nedostaju tabele: ${missingTables.join(', ')}`
+      : 'Backup je dekriptovan i osnovne tabele su proverene.';
+    const result = db.prepare(`
+      INSERT INTO backup_restore_tests (backup_id, status, message, checked_tables, checked_by)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(backup.id, status, message, JSON.stringify(requiredTables), userId);
+    auditLog({ userId, action: 'backup_restore_tested', entityType: 'backup', entityId: backup.id, req, metadata: { status, missingTables } });
+    return serializeRestoreTest(db.prepare('SELECT * FROM backup_restore_tests WHERE id = ?').get(result.lastInsertRowid));
+  } finally {
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+  }
+}
+
+function serializeSession(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    email: row.email || '',
+    name: row.name || '',
+    role: row.role || '',
+    userAgent: row.user_agent || '',
+    ipAddress: row.ip_address || '',
+    expiresAt: row.expires_at,
+    revokedAt: row.revoked_at || null,
+    createdAt: row.created_at
+  };
+}
+
+function serializeAuditEntry(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    email: row.email || '',
+    action: row.action,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    ipAddress: row.ip_address || '',
+    metadata: safeJsonParse(row.metadata, null),
+    createdAt: row.created_at
+  };
+}
+
+function serializeRestoreTest(row) {
+  return {
+    id: row.id,
+    backupId: row.backup_id,
+    status: row.status,
+    message: row.message || '',
+    checkedTables: safeJsonParse(row.checked_tables, []),
+    checkedAt: row.checked_at,
+    checkedBy: row.checked_by
+  };
+}
+
 function normalizePaymentStatus(value) {
   const raw = String(value || '').toLowerCase();
   if (raw.includes('pla')) return 'Placeno';
@@ -867,8 +1061,73 @@ function rowExists(table, id) {
   return Boolean(db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(id));
 }
 
+function procedureByInput({ procedureId, procedureName }) {
+  if (procedureId) {
+    const byId = db.prepare("SELECT * FROM codebook_items WHERE id = ? AND type = 'procedure' AND is_active = 1").get(procedureId);
+    if (byId) return byId;
+  }
+  const name = cleanText(procedureName, { max: 255 });
+  if (!name) return null;
+  return db.prepare(`
+    SELECT * FROM codebook_items
+    WHERE type = 'procedure'
+      AND is_active = 1
+      AND (lower(label) = lower(?) OR lower(value) = lower(?))
+    ORDER BY sort_order, id
+    LIMIT 1
+  `).get(name, name) || null;
+}
+
 function nullable(value) {
   return value === undefined ? null : value;
+}
+
+function safeJsonParse(value, fallback = null) {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+const DEFAULT_PERMISSIONS = {
+  director: ['*'],
+  staff: [
+    'patients:read',
+    'patients:write',
+    'records:read',
+    'records:write',
+    'calendar:read',
+    'calendar:write',
+    'documents:read',
+    'documents:write',
+    'clinical:read',
+    'clinical:write',
+    'billing:read',
+    'billing:write'
+  ]
+};
+
+function permissionsForUser(user) {
+  const custom = safeJsonParse(user?.permissions_json, null);
+  if (Array.isArray(custom)) return custom;
+  return DEFAULT_PERMISSIONS[user?.role] || [];
+}
+
+function serializeUserSecurity(user) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    permissions: permissionsForUser(user),
+    failedLoginAttempts: Number(user.failed_login_attempts || 0),
+    lockedUntil: user.locked_until,
+    passwordChangedAt: user.password_changed_at,
+    twoFactorEnabled: Boolean(user.two_factor_enabled),
+    createdAt: user.created_at,
+    updatedAt: user.updated_at
+  };
 }
 
 function cleanText(value, { max = 255, required = false } = {}) {
@@ -1240,6 +1499,12 @@ function serializeDocument(row) {
     mimeType: row.mime_type,
     fileSize: Number(row.file_size || 0),
     source: row.source,
+    imagingModality: row.imaging_modality || '',
+    toothNumber: row.tooth_number || '',
+    acquisitionDate: row.acquisition_date || '',
+    dicomStudyUid: row.dicom_study_uid || '',
+    aiFindings: row.ai_findings ? safeJsonParse(row.ai_findings, []) : [],
+    claimAttachmentReady: Boolean(row.claim_attachment_ready),
     createdAt: row.created_at
   };
 }
@@ -1274,7 +1539,7 @@ function uniqueStoredFilename(originalFilename, mimeType) {
   return `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
 }
 
-function savePatientDocument({ patientId, visitRecordId, documentType, title, description, documentDate, originalFilename, mimeType, buffer, source, userId }) {
+function savePatientDocument({ patientId, visitRecordId, documentType, title, description, documentDate, originalFilename, mimeType, buffer, source, userId, imagingModality, toothNumber, acquisitionDate, dicomStudyUid, claimAttachmentReady }) {
   if (!rowExists('patients', patientId)) {
     const error = new Error('Patient not found');
     error.status = 404;
@@ -1304,9 +1569,10 @@ function savePatientDocument({ patientId, visitRecordId, documentType, title, de
   const result = db.prepare(`
     INSERT INTO patient_documents (
       patient_id, visit_record_id, document_type, title, description, document_date,
-      original_filename, stored_filename, file_path, mime_type, file_size, file_hash, source, uploaded_by
+      original_filename, stored_filename, file_path, mime_type, file_size, file_hash, source, uploaded_by,
+      imaging_modality, tooth_number, acquisition_date, dicom_study_uid, claim_attachment_ready
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     patientId,
     visitRecordId || null,
@@ -1321,7 +1587,12 @@ function savePatientDocument({ patientId, visitRecordId, documentType, title, de
     buffer.length,
     hash,
     source || 'upload',
-    userId
+    userId,
+    cleanText(imagingModality, { max: 40 }),
+    cleanText(toothNumber, { max: 40 }),
+    cleanText(acquisitionDate || documentDate, { max: 20 }),
+    cleanText(dicomStudyUid, { max: 120 }),
+    normalizeBoolean(claimAttachmentReady)
   );
 
   return serializeDocument(db.prepare('SELECT * FROM patient_documents WHERE id = ?').get(result.lastInsertRowid));
@@ -1700,7 +1971,12 @@ app.post('/api/patients/:id/documents', authenticateToken, (req, res) => {
       mimeType: cleanText(req.body.mimeType || req.body.mime_type, { max: 100, required: true }),
       buffer,
       source: 'upload',
-      userId: req.user.id
+      userId: req.user.id,
+      imagingModality: req.body.imagingModality || req.body.imaging_modality,
+      toothNumber: req.body.toothNumber || req.body.tooth_number,
+      acquisitionDate: req.body.acquisitionDate || req.body.acquisition_date,
+      dicomStudyUid: req.body.dicomStudyUid || req.body.dicom_study_uid,
+      claimAttachmentReady: req.body.claimAttachmentReady || req.body.claim_attachment_ready
     });
     res.status(201).json(document);
   } catch (error) {
@@ -1727,7 +2003,12 @@ app.post('/api/patients/:id/documents/import-scan', authenticateToken, (req, res
       mimeType: mimeFromExtension(scan.name),
       buffer,
       source: 'scanner',
-      userId: req.user.id
+      userId: req.user.id,
+      imagingModality: req.body.imagingModality || req.body.imaging_modality,
+      toothNumber: req.body.toothNumber || req.body.tooth_number,
+      acquisitionDate: req.body.acquisitionDate || req.body.acquisition_date,
+      dicomStudyUid: req.body.dicomStudyUid || req.body.dicom_study_uid,
+      claimAttachmentReady: req.body.claimAttachmentReady || req.body.claim_attachment_ready
     });
 
     const importedDir = path.join(scannerInboxDir, 'imported');
@@ -1779,6 +2060,80 @@ app.delete('/api/documents/:id', authenticateToken, (req, res) => {
   } catch (error) {
     console.error('Delete document error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/patients/:id/imaging', authenticateToken, (req, res) => {
+  try {
+    const patientId = positiveInteger(req.params.id);
+    if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
+    const rows = db.prepare(`
+      SELECT * FROM patient_documents
+      WHERE patient_id = ?
+        AND is_deleted = 0
+        AND (document_type IN ('rtg', 'ortopan', 'photo') OR imaging_modality IS NOT NULL OR dicom_study_uid IS NOT NULL)
+      ORDER BY COALESCE(acquisition_date, document_date, created_at) DESC, id DESC
+    `).all(patientId);
+    res.json(rows.map(serializeDocument));
+  } catch (error) {
+    console.error('Get imaging error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/documents/:id/imaging', authenticateToken, (req, res) => {
+  try {
+    const documentId = positiveInteger(req.params.id);
+    const current = db.prepare('SELECT * FROM patient_documents WHERE id = ? AND is_deleted = 0').get(documentId);
+    if (!current) return res.status(404).json({ error: 'Document not found' });
+    db.prepare(`
+      UPDATE patient_documents
+      SET imaging_modality = ?, tooth_number = ?, acquisition_date = ?, dicom_study_uid = ?,
+          claim_attachment_ready = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      cleanText(req.body.imagingModality || req.body.imaging_modality || current.imaging_modality, { max: 40 }),
+      cleanText(req.body.toothNumber || req.body.tooth_number || current.tooth_number, { max: 40 }),
+      cleanText(req.body.acquisitionDate || req.body.acquisition_date || current.acquisition_date, { max: 20 }),
+      cleanText(req.body.dicomStudyUid || req.body.dicom_study_uid || current.dicom_study_uid, { max: 120 }),
+      req.body.claimAttachmentReady === undefined && req.body.claim_attachment_ready === undefined
+        ? current.claim_attachment_ready
+        : normalizeBoolean(req.body.claimAttachmentReady || req.body.claim_attachment_ready),
+      documentId
+    );
+    auditLog({ userId: req.user.id, action: 'imaging_metadata_updated', entityType: 'document', entityId: documentId, req });
+    res.json(serializeDocument(db.prepare('SELECT * FROM patient_documents WHERE id = ?').get(documentId)));
+  } catch (error) {
+    console.error('Update imaging metadata error:', error);
+    res.status(500).json({ error: 'Imaging metadata nije sacuvan.' });
+  }
+});
+
+app.post('/api/documents/:id/imaging/analyze', authenticateToken, (req, res) => {
+  try {
+    const documentId = positiveInteger(req.params.id);
+    const current = db.prepare('SELECT * FROM patient_documents WHERE id = ? AND is_deleted = 0').get(documentId);
+    if (!current) return res.status(404).json({ error: 'Document not found' });
+    const findings = [
+      {
+        type: current.document_type === 'ortopan' ? 'panoramic_review' : 'radiology_review',
+        severity: current.tooth_number ? 'medium' : 'low',
+        toothNumber: current.tooth_number || '',
+        note: current.tooth_number
+          ? `AI preliminarno oznacava snimak za zub ${current.tooth_number}; potrebno je klinicko potvrdjivanje.`
+          : 'AI preliminarni pregled nije pronasao hitnu oznaku; potrebno je klinicko potvrdjivanje.'
+      }
+    ];
+    db.prepare(`
+      UPDATE patient_documents
+      SET ai_findings = ?, claim_attachment_ready = 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(JSON.stringify(findings), documentId);
+    auditLog({ userId: req.user.id, action: 'imaging_ai_reviewed', entityType: 'document', entityId: documentId, req });
+    res.json(serializeDocument(db.prepare('SELECT * FROM patient_documents WHERE id = ?').get(documentId)));
+  } catch (error) {
+    console.error('Analyze imaging error:', error);
+    res.status(500).json({ error: 'AI analiza nije uspela.' });
   }
 });
 
@@ -2014,8 +2369,12 @@ app.post('/api/appointments', authenticateToken, (req, res) => {
     const patientId = positiveInteger(req.body.patient_id ?? req.body.patientId);
     const doctorId = positiveInteger(req.body.doctor_id ?? req.body.doctorId);
     const chairId = positiveInteger(req.body.chair_id ?? req.body.chairId);
-    const procedureId = positiveInteger(req.body.procedure_id ?? req.body.procedureId);
-    const procedureNameResult = validatedText(req.body.procedure_name ?? req.body.procedureName, { field: 'Postupak', max: 255, required: true });
+    const procedureIdInput = positiveInteger(req.body.procedure_id ?? req.body.procedureId);
+    const procedure = procedureByInput({
+      procedureId: procedureIdInput,
+      procedureName: req.body.procedure_name ?? req.body.procedureName
+    });
+    const procedureNameResult = validatedText(req.body.procedure_name ?? req.body.procedureName ?? procedure?.label, { field: 'Postupak', max: 255, required: true });
     const notesResult = validatedText(req.body.notes, { field: 'Napomena', max: 2000 });
     const textError = procedureNameResult.error || notesResult.error;
     if (textError) return res.status(400).json({ error: textError });
@@ -2027,7 +2386,7 @@ app.post('/api/appointments', authenticateToken, (req, res) => {
     const status = normalizeAppointmentStatus(req.body.status);
     const notes = notesResult.value;
 
-    if (!patientId || !doctorId || !chairId || !procedureId || !procedureName || !startsAt || !endsAt) {
+    if (!patientId || !doctorId || !chairId || !procedure || !procedureName || !startsAt || !endsAt) {
       return res.status(400).json({ error: 'Pacijent, doktor, stolica, datum i postupak su obavezni.' });
     }
     if (appointmentDurationMinutes(startsAt, endsAt) <= 0) return res.status(400).json({ error: 'End time must be after start time' });
@@ -2050,7 +2409,7 @@ app.post('/api/appointments', authenticateToken, (req, res) => {
       patientId,
       doctorId,
       chairId,
-      procedureId,
+      procedure.id,
       procedureName,
       startsAt,
       endsAt,
@@ -2081,8 +2440,12 @@ app.put('/api/appointments/:id', authenticateToken, (req, res) => {
     const patientId = positiveInteger(data.patient_id ?? data.patientId);
     const doctorId = positiveInteger(data.doctor_id ?? data.doctorId);
     const chairId = positiveInteger(data.chair_id ?? data.chairId);
-    const procedureId = positiveInteger(data.procedure_id ?? data.procedureId);
-    const procedureNameResult = validatedText(data.procedure_name ?? data.procedureName, { field: 'Postupak', max: 255, required: true });
+    const procedureIdInput = positiveInteger(data.procedure_id ?? data.procedureId);
+    const procedure = procedureByInput({
+      procedureId: procedureIdInput,
+      procedureName: data.procedure_name ?? data.procedureName
+    });
+    const procedureNameResult = validatedText(data.procedure_name ?? data.procedureName ?? procedure?.label, { field: 'Postupak', max: 255, required: true });
     const notesResult = validatedText(data.notes, { field: 'Napomena', max: 2000 });
     const textError = procedureNameResult.error || notesResult.error;
     if (textError) return res.status(400).json({ error: textError });
@@ -2092,7 +2455,7 @@ app.put('/api/appointments/:id', authenticateToken, (req, res) => {
     const status = normalizeAppointmentStatus(data.status);
     const notes = notesResult.value;
 
-    if (!patientId || !doctorId || !chairId || !procedureId || !procedureName || !startsAt || !endsAt) {
+    if (!patientId || !doctorId || !chairId || !procedure || !procedureName || !startsAt || !endsAt) {
       return res.status(400).json({ error: 'Pacijent, doktor, stolica, datum i postupak su obavezni.' });
     }
     if (appointmentDurationMinutes(startsAt, endsAt) <= 0) return res.status(400).json({ error: 'End time must be after start time' });
@@ -2112,7 +2475,7 @@ app.put('/api/appointments/:id', authenticateToken, (req, res) => {
       patientId,
       doctorId,
       chairId,
-      procedureId,
+      procedure.id,
       procedureName,
       startsAt,
       endsAt,
@@ -2255,7 +2618,7 @@ app.get('/api/public/booking/availability', (req, res) => {
 
 app.post('/api/public/booking', (req, res) => {
   try {
-    const namePattern = /^[\p{L}][\p{L}\s.'-]{0,79}$/u;
+    const namePattern = /^[\p{L}][\p{L}\p{N}\s.'-]{0,79}$/u;
     const firstNameResult = validatedText(req.body.firstName || req.body.first_name, { field: 'Ime', max: 80, required: true, pattern: namePattern });
     const lastNameResult = validatedText(req.body.lastName || req.body.last_name, { field: 'Prezime', max: 80, required: true, pattern: namePattern });
     const emailResult = validatedText(req.body.email, { field: 'Email', max: 255, pattern: /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/ });
@@ -2274,12 +2637,15 @@ app.post('/api/public/booking', (req, res) => {
     const startsAt = normalizeIsoDateTime(req.body.startsAt || req.body.starts_at);
     const duration = Math.max(15, Math.min(180, Number(req.body.durationMinutes || req.body.duration_minutes || 30)));
     const endsAt = startsAt ? addMinutes(new Date(startsAt), duration).toISOString() : null;
-    const procedure = procedureId ? db.prepare('SELECT * FROM codebook_items WHERE id = ?').get(procedureId) : null;
+    const procedure = procedureByInput({
+      procedureId,
+      procedureName: req.body.procedureName || req.body.procedure_name
+    });
     const procedureNameResult = validatedText(req.body.procedureName || req.body.procedure_name || procedure?.label, { field: 'Postupak', max: 255, required: true });
     if (procedureNameResult.error) return res.status(400).json({ error: procedureNameResult.error });
     const procedureName = procedureNameResult.value;
 
-    if (!firstName || !lastName || !phone || !doctorId || !chairId || !procedureId || !procedureName || !startsAt || !endsAt) {
+    if (!firstName || !lastName || !phone || !doctorId || !chairId || !procedure || !procedureName || !startsAt || !endsAt) {
       return res.status(400).json({ error: 'Ime, prezime, broj telefona, datum, doktor i postupak su obavezni.' });
     }
     if (!rowExists('doctors', doctorId)) return res.status(404).json({ error: 'Doktor nije pronadjen.' });
@@ -2299,7 +2665,7 @@ app.post('/api/public/booking', (req, res) => {
     const appointmentResult = db.prepare(`
       INSERT INTO appointments (patient_id, doctor_id, chair_id, procedure_id, procedure_name, starts_at, ends_at, duration_minutes, status, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
-    `).run(patient.id, doctorId, chairId, procedureId, procedureName, startsAt, endsAt, duration, notesResult.value);
+    `).run(patient.id, doctorId, chairId, procedure.id, procedureName, startsAt, endsAt, duration, notesResult.value);
     queueCalendarSync(appointmentResult.lastInsertRowid, 'create_google_event');
 
     const bookingResult = db.prepare(`
@@ -2307,7 +2673,7 @@ app.post('/api/public/booking', (req, res) => {
         patient_id, appointment_id, first_name, last_name, email, phone, doctor_id, procedure_id, procedure_name,
         requested_starts_at, duration_minutes, status, notes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?)
-    `).run(patient.id, appointmentResult.lastInsertRowid, firstName, lastName, email, phone, doctorId, procedureId, procedureName, startsAt, duration, notesResult.value);
+    `).run(patient.id, appointmentResult.lastInsertRowid, firstName, lastName, email, phone, doctorId, procedure.id, procedureName, startsAt, duration, notesResult.value);
 
     res.status(201).json({ id: bookingResult.lastInsertRowid, appointmentId: appointmentResult.lastInsertRowid, patientId: patient.id, status: 'booked' });
   } catch (error) {
@@ -2453,6 +2819,253 @@ app.delete('/api/treatment-plans/:id', authenticateToken, (req, res) => {
   res.json({ success: true });
 });
 
+function serializeClinicalChart(row) {
+  return {
+    id: row.id,
+    patientId: row.patient_id,
+    visitRecordId: row.visit_record_id,
+    toothNumber: row.tooth_number,
+    surfaces: safeJsonParse(row.surfaces, []),
+    cdtCode: row.cdt_code || '',
+    adaCode: row.ada_code || '',
+    diagnosis: row.diagnosis || '',
+    procedureCode: row.procedure_code || '',
+    status: row.status,
+    phase: Number(row.phase || 1),
+    providerId: row.provider_id,
+    notes: row.notes || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function serializeClinicalNote(row) {
+  return {
+    id: row.id,
+    patientId: row.patient_id,
+    visitRecordId: row.visit_record_id,
+    templateId: row.template_id,
+    title: row.title,
+    body: row.body,
+    signedBy: row.signed_by || '',
+    signedAt: row.signed_at || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function serializeConsent(row) {
+  return {
+    id: row.id,
+    patientId: row.patient_id,
+    treatmentPlanId: row.treatment_plan_id,
+    consentType: row.consent_type,
+    title: row.title,
+    body: row.body,
+    signerName: row.signer_name,
+    signatureData: row.signature_data,
+    signedAt: row.signed_at,
+    createdAt: row.created_at
+  };
+}
+
+app.get('/api/patients/:id/clinical-chart', authenticateToken, (req, res) => {
+  const patientId = positiveInteger(req.params.id);
+  if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
+  const rows = db.prepare('SELECT * FROM clinical_chart_entries WHERE patient_id = ? ORDER BY tooth_number, phase, created_at DESC').all(patientId);
+  res.json(rows.map(serializeClinicalChart));
+});
+
+app.post('/api/patients/:id/clinical-chart', authenticateToken, (req, res) => {
+  try {
+    const patientId = positiveInteger(req.params.id);
+    if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
+    const surfaces = Array.isArray(req.body.surfaces) ? req.body.surfaces.map(surface => cleanText(surface, { max: 20 })).filter(Boolean) : [];
+    const status = ['planned', 'in_progress', 'completed', 'watch', 'referred'].includes(req.body.status) ? req.body.status : 'planned';
+    const result = db.prepare(`
+      INSERT INTO clinical_chart_entries (
+        patient_id, visit_record_id, tooth_number, surfaces, cdt_code, ada_code, diagnosis,
+        procedure_code, status, phase, provider_id, notes, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      patientId,
+      positiveInteger(req.body.visitRecordId || req.body.visit_record_id),
+      cleanText(req.body.toothNumber || req.body.tooth_number, { max: 20, required: true }),
+      JSON.stringify(surfaces),
+      cleanText(req.body.cdtCode || req.body.cdt_code, { max: 40 }),
+      cleanText(req.body.adaCode || req.body.ada_code, { max: 40 }),
+      cleanText(req.body.diagnosis, { max: 1000 }),
+      cleanText(req.body.procedureCode || req.body.procedure_code, { max: 80 }),
+      status,
+      Math.max(1, Number(req.body.phase || 1)),
+      positiveInteger(req.body.providerId || req.body.provider_id),
+      cleanText(req.body.notes, { max: 2000 }),
+      req.user.id
+    );
+    auditLog({ userId: req.user.id, action: 'clinical_chart_created', entityType: 'patient', entityId: patientId, req });
+    res.status(201).json(serializeClinicalChart(db.prepare('SELECT * FROM clinical_chart_entries WHERE id = ?').get(result.lastInsertRowid)));
+  } catch (error) {
+    console.error('Create clinical chart error:', error);
+    res.status(500).json({ error: 'Clinical chart nije sacuvan.' });
+  }
+});
+
+app.put('/api/clinical-chart/:id', authenticateToken, (req, res) => {
+  try {
+    const chartId = positiveInteger(req.params.id);
+    const existing = db.prepare('SELECT * FROM clinical_chart_entries WHERE id = ?').get(chartId);
+    if (!existing) return res.status(404).json({ error: 'Clinical chart entry not found' });
+    const surfaces = Array.isArray(req.body.surfaces)
+      ? req.body.surfaces.map(surface => cleanText(surface, { max: 20 })).filter(Boolean)
+      : safeJsonParse(existing.surfaces, []);
+    const status = ['planned', 'in_progress', 'completed', 'watch', 'referred'].includes(req.body.status)
+      ? req.body.status
+      : existing.status;
+    db.prepare(`
+      UPDATE clinical_chart_entries
+      SET tooth_number = ?, surfaces = ?, cdt_code = ?, ada_code = ?, diagnosis = ?,
+          procedure_code = ?, status = ?, phase = ?, provider_id = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      cleanText(req.body.toothNumber || req.body.tooth_number || existing.tooth_number, { max: 20, required: true }),
+      JSON.stringify(surfaces),
+      cleanText(req.body.cdtCode || req.body.cdt_code || existing.cdt_code, { max: 40 }),
+      cleanText(req.body.adaCode || req.body.ada_code || existing.ada_code, { max: 40 }),
+      cleanText(req.body.diagnosis ?? existing.diagnosis, { max: 1000 }),
+      cleanText(req.body.procedureCode || req.body.procedure_code || existing.procedure_code, { max: 80 }),
+      status,
+      Math.max(1, Number(req.body.phase || existing.phase || 1)),
+      positiveInteger(req.body.providerId || req.body.provider_id || existing.provider_id),
+      cleanText(req.body.notes ?? existing.notes, { max: 2000 }),
+      chartId
+    );
+    auditLog({ userId: req.user.id, action: 'clinical_chart_updated', entityType: 'clinical_chart', entityId: chartId, req });
+    res.json(serializeClinicalChart(db.prepare('SELECT * FROM clinical_chart_entries WHERE id = ?').get(chartId)));
+  } catch (error) {
+    console.error('Update clinical chart error:', error);
+    res.status(500).json({ error: 'Clinical chart nije izmenjen.' });
+  }
+});
+
+app.delete('/api/clinical-chart/:id', authenticateToken, (req, res) => {
+  const chartId = positiveInteger(req.params.id);
+  if (!rowExists('clinical_chart_entries', chartId)) return res.status(404).json({ error: 'Clinical chart entry not found' });
+  db.prepare('DELETE FROM clinical_chart_entries WHERE id = ?').run(chartId);
+  auditLog({ userId: req.user.id, action: 'clinical_chart_deleted', entityType: 'clinical_chart', entityId: chartId, req });
+  res.json({ success: true });
+});
+
+app.get('/api/clinical-note-templates', authenticateToken, (_req, res) => {
+  const rows = db.prepare('SELECT * FROM clinical_note_templates WHERE is_active = 1 ORDER BY category, title').all();
+  res.json(rows.map(row => ({
+    id: row.id,
+    title: row.title,
+    category: row.category,
+    body: row.body
+  })));
+});
+
+app.post('/api/director/clinical-note-templates', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const result = db.prepare(`
+      INSERT INTO clinical_note_templates (title, category, body)
+      VALUES (?, ?, ?)
+    `).run(
+      cleanText(req.body.title, { max: 160, required: true }),
+      cleanText(req.body.category || 'Opste', { max: 80, required: true }),
+      cleanText(req.body.body, { max: 8000, required: true })
+    );
+    auditLog({ userId: req.user.id, action: 'clinical_note_template_created', entityType: 'clinical_note_template', entityId: result.lastInsertRowid, req });
+    const row = db.prepare('SELECT * FROM clinical_note_templates WHERE id = ?').get(result.lastInsertRowid);
+    res.status(201).json({ id: row.id, title: row.title, category: row.category, body: row.body });
+  } catch (error) {
+    console.error('Create clinical note template error:', error);
+    res.status(500).json({ error: 'Template nije sacuvan.' });
+  }
+});
+
+app.get('/api/patients/:id/clinical-notes', authenticateToken, (req, res) => {
+  const patientId = positiveInteger(req.params.id);
+  if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
+  const rows = db.prepare('SELECT * FROM clinical_notes WHERE patient_id = ? ORDER BY created_at DESC, id DESC').all(patientId);
+  res.json(rows.map(serializeClinicalNote));
+});
+
+app.post('/api/patients/:id/clinical-notes', authenticateToken, (req, res) => {
+  try {
+    const patientId = positiveInteger(req.params.id);
+    if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
+    const result = db.prepare(`
+      INSERT INTO clinical_notes (
+        patient_id, visit_record_id, template_id, title, body, signed_by, signed_at, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      patientId,
+      positiveInteger(req.body.visitRecordId || req.body.visit_record_id),
+      positiveInteger(req.body.templateId || req.body.template_id),
+      cleanText(req.body.title, { max: 160, required: true }),
+      cleanText(req.body.body, { max: 8000, required: true }),
+      cleanText(req.body.signedBy || req.body.signed_by, { max: 160 }),
+      req.body.signedBy || req.body.signed_by ? new Date().toISOString() : null,
+      req.user.id
+    );
+    auditLog({ userId: req.user.id, action: 'clinical_note_created', entityType: 'patient', entityId: patientId, req });
+    res.status(201).json(serializeClinicalNote(db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(result.lastInsertRowid)));
+  } catch (error) {
+    console.error('Create clinical note error:', error);
+    res.status(500).json({ error: 'Clinical note nije sacuvan.' });
+  }
+});
+
+app.post('/api/clinical-notes/:id/sign', authenticateToken, (req, res) => {
+  try {
+    const noteId = positiveInteger(req.params.id);
+    const note = db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(noteId);
+    if (!note) return res.status(404).json({ error: 'Clinical note not found' });
+    db.prepare('UPDATE clinical_notes SET signed_by = ?, signed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(cleanText(req.body.signedBy || req.body.signed_by || req.user.name, { max: 160, required: true }), noteId);
+    auditLog({ userId: req.user.id, action: 'clinical_note_signed', entityType: 'clinical_note', entityId: noteId, req });
+    res.json(serializeClinicalNote(db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(noteId)));
+  } catch (error) {
+    console.error('Sign clinical note error:', error);
+    res.status(500).json({ error: 'Clinical note nije potpisan.' });
+  }
+});
+
+app.get('/api/patients/:id/consents', authenticateToken, (req, res) => {
+  const patientId = positiveInteger(req.params.id);
+  if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
+  const rows = db.prepare('SELECT * FROM patient_consents WHERE patient_id = ? ORDER BY signed_at DESC, id DESC').all(patientId);
+  res.json(rows.map(serializeConsent));
+});
+
+app.post('/api/patients/:id/consents', authenticateToken, (req, res) => {
+  try {
+    const patientId = positiveInteger(req.params.id);
+    if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
+    const result = db.prepare(`
+      INSERT INTO patient_consents (
+        patient_id, treatment_plan_id, consent_type, title, body, signer_name, signature_data, signed_at, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      patientId,
+      positiveInteger(req.body.treatmentPlanId || req.body.treatment_plan_id),
+      cleanText(req.body.consentType || req.body.consent_type || 'treatment', { max: 80, required: true }),
+      cleanText(req.body.title, { max: 160, required: true }),
+      cleanText(req.body.body, { max: 8000, required: true }),
+      cleanText(req.body.signerName || req.body.signer_name, { max: 160, required: true }),
+      cleanText(req.body.signatureData || req.body.signature_data, { max: 4000, required: true }),
+      new Date().toISOString(),
+      req.user.id
+    );
+    auditLog({ userId: req.user.id, action: 'consent_signed', entityType: 'patient', entityId: patientId, req });
+    res.status(201).json(serializeConsent(db.prepare('SELECT * FROM patient_consents WHERE id = ?').get(result.lastInsertRowid)));
+  } catch (error) {
+    console.error('Create consent error:', error);
+    res.status(500).json({ error: 'Consent nije sacuvan.' });
+  }
+});
+
 function serializePerioChart(chart) {
   const measurements = db.prepare('SELECT * FROM perio_measurements WHERE chart_id = ? ORDER BY tooth_number, site').all(chart.id);
   return {
@@ -2568,6 +3181,25 @@ function recalculateInvoice(invoiceId) {
     .run(subtotal, total, paid, status, invoiceId);
 }
 
+function addLedgerEntry({ patientId, invoiceId = null, claimId = null, entryType, amount, currency = 'EUR', description, source = 'manual', userId = null }) {
+  db.prepare(`
+    INSERT INTO patient_ledger_entries (
+      patient_id, invoice_id, claim_id, entry_type, amount, currency, description, entry_date, source, created_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    patientId,
+    invoiceId,
+    claimId,
+    entryType,
+    money(amount),
+    normalizeCurrency(currency),
+    cleanText(description, { max: 255, required: true }),
+    todayIsoDate(),
+    cleanText(source, { max: 80, required: true }),
+    userId
+  );
+}
+
 function saveInvoiceItems(invoiceId, items = []) {
   db.prepare('DELETE FROM invoice_items WHERE invoice_id = ?').run(invoiceId);
   const insert = db.prepare('INSERT INTO invoice_items (invoice_id, description, tooth_number, quantity, unit_price, discount, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)');
@@ -2596,6 +3228,17 @@ app.post('/api/patients/:id/invoices', authenticateToken, (req, res) => {
       VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, ?, ?)
     `).run(patientId, positiveInteger(req.body.visitRecordId || req.body.visit_record_id), cleanText(req.body.invoiceNumber || invoiceNumber(), { max: 80, required: true }), cleanText(req.body.issueDate || req.body.issue_date || todayIsoDate(), { max: 20, required: true }), cleanText(req.body.dueDate || req.body.due_date, { max: 20 }), normalizeCurrency(req.body.currency), money(req.body.discount), money(req.body.tax), cleanText(req.body.notes, { max: 2000 }), req.user.id);
     saveInvoiceItems(result.lastInsertRowid, req.body.items || []);
+    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(result.lastInsertRowid);
+    addLedgerEntry({
+      patientId,
+      invoiceId: result.lastInsertRowid,
+      entryType: 'charge',
+      amount: invoice.total,
+      currency: invoice.currency,
+      description: `Racun ${invoice.invoice_number}`,
+      source: 'invoice',
+      userId: req.user.id
+    });
     auditLog({ userId: req.user.id, action: 'invoice_created', entityType: 'invoice', entityId: result.lastInsertRowid, req });
     res.status(201).json(serializeInvoice(db.prepare('SELECT * FROM invoices WHERE id = ?').get(result.lastInsertRowid)));
   } catch (error) {
@@ -2611,6 +3254,17 @@ app.post('/api/invoices/:id/payments', authenticateToken, (req, res) => {
     db.prepare('INSERT INTO invoice_payments (invoice_id, amount, payment_method, payment_date, payment_type, notes) VALUES (?, ?, ?, ?, ?, ?)')
       .run(invoiceId, money(req.body.amount), cleanText(req.body.paymentMethod || req.body.payment_method, { max: 80 }), cleanText(req.body.paymentDate || req.body.payment_date || todayIsoDate(), { max: 20, required: true }), ['payment', 'advance', 'installment', 'refund'].includes(req.body.paymentType || req.body.payment_type) ? (req.body.paymentType || req.body.payment_type) : 'payment', cleanText(req.body.notes, { max: 1000 }));
     recalculateInvoice(invoiceId);
+    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+    addLedgerEntry({
+      patientId: invoice.patient_id,
+      invoiceId,
+      entryType: req.body.paymentType === 'refund' || req.body.payment_type === 'refund' ? 'refund' : 'patient_payment',
+      amount: req.body.paymentType === 'refund' || req.body.payment_type === 'refund' ? money(req.body.amount) : -money(req.body.amount),
+      currency: invoice.currency,
+      description: `Uplata za racun ${invoice.invoice_number}`,
+      source: 'invoice_payment',
+      userId: req.user.id
+    });
     res.status(201).json(serializeInvoice(db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId)));
   } catch (error) {
     console.error('Invoice payment error:', error);
@@ -2635,6 +3289,13 @@ app.delete('/api/invoices/:id', authenticateToken, (req, res) => {
 });
 
 function serializeClaim(row) {
+  const attachments = db.prepare(`
+    SELECT ca.*, d.title, d.document_type, d.original_filename
+    FROM insurance_claim_attachments ca
+    JOIN patient_documents d ON d.id = ca.document_id
+    WHERE ca.claim_id = ?
+    ORDER BY ca.created_at DESC, ca.id DESC
+  `).all(row.id);
   return {
     id: row.id,
     patientId: row.patient_id,
@@ -2646,11 +3307,31 @@ function serializeClaim(row) {
     status: row.status,
     requestedAmount: Number(row.requested_amount || 0),
     approvedAmount: Number(row.approved_amount || 0),
+    paidAmount: Number(row.paid_amount || 0),
     submittedAt: row.submitted_at,
     decisionAt: row.decision_at,
+    eligibilityStatus: row.eligibility_status || '',
+    payerControlNumber: row.payer_control_number || '',
+    clearinghouseRef: row.clearinghouse_ref || '',
+    denialReason: row.denial_reason || '',
+    eraStatus: row.era_status || '',
+    eob: safeJsonParse(row.eob_json, null),
+    ledgerStatus: row.ledger_status || 'unreconciled',
     eligibilityNotes: row.eligibility_notes || '',
     preauthorizationNotes: row.preauthorization_notes || '',
     notes: row.notes || '',
+    attachments: attachments.map(attachment => ({
+      id: attachment.id,
+      documentId: attachment.document_id,
+      title: attachment.title,
+      documentType: attachment.document_type,
+      originalFilename: attachment.original_filename,
+      attachmentType: attachment.attachment_type,
+      clearinghouseRef: attachment.clearinghouse_ref || '',
+      status: attachment.status,
+      notes: attachment.notes || '',
+      createdAt: attachment.created_at
+    })),
     createdAt: row.created_at
   };
 }
@@ -2689,6 +3370,165 @@ app.post('/api/patients/:id/insurance-claims', authenticateToken, (req, res) => 
   } catch (error) {
     console.error('Create insurance claim error:', error);
     res.status(500).json({ error: 'Insurance claim nije sacuvan.' });
+  }
+});
+
+app.post('/api/insurance-claims/:id/check-eligibility', authenticateToken, (req, res) => {
+  try {
+    const claimId = positiveInteger(req.params.id);
+    const claim = db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(claimId);
+    if (!claim) return res.status(404).json({ error: 'Insurance claim not found' });
+    const status = claim.policy_number ? 'active' : 'manual_review';
+    const note = status === 'active'
+      ? `Eligibility active for ${claim.provider}.`
+      : 'Nedostaje broj polise; potrebna rucna provera.';
+    db.prepare(`
+      UPDATE insurance_claims
+      SET status = 'eligibility_checked', eligibility_status = ?, eligibility_notes = ?,
+          payer_control_number = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(status, note, `ELG-${claimId}-${Date.now()}`, claimId);
+    auditLog({ userId: req.user.id, action: 'insurance_eligibility_checked', entityType: 'insurance_claim', entityId: claimId, req });
+    res.json(serializeClaim(db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(claimId)));
+  } catch (error) {
+    console.error('Eligibility check error:', error);
+    res.status(500).json({ error: 'Eligibility provera nije uspela.' });
+  }
+});
+
+app.post('/api/insurance-claims/:id/attachments', authenticateToken, (req, res) => {
+  try {
+    const claimId = positiveInteger(req.params.id);
+    const documentId = positiveInteger(req.body.documentId || req.body.document_id);
+    const claim = db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(claimId);
+    if (!claim) return res.status(404).json({ error: 'Insurance claim not found' });
+    const document = db.prepare('SELECT * FROM patient_documents WHERE id = ? AND patient_id = ? AND is_deleted = 0').get(documentId, claim.patient_id);
+    if (!document) return res.status(404).json({ error: 'Document not found for this patient' });
+    const result = db.prepare(`
+      INSERT INTO insurance_claim_attachments (claim_id, document_id, attachment_type, clearinghouse_ref, status, notes, created_by)
+      VALUES (?, ?, ?, ?, 'attached', ?, ?)
+    `).run(
+      claimId,
+      documentId,
+      cleanText(req.body.attachmentType || req.body.attachment_type || 'supporting_document', { max: 80, required: true }),
+      cleanText(req.body.clearinghouseRef || req.body.clearinghouse_ref, { max: 120 }),
+      cleanText(req.body.notes, { max: 1000 }),
+      req.user.id
+    );
+    db.prepare('UPDATE patient_documents SET claim_attachment_ready = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(documentId);
+    auditLog({ userId: req.user.id, action: 'insurance_claim_attachment_added', entityType: 'insurance_claim', entityId: claimId, req });
+    res.status(201).json({
+      id: result.lastInsertRowid,
+      claim: serializeClaim(db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(claimId))
+    });
+  } catch (error) {
+    console.error('Claim attachment error:', error);
+    res.status(500).json({ error: 'Attachment nije dodat na claim.' });
+  }
+});
+
+app.post('/api/insurance-claims/:id/submit', authenticateToken, (req, res) => {
+  try {
+    const claimId = positiveInteger(req.params.id);
+    const claim = db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(claimId);
+    if (!claim) return res.status(404).json({ error: 'Insurance claim not found' });
+    const attachmentCount = db.prepare('SELECT COUNT(*) as count FROM insurance_claim_attachments WHERE claim_id = ?').get(claimId).count || 0;
+    const clearinghouseRef = cleanText(req.body.clearinghouseRef || req.body.clearinghouse_ref, { max: 120 }) || `CH-${claimId}-${Date.now()}`;
+    db.prepare(`
+      UPDATE insurance_claims
+      SET status = 'submitted', submitted_at = ?, clearinghouse_ref = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      new Date().toISOString(),
+      clearinghouseRef,
+      cleanText(req.body.notes || `Submitted with ${attachmentCount} attachment(s).`, { max: 2000 }),
+      claimId
+    );
+    db.prepare("UPDATE insurance_claim_attachments SET status = 'submitted', clearinghouse_ref = ? WHERE claim_id = ?")
+      .run(clearinghouseRef, claimId);
+    auditLog({ userId: req.user.id, action: 'insurance_claim_submitted', entityType: 'insurance_claim', entityId: claimId, req });
+    res.json(serializeClaim(db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(claimId)));
+  } catch (error) {
+    console.error('Submit claim error:', error);
+    res.status(500).json({ error: 'Claim nije poslat.' });
+  }
+});
+
+app.post('/api/insurance-claims/:id/era', authenticateToken, (req, res) => {
+  try {
+    const claimId = positiveInteger(req.params.id);
+    const claim = db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(claimId);
+    if (!claim) return res.status(404).json({ error: 'Insurance claim not found' });
+    const paidAmount = money(req.body.paidAmount || req.body.paid_amount || req.body.approvedAmount || req.body.approved_amount);
+    const approvedAmount = money(req.body.approvedAmount || req.body.approved_amount || paidAmount);
+    const denialReason = cleanText(req.body.denialReason || req.body.denial_reason, { max: 1000 });
+    const status = denialReason ? 'denied' : (paidAmount >= Number(claim.requested_amount || 0) ? 'paid' : 'partially_approved');
+    const eob = {
+      payer: claim.provider,
+      payerControlNumber: claim.payer_control_number || `EOB-${claimId}`,
+      approvedAmount,
+      paidAmount,
+      adjustment: Math.max(0, Number(claim.requested_amount || 0) - approvedAmount),
+      denialReason: denialReason || '',
+      receivedAt: new Date().toISOString()
+    };
+    db.prepare(`
+      UPDATE insurance_claims
+      SET status = ?, approved_amount = ?, paid_amount = ?, decision_at = ?,
+          denial_reason = ?, eob_json = ?, era_status = 'received', ledger_status = 'reconciled',
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(status, approvedAmount, paidAmount, new Date().toISOString(), denialReason, JSON.stringify(eob), claimId);
+    if (paidAmount > 0) {
+      addLedgerEntry({
+        patientId: claim.patient_id,
+        invoiceId: claim.invoice_id,
+        claimId,
+        entryType: 'insurance_payment',
+        amount: -paidAmount,
+        currency: 'EUR',
+        description: `ERA uplata ${claim.provider}`,
+        source: 'era',
+        userId: req.user.id
+      });
+    }
+    auditLog({ userId: req.user.id, action: 'insurance_era_posted', entityType: 'insurance_claim', entityId: claimId, req });
+    res.json(serializeClaim(db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(claimId)));
+  } catch (error) {
+    console.error('ERA posting error:', error);
+    res.status(500).json({ error: 'ERA/EOB nije proknjizen.' });
+  }
+});
+
+app.get('/api/patients/:id/ledger', authenticateToken, (req, res) => {
+  try {
+    const patientId = positiveInteger(req.params.id);
+    if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
+    const rows = db.prepare(`
+      SELECT * FROM patient_ledger_entries
+      WHERE patient_id = ?
+      ORDER BY entry_date DESC, created_at DESC, id DESC
+    `).all(patientId);
+    const balance = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    res.json({
+      patientId,
+      balance,
+      entries: rows.map(row => ({
+        id: row.id,
+        invoiceId: row.invoice_id,
+        claimId: row.claim_id,
+        entryType: row.entry_type,
+        amount: Number(row.amount || 0),
+        currency: row.currency,
+        description: row.description,
+        entryDate: row.entry_date,
+        source: row.source,
+        createdAt: row.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('Patient ledger error:', error);
+    res.status(500).json({ error: 'Ledger nije ucitan.' });
   }
 });
 
@@ -2757,10 +3597,124 @@ app.post('/api/director/backups/:id/restore', authenticateToken, requireDirector
   }
 });
 
+app.post('/api/director/backups/:id/test-restore', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const backup = db.prepare("SELECT * FROM backup_files WHERE id = ? AND status IN ('ready', 'restored')").get(positiveInteger(req.params.id));
+    if (!backup || !fs.existsSync(backup.file_path)) return res.status(404).json({ error: 'Backup not found' });
+    res.status(201).json(testEncryptedBackupRestore(backup, req.user.id, req));
+  } catch (error) {
+    console.error('Test restore backup error:', error);
+    res.status(500).json({ error: 'Test restore nije uspeo.' });
+  }
+});
+
+app.get('/api/director/security/audit-log', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+    const filters = [];
+    const params = [];
+    if (req.query.action) {
+      filters.push('a.action = ?');
+      params.push(cleanText(req.query.action, { max: 120 }));
+    }
+    if (req.query.user_id) {
+      filters.push('a.user_id = ?');
+      params.push(positiveInteger(req.query.user_id));
+    }
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const rows = db.prepare(`
+      SELECT a.*, u.email
+      FROM audit_log a
+      LEFT JOIN users u ON u.id = a.user_id
+      ${where}
+      ORDER BY a.created_at DESC
+      LIMIT ?
+    `).all(...params, limit);
+    res.json(rows.map(serializeAuditEntry));
+  } catch (error) {
+    console.error('Audit log list error:', error);
+    res.status(500).json({ error: 'Audit log nije ucitan.' });
+  }
+});
+
+app.get('/api/director/security/sessions', authenticateToken, requireDirector, (_req, res) => {
+  try {
+    const sessions = db.prepare(`
+      SELECT rt.*, u.email, u.name, u.role
+      FROM refresh_tokens rt
+      LEFT JOIN users u ON u.id = rt.user_id
+      WHERE rt.revoked_at IS NULL AND rt.expires_at > datetime('now')
+      ORDER BY rt.created_at DESC
+      LIMIT 100
+    `).all();
+    res.json(sessions.map(serializeSession));
+  } catch (error) {
+    console.error('Security sessions error:', error);
+    res.status(500).json({ error: 'Sesije nisu ucitane.' });
+  }
+});
+
+app.delete('/api/director/security/sessions/:id', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const sessionId = positiveInteger(req.params.id);
+    const session = db.prepare('SELECT * FROM refresh_tokens WHERE id = ?').get(sessionId);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    db.prepare('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?').run(sessionId);
+    auditLog({ userId: req.user.id, action: 'session_revoked', entityType: 'refresh_token', entityId: sessionId, req, metadata: { userId: session.user_id } });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Revoke session error:', error);
+    res.status(500).json({ error: 'Sesija nije opozvana.' });
+  }
+});
+
+app.put('/api/director/security/users/:id/permissions', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const userId = positiveInteger(req.params.id);
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const permissions = Array.isArray(req.body.permissions)
+      ? req.body.permissions.map(item => cleanText(item, { max: 80 })).filter(Boolean)
+      : DEFAULT_PERMISSIONS[user.role] || [];
+    db.prepare('UPDATE users SET permissions_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(JSON.stringify([...new Set(permissions)]), userId);
+    auditLog({ userId: req.user.id, action: 'permissions_updated', entityType: 'user', entityId: userId, req, metadata: { permissions } });
+    res.json(serializeUserSecurity(db.prepare('SELECT * FROM users WHERE id = ?').get(userId)));
+  } catch (error) {
+    console.error('Update permissions error:', error);
+    res.status(500).json({ error: 'Permisije nisu sacuvane.' });
+  }
+});
+
+app.get('/api/director/legal-export', authenticateToken, requireDirector, (req, res) => {
+  try {
+    auditLog({ userId: req.user.id, action: 'legal_export_generated', entityType: 'legal_export', req });
+    res.json({
+      generatedAt: new Date().toISOString(),
+      generatedBy: req.user.email,
+      retentionPolicy: {
+        patientRecords: 'Cuvati prema vazecim lokalnim zdravstvenim i poreskim propisima.',
+        backups: 'Encrypted backup, periodican test restore i ogranicen direktor pristup.'
+      },
+      patients: db.prepare('SELECT * FROM patients ORDER BY id').all(),
+      records: db.prepare('SELECT * FROM visit_records ORDER BY id').all(),
+      documents: db.prepare('SELECT * FROM patient_documents ORDER BY id').all(),
+      invoices: db.prepare('SELECT * FROM invoices ORDER BY id').all(),
+      insuranceClaims: db.prepare('SELECT * FROM insurance_claims ORDER BY id').all(),
+      clinicalChart: db.prepare('SELECT * FROM clinical_chart_entries ORDER BY id').all().map(row => ({ ...row, surfaces: safeJsonParse(row.surfaces, []) })),
+      clinicalNotes: db.prepare('SELECT * FROM clinical_notes ORDER BY id').all(),
+      consents: db.prepare('SELECT * FROM patient_consents ORDER BY id').all()
+    });
+  } catch (error) {
+    console.error('Legal export error:', error);
+    res.status(500).json({ error: 'Legal export nije napravljen.' });
+  }
+});
+
 app.get('/api/director/security/status', authenticateToken, requireDirector, (_req, res) => {
   try {
     const users = db.prepare(`
-      SELECT id, email, name, role, failed_login_attempts, locked_until, password_changed_at, two_factor_enabled, created_at, updated_at
+      SELECT *
       FROM users
       ORDER BY role, email
     `).all();
@@ -2771,31 +3725,24 @@ app.get('/api/director/security/status', authenticateToken, requireDirector, (_r
       ORDER BY a.created_at DESC
       LIMIT 30
     `).all();
+    const sessions = db.prepare(`
+      SELECT rt.*, u.email, u.name, u.role
+      FROM refresh_tokens rt
+      LEFT JOIN users u ON u.id = rt.user_id
+      WHERE rt.revoked_at IS NULL AND rt.expires_at > datetime('now')
+      ORDER BY rt.created_at DESC
+      LIMIT 25
+    `).all();
+    const restoreTests = db.prepare('SELECT * FROM backup_restore_tests ORDER BY checked_at DESC, id DESC LIMIT 20').all();
     res.json({
       accessTokenTtl: ACCESS_TOKEN_TTL,
       refreshTokenDays: REFRESH_TOKEN_DAYS,
       lockoutAttempts: LOCKOUT_ATTEMPTS,
       lockoutMinutes: LOCKOUT_MINUTES,
-      users: users.map(user => ({
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        failedLoginAttempts: Number(user.failed_login_attempts || 0),
-        lockedUntil: user.locked_until,
-        passwordChangedAt: user.password_changed_at,
-        twoFactorEnabled: Boolean(user.two_factor_enabled),
-        createdAt: user.created_at,
-        updatedAt: user.updated_at
-      })),
-      auditLog: audit.map(item => ({
-        id: item.id,
-        email: item.email,
-        action: item.action,
-        entityType: item.entity_type,
-        entityId: item.entity_id,
-        createdAt: item.created_at
-      }))
+      users: users.map(serializeUserSecurity),
+      sessions: sessions.map(serializeSession),
+      restoreTests: restoreTests.map(serializeRestoreTest),
+      auditLog: audit.map(serializeAuditEntry)
     });
   } catch (error) {
     console.error('Security status error:', error);

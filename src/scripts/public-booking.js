@@ -45,7 +45,7 @@
     const procedureId = document.getElementById("booking-procedure").value;
     const slot = document.getElementById("booking-slot").value;
     const notes = document.getElementById("booking-notes").value;
-    const namePattern = /^[\p{L}][\p{L}\s.'-]{0,79}$/u;
+    const namePattern = /^[\p{L}][\p{L}\p{N}\s.'-]{0,79}$/u;
     const phonePattern = /^\+?[\d\s()./-]{6,30}$/;
 
     if (!firstName || !lastName || !phone || !date || !doctorId || !procedureId || !slot) {

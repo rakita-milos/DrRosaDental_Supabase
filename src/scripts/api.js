@@ -393,6 +393,61 @@
     });
   }
 
+  async function getClinicalChart(patientId) {
+    return request(`/patients/${patientId}/clinical-chart`);
+  }
+
+  async function createClinicalChartEntry(patientId, entry) {
+    return request(`/patients/${patientId}/clinical-chart`, {
+      method: "POST",
+      body: JSON.stringify(entry)
+    });
+  }
+
+  async function updateClinicalChartEntry(entryId, entry) {
+    return request(`/clinical-chart/${entryId}`, {
+      method: "PUT",
+      body: JSON.stringify(entry)
+    });
+  }
+
+  async function deleteClinicalChartEntry(entryId) {
+    return request(`/clinical-chart/${entryId}`, { method: "DELETE" });
+  }
+
+  async function getClinicalNoteTemplates() {
+    return request("/clinical-note-templates");
+  }
+
+  async function getClinicalNotes(patientId) {
+    return request(`/patients/${patientId}/clinical-notes`);
+  }
+
+  async function createClinicalNote(patientId, note) {
+    return request(`/patients/${patientId}/clinical-notes`, {
+      method: "POST",
+      body: JSON.stringify(note)
+    });
+  }
+
+  async function signClinicalNote(noteId, payload) {
+    return request(`/clinical-notes/${noteId}/sign`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function getPatientConsents(patientId) {
+    return request(`/patients/${patientId}/consents`);
+  }
+
+  async function createPatientConsent(patientId, consent) {
+    return request(`/patients/${patientId}/consents`, {
+      method: "POST",
+      body: JSON.stringify(consent)
+    });
+  }
+
   async function getInvoices(patientId) {
     return request(`/patients/${patientId}/invoices`);
   }
@@ -420,6 +475,50 @@
       method: "POST",
       body: JSON.stringify(claim)
     });
+  }
+
+  async function checkInsuranceEligibility(claimId) {
+    return request(`/insurance-claims/${claimId}/check-eligibility`, { method: "POST" });
+  }
+
+  async function attachDocumentToClaim(claimId, payload) {
+    return request(`/insurance-claims/${claimId}/attachments`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function submitInsuranceClaim(claimId, payload = {}) {
+    return request(`/insurance-claims/${claimId}/submit`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function postInsuranceEra(claimId, payload) {
+    return request(`/insurance-claims/${claimId}/era`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function getPatientLedger(patientId) {
+    return request(`/patients/${patientId}/ledger`);
+  }
+
+  async function getPatientImaging(patientId) {
+    return request(`/patients/${patientId}/imaging`);
+  }
+
+  async function updateDocumentImaging(documentId, payload) {
+    return request(`/documents/${documentId}/imaging`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function analyzeDocumentImaging(documentId) {
+    return request(`/documents/${documentId}/imaging/analyze`, { method: "POST" });
   }
 
   async function getRecords() {
@@ -516,8 +615,39 @@
     });
   }
 
+  async function testRestoreBackup(backupId) {
+    return request(`/director/backups/${backupId}/test-restore`, { method: "POST" });
+  }
+
   async function getSecurityStatus() {
     return request("/director/security/status");
+  }
+
+  async function getAuditLog(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") query.set(key, value);
+    });
+    return request(`/director/security/audit-log${query.toString() ? `?${query}` : ""}`);
+  }
+
+  async function getSecuritySessions() {
+    return request("/director/security/sessions");
+  }
+
+  async function revokeSecuritySession(sessionId) {
+    return request(`/director/security/sessions/${sessionId}`, { method: "DELETE" });
+  }
+
+  async function updateUserPermissions(userId, permissions) {
+    return request(`/director/security/users/${userId}/permissions`, {
+      method: "PUT",
+      body: JSON.stringify({ permissions })
+    });
+  }
+
+  async function getLegalExport() {
+    return request("/director/legal-export");
   }
 
   async function unlockUser(userId) {
@@ -598,17 +728,41 @@
     acceptTreatmentPlan,
     getPerioCharts,
     createPerioChart,
+    getClinicalChart,
+    createClinicalChartEntry,
+    updateClinicalChartEntry,
+    deleteClinicalChartEntry,
+    getClinicalNoteTemplates,
+    getClinicalNotes,
+    createClinicalNote,
+    signClinicalNote,
+    getPatientConsents,
+    createPatientConsent,
     getInvoices,
     createInvoice,
     addInvoicePayment,
     getInsuranceClaims,
     createInsuranceClaim,
+    checkInsuranceEligibility,
+    attachDocumentToClaim,
+    submitInsuranceClaim,
+    postInsuranceEra,
+    getPatientLedger,
+    getPatientImaging,
+    updateDocumentImaging,
+    analyzeDocumentImaging,
     getExchangeRate,
     getBackupStatus,
     getBackups,
     createBackup,
     restoreBackup,
+    testRestoreBackup,
     getSecurityStatus,
+    getAuditLog,
+    getSecuritySessions,
+    revokeSecuritySession,
+    updateUserPermissions,
+    getLegalExport,
     unlockUser,
     resetUserPassword,
     setupTwoFactor,

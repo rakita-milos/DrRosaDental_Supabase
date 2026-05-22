@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_changed_at TEXT,
   two_factor_secret TEXT,
   two_factor_enabled INTEGER NOT NULL DEFAULT 0,
+  permissions_json TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -60,6 +61,16 @@ CREATE TABLE IF NOT EXISTS backup_files (
   status TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'restored', 'failed')),
   created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS backup_restore_tests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  backup_id INTEGER REFERENCES backup_files(id) ON DELETE SET NULL,
+  status TEXT NOT NULL,
+  message TEXT,
+  checked_tables TEXT,
+  checked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  checked_by INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS patients (
@@ -209,6 +220,12 @@ CREATE TABLE IF NOT EXISTS patient_documents (
   file_size INTEGER NOT NULL,
   file_hash TEXT,
   source TEXT NOT NULL DEFAULT 'upload' CHECK (source IN ('upload', 'scanner')),
+  imaging_modality TEXT,
+  tooth_number TEXT,
+  acquisition_date TEXT,
+  dicom_study_uid TEXT,
+  ai_findings TEXT,
+  claim_attachment_ready INTEGER NOT NULL DEFAULT 0,
   uploaded_by INTEGER REFERENCES users(id),
   is_deleted INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -326,6 +343,64 @@ CREATE TABLE IF NOT EXISTS perio_measurements (
   notes TEXT
 );
 
+CREATE TABLE IF NOT EXISTS clinical_chart_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  visit_record_id INTEGER REFERENCES visit_records(id) ON DELETE SET NULL,
+  tooth_number TEXT NOT NULL,
+  surfaces TEXT,
+  cdt_code TEXT,
+  ada_code TEXT,
+  diagnosis TEXT,
+  procedure_code TEXT,
+  status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'in_progress', 'completed', 'watch', 'referred')),
+  phase INTEGER NOT NULL DEFAULT 1,
+  provider_id INTEGER REFERENCES doctors(id),
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS clinical_note_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'general',
+  body TEXT NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS clinical_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  visit_record_id INTEGER REFERENCES visit_records(id) ON DELETE SET NULL,
+  template_id INTEGER REFERENCES clinical_note_templates(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  signed_by TEXT,
+  signed_at TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS patient_consents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  treatment_plan_id INTEGER REFERENCES treatment_plans(id) ON DELETE SET NULL,
+  consent_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  signer_name TEXT NOT NULL,
+  signature_data TEXT NOT NULL,
+  signed_at TEXT NOT NULL,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS invoices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE RESTRICT,
@@ -379,14 +454,49 @@ CREATE TABLE IF NOT EXISTS insurance_claims (
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'eligibility_checked', 'preauth_sent', 'submitted', 'approved', 'partially_approved', 'denied', 'paid')),
   requested_amount REAL NOT NULL DEFAULT 0,
   approved_amount REAL NOT NULL DEFAULT 0,
+  paid_amount REAL NOT NULL DEFAULT 0,
   submitted_at TEXT,
   decision_at TEXT,
+  eligibility_status TEXT,
+  payer_control_number TEXT,
+  clearinghouse_ref TEXT,
+  denial_reason TEXT,
+  eob_json TEXT,
+  era_status TEXT,
+  ledger_status TEXT NOT NULL DEFAULT 'unreconciled',
   eligibility_notes TEXT,
   preauthorization_notes TEXT,
   notes TEXT,
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS insurance_claim_attachments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  claim_id INTEGER NOT NULL REFERENCES insurance_claims(id) ON DELETE CASCADE,
+  document_id INTEGER NOT NULL REFERENCES patient_documents(id) ON DELETE RESTRICT,
+  attachment_type TEXT NOT NULL DEFAULT 'supporting_document',
+  clearinghouse_ref TEXT,
+  status TEXT NOT NULL DEFAULT 'attached' CHECK (status IN ('attached', 'submitted', 'accepted', 'rejected')),
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS patient_ledger_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+  claim_id INTEGER REFERENCES insurance_claims(id) ON DELETE SET NULL,
+  entry_type TEXT NOT NULL CHECK (entry_type IN ('charge', 'patient_payment', 'insurance_payment', 'adjustment', 'refund')),
+  amount REAL NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'EUR',
+  description TEXT NOT NULL,
+  entry_date TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'manual',
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(first_name, last_name);
@@ -407,5 +517,8 @@ CREATE INDEX IF NOT EXISTS idx_patient_documents_visit ON patient_documents(visi
 CREATE INDEX IF NOT EXISTS idx_public_booking_time ON public_booking_requests(requested_starts_at);
 CREATE INDEX IF NOT EXISTS idx_treatment_plans_patient ON treatment_plans(patient_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_perio_charts_patient ON perio_charts(patient_id, chart_date);
+CREATE INDEX IF NOT EXISTS idx_clinical_chart_patient ON clinical_chart_entries(patient_id, tooth_number, created_at);
+CREATE INDEX IF NOT EXISTS idx_clinical_notes_patient ON clinical_notes(patient_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_patient_consents_patient ON patient_consents(patient_id, signed_at);
 CREATE INDEX IF NOT EXISTS idx_invoices_patient ON invoices(patient_id, issue_date);
 CREATE INDEX IF NOT EXISTS idx_insurance_claims_patient ON insurance_claims(patient_id, created_at);

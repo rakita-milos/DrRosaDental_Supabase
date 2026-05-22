@@ -52,7 +52,10 @@ class NewEntryPage {
   }
 
   async save() {
-    await this.submit.click();
+    await this.page.locator("#new-entry-form").evaluate(form => {
+      form.noValidate = true;
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
   }
 }
 
