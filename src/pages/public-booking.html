@@ -10,14 +10,19 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        <a class="logo-link" href="index.html" aria-label="Pocetna strana">
+          <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        </a>
         <div>
           <p class="eyebrow">Online booking</p>
           <h1>Zakazivanje termina</h1>
         </div>
       </div>
       <nav class="topbar-actions" aria-label="Navigacija">
-        <a href="login.html" class="secondary-btn">Login</a>
+        <button id="public-booking-back" class="nav-link" type="button">Nazad</button>
+        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="public-booking.html" class="nav-link" aria-current="page">Online zakazivanje</a>
+        <a href="login.html" class="nav-link">Login</a>
       </nav>
     </header>
 
@@ -45,7 +50,7 @@
             </label>
             <label>
               Telefon
-              <input id="booking-phone" />
+              <input id="booking-phone" type="tel" required />
             </label>
             <label>
               Datum
@@ -53,11 +58,11 @@
             </label>
             <label>
               Doktor
-              <select id="booking-doctor"></select>
+              <select id="booking-doctor" required></select>
             </label>
             <label>
               Postupak
-              <select id="booking-procedure"></select>
+              <select id="booking-procedure" required></select>
             </label>
             <label>
               Slobodan termin

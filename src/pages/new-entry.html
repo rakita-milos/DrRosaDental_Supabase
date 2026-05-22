@@ -10,19 +10,23 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        <a class="logo-link" href="index.html" aria-label="Pocetna strana">
+          <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        </a>
         <div>
           <p class="eyebrow">Novi pregled pacijenta</p>
           <h1>Dodaj pregled</h1>
         </div>
       </div>
-      <nav>
-        <a href="index.html">Dashboard</a>
-        <a href="calendar.html">Kalendar</a>
-        <a id="director-panel-link" href="director-panel.html" style="display: none;">Direktor panel</a>
-        <a id="new-patient-link" href="new-patient.html">Novi pacijent</a>
-        <a href="all-records.html">Kompletna evidencija</a>
-        <button id="logout-btn" type="button">Odjava</button>
+      <nav class="topbar-actions" aria-label="Glavna navigacija">
+        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="calendar.html" class="nav-link">Kalendar</a>
+        <a href="new-entry.html" class="nav-link" aria-current="page">Novi unos</a>
+        <a id="new-patient-link" href="new-patient.html" class="nav-link">Novi pacijent</a>
+        <a href="all-records.html" class="nav-link">Evidencija</a>
+        <a href="public-booking.html" class="nav-link">Online zakazivanje</a>
+        <a id="director-panel-link" href="director-panel.html" class="nav-link" style="display: none;">Direktor panel</a>
+        <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
     </header>
 
@@ -153,10 +157,10 @@
 
         <form id="new-entry-form">
           <div class="input-grid">
-            <label>
+            <label class="patient-autocomplete-field">
               Ime i prezime
-              <input type="text" id="patient-name" name="patient" placeholder="Ana Kovač" list="existing-patients" required />
-              <datalist id="existing-patients"></datalist>
+              <input type="text" id="patient-name" name="patient" placeholder="Ana Kovač" autocomplete="off" required />
+              <div id="existing-patients" class="patient-autocomplete-list" role="listbox"></div>
             </label>
             <label>
               Zadnji posjet
@@ -215,8 +219,12 @@
               </select>
             </label>
             <label>
+              Plaćeno
+              <input id="amount-paid" name="amountPaid" type="number" min="0" step="0.01" placeholder="0.00" />
+            </label>
+            <label>
               Iznos duga
-              <input id="amount-due" name="amountDue" type="number" min="0" step="0.01" placeholder="0.00" />
+              <input id="amount-due" name="amountDue" type="number" min="0" step="0.01" placeholder="0.00" readonly />
             </label>
             <label class="full-width">
               Napomena
@@ -250,6 +258,8 @@
           <p id="preview-status">Zakazano</p>
           <p class="preview-label">Plaćanje</p>
           <p id="preview-payment-status">Plaćeno</p>
+          <p class="preview-label">Plaćeno</p>
+          <p id="preview-amount-paid">0.00</p>
           <p class="preview-label">Iznos duga</p>
           <p id="preview-amount-due">0.00</p>
           <p class="preview-label">Valuta plaćanja</p>

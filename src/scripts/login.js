@@ -33,7 +33,10 @@ form.addEventListener("submit", async (event) => {
       showError("Unesite 2FA kod iz autentifikator aplikacije.");
       return;
     }
-    window.location.href = user.role === "director" ? "director-panel.html" : "index.html";
+    // Ensure session is verified and redirect based on the authoritative session role.
+    const verified = await window.DrRosaApi.verifySession().catch(() => null);
+    const role = verified?.role || user?.role;
+    window.location.href = role === "director" ? "director-panel.html" : "index.html";
   } catch (error) {
     if (error.message && error.message.toLowerCase().includes("two-factor")) {
       pendingTwoFactor = true;

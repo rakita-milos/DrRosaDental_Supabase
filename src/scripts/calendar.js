@@ -103,6 +103,23 @@
     alert.className = `form-alert ${type ? `alert-${type}` : ""}`;
   }
 
+  function normalizeText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function hasCodeLikeContent(value) {
+    const text = String(value || "");
+    return /[<>`{}]/.test(text)
+      || /\bjavascript\s*:/i.test(text)
+      || /\bon[a-z]+\s*=/i.test(text)
+      || /\b(select|insert|update|delete|drop|alter|union|exec)\b[\s\S]*\b(from|into|table|set|where)\b/i.test(text);
+  }
+
+  function normalizeFormInputs() {
+    const notes = document.getElementById("appointment-notes");
+    if (notes) notes.value = normalizeText(notes.value);
+  }
+
   function openPanel() {
     const panel = document.getElementById("appointment-panel");
     panel.hidden = false;
@@ -323,6 +340,7 @@
   }
 
   function formPayload() {
+    normalizeFormInputs();
     const date = document.getElementById("appointment-date").value;
     const time = document.getElementById("appointment-time").value;
     const duration = Number(document.getElementById("appointment-duration").value || 30);
@@ -342,6 +360,24 @@
       status: document.getElementById("appointment-status").value,
       notes: document.getElementById("appointment-notes").value
     };
+  }
+
+  function validateAppointmentForm() {
+    normalizeFormInputs();
+    const requiredFields = [
+      ["appointment-patient", "Pacijent"],
+      ["appointment-date", "Datum"],
+      ["appointment-time", "Vreme"],
+      ["appointment-doctor", "Doktor"],
+      ["appointment-chair", "Stolica"],
+      ["appointment-procedure", "Postupak"]
+    ];
+    const missing = requiredFields.find(([id]) => !document.getElementById(id).value);
+    if (missing) return `${missing[1]} je obavezno polje.`;
+    if (hasCodeLikeContent(document.getElementById("appointment-notes").value)) {
+      return "Napomena ne sme sadrzati kod ili specijalne znakove.";
+    }
+    return "";
   }
 
   async function loadAppointments() {
@@ -404,6 +440,7 @@
     });
     document.getElementById("doctor-filter").addEventListener("change", loadAppointments);
     document.getElementById("status-filter").addEventListener("change", loadAppointments);
+    document.getElementById("appointment-notes").addEventListener("blur", normalizeFormInputs);
     document.getElementById("calendar-board").addEventListener("click", event => {
       const appointmentButton = event.target.closest("[data-appointment-id]");
       if (appointmentButton) {
@@ -416,6 +453,11 @@
     document.getElementById("appointment-form").addEventListener("submit", async event => {
       event.preventDefault();
       const appointmentId = document.getElementById("appointment-id").value;
+      const validationError = validateAppointmentForm();
+      if (validationError) {
+        setAlert(validationError, "error");
+        return;
+      }
       try {
         const saved = appointmentId
           ? await window.DrRosaApi.updateAppointment(appointmentId, formPayload())

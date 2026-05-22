@@ -142,8 +142,17 @@ function initializeReportNavigation() {
 }
 
 function initializeExportActions() {
+  const exportableReports = new Set([
+    "financial-report",
+    "patients-report",
+    "doctors-report",
+    "procedures-report",
+    "excel-report"
+  ]);
+
   document.querySelectorAll(".report-content > .section-header").forEach(header => {
-    if (header.closest("#admin-codebooks-report")) return;
+    const report = header.closest(".report-content");
+    if (!report || !exportableReports.has(report.id)) return;
     if (header.querySelector(".export-actions")) return;
     const actions = document.createElement("div");
     actions.className = "export-actions";

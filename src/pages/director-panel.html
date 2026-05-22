@@ -10,16 +10,22 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        <a class="logo-link" href="index.html" aria-label="Pocetna strana">
+          <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        </a>
         <div>
           <h1>Direktor panel</h1>
         </div>
       </div>
       <nav class="topbar-actions" aria-label="Glavna navigacija">
-        <a href="index.html" class="secondary-btn">Dashboard</a>
-        <a href="calendar.html" class="secondary-btn">Kalendar</a>
-        <a href="all-records.html" class="secondary-btn">Evidencija</a>
-        <button id="logout-btn" class="secondary-btn" type="button">Odjava</button>
+        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="calendar.html" class="nav-link">Kalendar</a>
+        <a href="new-entry.html" class="nav-link">Novi unos</a>
+        <a href="new-patient.html" class="nav-link">Novi pacijent</a>
+        <a href="all-records.html" class="nav-link">Evidencija</a>
+        <a href="public-booking.html" class="nav-link">Online zakazivanje</a>
+        <a href="director-panel.html" class="nav-link" aria-current="page">Direktor panel</a>
+        <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
     </header>
 
@@ -467,7 +473,7 @@
       </section>
 
       <section class="list-section report-content" id="google-calendar-report">
-        <button class="secondary-btn back-to-reports" type="button">â† Nazad na izvjeÅ¡taje</button>
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izveštaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Integracije</p>

@@ -884,6 +884,37 @@ function cleanText(value, { max = 255, required = false } = {}) {
   return required ? cleaned : cleaned || null;
 }
 
+function hasCodeLikeContent(value) {
+  const text = String(value || '');
+  return /[<>`{}]/.test(text)
+    || /\bjavascript\s*:/i.test(text)
+    || /\bon[a-z]+\s*=/i.test(text)
+    || /\b(select|insert|update|delete|drop|alter|union|exec)\b[\s\S]*\b(from|into|table|set|where)\b/i.test(text);
+}
+
+function validatedText(value, { field, max = 255, required = false, pattern = null } = {}) {
+  const raw = value === undefined || value === null ? '' : String(value);
+  const cleaned = cleanText(raw, { max, required });
+  if (required && !cleaned) return { error: `${field} je obavezno polje.` };
+  if (!cleaned) return { value: null };
+  if (hasCodeLikeContent(raw)) return { error: `${field} ne sme sadrzati kod ili specijalne znakove.` };
+  if (pattern && !pattern.test(cleaned)) return { error: `${field} nije u ispravnom formatu.` };
+  return { value: cleaned };
+}
+
+function validatedPhone(value, { required = false } = {}) {
+  const result = validatedText(value, {
+    field: 'Broj telefona',
+    max: 50,
+    required,
+    pattern: /^\+?[\d\s()./-]{6,30}$/
+  });
+  if (result.error || !result.value) return result;
+  const digits = result.value.replace(/\D/g, '');
+  if (digits.length < 6 || digits.length > 15) return { error: 'Broj telefona nije u ispravnom formatu.' };
+  return result;
+}
+
 function positiveInteger(value) {
   const number = Number(value);
   return Number.isInteger(number) && number > 0 ? number : null;
@@ -1984,16 +2015,20 @@ app.post('/api/appointments', authenticateToken, (req, res) => {
     const doctorId = positiveInteger(req.body.doctor_id ?? req.body.doctorId);
     const chairId = positiveInteger(req.body.chair_id ?? req.body.chairId);
     const procedureId = positiveInteger(req.body.procedure_id ?? req.body.procedureId);
-    const procedureName = cleanText(req.body.procedure_name ?? req.body.procedureName, { max: 255, required: true });
+    const procedureNameResult = validatedText(req.body.procedure_name ?? req.body.procedureName, { field: 'Postupak', max: 255, required: true });
+    const notesResult = validatedText(req.body.notes, { field: 'Napomena', max: 2000 });
+    const textError = procedureNameResult.error || notesResult.error;
+    if (textError) return res.status(400).json({ error: textError });
+    const procedureName = procedureNameResult.value;
     const startsAt = normalizeIsoDateTime(req.body.starts_at ?? req.body.startsAt);
     const durationMinutes = Math.max(5, Math.min(480, Number(req.body.duration_minutes ?? req.body.durationMinutes ?? 30)));
     const endsAt = normalizeIsoDateTime(req.body.ends_at ?? req.body.endsAt) ||
       (startsAt ? new Date(new Date(startsAt).getTime() + durationMinutes * 60000).toISOString() : null);
     const status = normalizeAppointmentStatus(req.body.status);
-    const notes = cleanText(req.body.notes, { max: 2000 });
+    const notes = notesResult.value;
 
-    if (!patientId || !doctorId || !chairId || !procedureName || !startsAt || !endsAt) {
-      return res.status(400).json({ error: 'Patient, doctor, chair, procedure and start time are required' });
+    if (!patientId || !doctorId || !chairId || !procedureId || !procedureName || !startsAt || !endsAt) {
+      return res.status(400).json({ error: 'Pacijent, doktor, stolica, datum i postupak su obavezni.' });
     }
     if (appointmentDurationMinutes(startsAt, endsAt) <= 0) return res.status(400).json({ error: 'End time must be after start time' });
     if (!rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
@@ -2047,14 +2082,18 @@ app.put('/api/appointments/:id', authenticateToken, (req, res) => {
     const doctorId = positiveInteger(data.doctor_id ?? data.doctorId);
     const chairId = positiveInteger(data.chair_id ?? data.chairId);
     const procedureId = positiveInteger(data.procedure_id ?? data.procedureId);
-    const procedureName = cleanText(data.procedure_name ?? data.procedureName, { max: 255, required: true });
+    const procedureNameResult = validatedText(data.procedure_name ?? data.procedureName, { field: 'Postupak', max: 255, required: true });
+    const notesResult = validatedText(data.notes, { field: 'Napomena', max: 2000 });
+    const textError = procedureNameResult.error || notesResult.error;
+    if (textError) return res.status(400).json({ error: textError });
+    const procedureName = procedureNameResult.value;
     const startsAt = normalizeIsoDateTime(data.starts_at ?? data.startsAt);
     const endsAt = normalizeIsoDateTime(data.ends_at ?? data.endsAt);
     const status = normalizeAppointmentStatus(data.status);
-    const notes = cleanText(data.notes, { max: 2000 });
+    const notes = notesResult.value;
 
-    if (!patientId || !doctorId || !chairId || !procedureName || !startsAt || !endsAt) {
-      return res.status(400).json({ error: 'Patient, doctor, chair, procedure and time are required' });
+    if (!patientId || !doctorId || !chairId || !procedureId || !procedureName || !startsAt || !endsAt) {
+      return res.status(400).json({ error: 'Pacijent, doktor, stolica, datum i postupak su obavezni.' });
     }
     if (appointmentDurationMinutes(startsAt, endsAt) <= 0) return res.status(400).json({ error: 'End time must be after start time' });
 
@@ -2216,10 +2255,19 @@ app.get('/api/public/booking/availability', (req, res) => {
 
 app.post('/api/public/booking', (req, res) => {
   try {
-    const firstName = cleanText(req.body.firstName || req.body.first_name, { max: 80, required: true });
-    const lastName = cleanText(req.body.lastName || req.body.last_name, { max: 80, required: true });
-    const email = cleanText(req.body.email, { max: 255 });
-    const phone = cleanText(req.body.phone, { max: 50 });
+    const namePattern = /^[\p{L}][\p{L}\s.'-]{0,79}$/u;
+    const firstNameResult = validatedText(req.body.firstName || req.body.first_name, { field: 'Ime', max: 80, required: true, pattern: namePattern });
+    const lastNameResult = validatedText(req.body.lastName || req.body.last_name, { field: 'Prezime', max: 80, required: true, pattern: namePattern });
+    const emailResult = validatedText(req.body.email, { field: 'Email', max: 255, pattern: /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/ });
+    const phoneResult = validatedPhone(req.body.phone, { required: true });
+    const notesResult = validatedText(req.body.notes, { field: 'Napomena', max: 1000 });
+    const textError = firstNameResult.error || lastNameResult.error || emailResult.error || phoneResult.error || notesResult.error;
+    if (textError) return res.status(400).json({ error: textError });
+
+    const firstName = firstNameResult.value;
+    const lastName = lastNameResult.value;
+    const email = emailResult.value;
+    const phone = phoneResult.value;
     const doctorId = positiveInteger(req.body.doctorId || req.body.doctor_id);
     const chairId = positiveInteger(req.body.chairId || req.body.chair_id) || db.prepare('SELECT id FROM chairs WHERE is_active = 1 ORDER BY id LIMIT 1').get()?.id;
     const procedureId = positiveInteger(req.body.procedureId || req.body.procedure_id);
@@ -2227,11 +2275,15 @@ app.post('/api/public/booking', (req, res) => {
     const duration = Math.max(15, Math.min(180, Number(req.body.durationMinutes || req.body.duration_minutes || 30)));
     const endsAt = startsAt ? addMinutes(new Date(startsAt), duration).toISOString() : null;
     const procedure = procedureId ? db.prepare('SELECT * FROM codebook_items WHERE id = ?').get(procedureId) : null;
-    const procedureName = cleanText(req.body.procedureName || req.body.procedure_name || procedure?.label || 'Kontrola', { max: 255, required: true });
+    const procedureNameResult = validatedText(req.body.procedureName || req.body.procedure_name || procedure?.label, { field: 'Postupak', max: 255, required: true });
+    if (procedureNameResult.error) return res.status(400).json({ error: procedureNameResult.error });
+    const procedureName = procedureNameResult.value;
 
-    if (!firstName || !lastName || !doctorId || !chairId || !startsAt || !endsAt) {
-      return res.status(400).json({ error: 'Ime, prezime, doktor i termin su obavezni.' });
+    if (!firstName || !lastName || !phone || !doctorId || !chairId || !procedureId || !procedureName || !startsAt || !endsAt) {
+      return res.status(400).json({ error: 'Ime, prezime, broj telefona, datum, doktor i postupak su obavezni.' });
     }
+    if (!rowExists('doctors', doctorId)) return res.status(404).json({ error: 'Doktor nije pronadjen.' });
+    if (!procedure) return res.status(404).json({ error: 'Postupak nije pronadjen.' });
     const conflict = appointmentConflict({ doctorId, chairId, startsAt, endsAt });
     if (conflict) return res.status(409).json({ error: 'Termin vise nije slobodan.' });
 
@@ -2247,7 +2299,7 @@ app.post('/api/public/booking', (req, res) => {
     const appointmentResult = db.prepare(`
       INSERT INTO appointments (patient_id, doctor_id, chair_id, procedure_id, procedure_name, starts_at, ends_at, duration_minutes, status, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
-    `).run(patient.id, doctorId, chairId, procedureId, procedureName, startsAt, endsAt, duration, cleanText(req.body.notes, { max: 1000 }));
+    `).run(patient.id, doctorId, chairId, procedureId, procedureName, startsAt, endsAt, duration, notesResult.value);
     queueCalendarSync(appointmentResult.lastInsertRowid, 'create_google_event');
 
     const bookingResult = db.prepare(`
@@ -2255,7 +2307,7 @@ app.post('/api/public/booking', (req, res) => {
         patient_id, appointment_id, first_name, last_name, email, phone, doctor_id, procedure_id, procedure_name,
         requested_starts_at, duration_minutes, status, notes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?)
-    `).run(patient.id, appointmentResult.lastInsertRowid, firstName, lastName, email, phone, doctorId, procedureId, procedureName, startsAt, duration, cleanText(req.body.notes, { max: 1000 }));
+    `).run(patient.id, appointmentResult.lastInsertRowid, firstName, lastName, email, phone, doctorId, procedureId, procedureName, startsAt, duration, notesResult.value);
 
     res.status(201).json({ id: bookingResult.lastInsertRowid, appointmentId: appointmentResult.lastInsertRowid, patientId: patient.id, status: 'booked' });
   } catch (error) {

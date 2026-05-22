@@ -635,4 +635,165 @@
   }
 
   window.DrRosaSecurity = { escapeHtml, cell };
+
+  function initializeCustomSelects() {
+    if (window.DrRosaCustomSelects?.initialized) return;
+    const state = { initialized: true, selects: new WeakSet() };
+    window.DrRosaCustomSelects = state;
+
+    const valueDescriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+    if (valueDescriptor?.set && !HTMLSelectElement.prototype.__drRosaValuePatched) {
+      Object.defineProperty(HTMLSelectElement.prototype, "value", {
+        get: valueDescriptor.get,
+        set(value) {
+          valueDescriptor.set.call(this, value);
+          this.dispatchEvent(new Event("drrosa-select-value"));
+        }
+      });
+      Object.defineProperty(HTMLSelectElement.prototype, "__drRosaValuePatched", { value: true });
+    }
+
+    function closeAll(except) {
+      document.querySelectorAll(".custom-select-wrap.open").forEach(wrap => {
+        if (wrap !== except) {
+          wrap.classList.remove("open");
+          wrap.querySelector(".custom-select-button")?.setAttribute("aria-expanded", "false");
+        }
+      });
+    }
+
+    function selectedText(select) {
+      return select.selectedOptions[0]?.textContent?.trim()
+        || select.querySelector("option")?.textContent?.trim()
+        || "Odaberite";
+    }
+
+    function syncSelect(select) {
+      const wrap = select.closest(".custom-select-wrap");
+      if (!wrap) return;
+      const button = wrap.querySelector(".custom-select-button");
+      const list = wrap.querySelector(".custom-select-list");
+      if (!button || !list) return;
+
+      button.textContent = selectedText(select);
+      button.disabled = select.disabled;
+      list.innerHTML = Array.from(select.options).map((option, index) => {
+        const selected = option.selected ? "true" : "false";
+        const disabled = option.disabled ? "true" : "false";
+        return `
+          <button class="custom-select-option" type="button" role="option"
+            data-option-index="${index}" aria-selected="${selected}" aria-disabled="${disabled}">
+            ${escapeHtml(option.textContent)}
+          </button>
+        `;
+      }).join("");
+    }
+
+    function enhanceSelect(select) {
+      if (state.selects.has(select) || select.multiple || select.closest(".custom-select-wrap")) return;
+      state.selects.add(select);
+
+      const wrap = document.createElement("span");
+      wrap.className = "custom-select-wrap";
+      const button = document.createElement("button");
+      button.className = "custom-select-button";
+      button.type = "button";
+      button.setAttribute("aria-haspopup", "listbox");
+      button.setAttribute("aria-expanded", "false");
+      const list = document.createElement("span");
+      list.className = "custom-select-list";
+      list.setAttribute("role", "listbox");
+
+      select.parentNode.insertBefore(wrap, select);
+      wrap.appendChild(select);
+      wrap.appendChild(button);
+      wrap.appendChild(list);
+      select.classList.add("custom-select-native");
+
+      button.addEventListener("click", event => {
+        event.preventDefault();
+        button.scrollIntoView({ block: "center", inline: "nearest" });
+        syncSelect(select);
+        const willOpen = !wrap.classList.contains("open");
+        closeAll(willOpen ? wrap : null);
+        wrap.classList.toggle("open", willOpen);
+        button.setAttribute("aria-expanded", String(willOpen));
+        if (willOpen) {
+          requestAnimationFrame(() => {
+            const overflow = list.getBoundingClientRect().bottom - window.innerHeight + 12;
+            if (overflow > 0) window.scrollBy({ top: overflow, behavior: "auto" });
+          });
+        }
+      });
+
+      button.addEventListener("keydown", event => {
+        if (!["ArrowDown", "Enter", " "].includes(event.key)) return;
+        event.preventDefault();
+        button.click();
+        list.querySelector('[aria-selected="true"], .custom-select-option:not([aria-disabled="true"])')?.focus();
+      });
+
+      list.addEventListener("click", event => {
+        const optionButton = event.target.closest(".custom-select-option");
+        if (!optionButton || optionButton.getAttribute("aria-disabled") === "true") return;
+        const option = select.options[Number(optionButton.dataset.optionIndex)];
+        if (!option) return;
+        select.value = option.value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        syncSelect(select);
+        closeAll();
+        button.focus();
+      });
+
+      list.addEventListener("keydown", event => {
+        const options = Array.from(list.querySelectorAll('.custom-select-option:not([aria-disabled="true"])'));
+        const currentIndex = options.indexOf(document.activeElement);
+        if (event.key === "Escape") {
+          closeAll();
+          button.focus();
+          return;
+        }
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          document.activeElement.click();
+          return;
+        }
+        if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+        event.preventDefault();
+        const nextIndex = event.key === "ArrowDown"
+          ? Math.min(options.length - 1, currentIndex + 1)
+          : Math.max(0, currentIndex - 1);
+        options[nextIndex]?.focus();
+      });
+
+      select.addEventListener("change", () => syncSelect(select));
+      select.addEventListener("drrosa-select-value", () => syncSelect(select));
+
+      new MutationObserver(() => syncSelect(select)).observe(select, {
+        childList: true,
+        subtree: true,
+        attributes: true
+      });
+      syncSelect(select);
+    }
+
+    function enhanceAll() {
+      document.querySelectorAll("select").forEach(enhanceSelect);
+    }
+
+    document.addEventListener("click", event => {
+      if (!event.target.closest(".custom-select-wrap")) closeAll();
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") closeAll();
+    });
+    new MutationObserver(enhanceAll).observe(document.documentElement, { childList: true, subtree: true });
+    enhanceAll();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeCustomSelects);
+  } else {
+    initializeCustomSelects();
+  }
 })();

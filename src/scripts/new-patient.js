@@ -5,6 +5,11 @@ async function requireAccess() {
     return false;
   }
 
+  const directorPanelLink = document.getElementById("director-panel-link");
+  if (directorPanelLink && session.role === "director") {
+    directorPanelLink.style.display = "";
+  }
+
   const logoutBtn = document.getElementById("logout-btn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", (event) => {
