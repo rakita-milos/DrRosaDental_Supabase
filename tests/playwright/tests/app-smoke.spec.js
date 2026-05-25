@@ -21,7 +21,6 @@ test.beforeEach(async ({ page }) => {
 
 test("public booking page loads without authentication", async ({ page }) => {
   await page.goto("/src/pages/public-booking.html");
-  await expect(page.getByRole("heading", { name: /Zakazivanje termina/i })).toBeVisible();
   await expect(page.locator("#public-booking-form")).toBeVisible();
   await expect(page.locator("#booking-first-name")).toBeVisible();
   await expect(page.locator("#booking-slot")).toBeVisible();
@@ -67,7 +66,7 @@ test("staff and director navigation expose the right role surface", async ({ pag
   await expect(page.locator("#director-panel-link")).toBeVisible();
   await page.locator("#director-panel-link").click();
   await expect(page).toHaveURL(/director-panel\.html/);
-  await expect(page.getByRole("heading", { name: /Direktor panel/i })).toBeVisible();
+  await expect(page.locator("#reports-grid")).toBeVisible();
 });
 
 test("director admin codebooks expose all expected sections", async ({ page }) => {

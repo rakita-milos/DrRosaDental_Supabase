@@ -22,7 +22,7 @@ test("ui: public booking page loads options and books a free slot", async ({ pag
   await booking.book({
     firstName: `${TEST_PREFIX}${stamp}`,
     lastName: "Booking",
-    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.test`,
+    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.com`,
     date: "2026-07-03",
     note: `${TEST_PREFIX} UI public booking`
   });
@@ -33,7 +33,7 @@ test("ui: patient dashboard advanced tabs create plan, perio, invoice and claim"
   const patient = await createPatient(request, baseURL, {
     firstName: `${TEST_PREFIX}${stamp}`,
     lastName: "Patient",
-    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.test`
+    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.com`
   });
   const fullName = `${patient.first_name} ${patient.last_name}`;
 

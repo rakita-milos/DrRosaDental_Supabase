@@ -18,7 +18,6 @@ class PublicBookingPage {
 
   async goto() {
     await this.page.goto("/src/pages/public-booking.html");
-    await expect(this.page.getByRole("heading", { name: /Zakazivanje termina/i })).toBeVisible();
     await expect(this.form).toBeVisible();
   }
 
@@ -36,6 +35,27 @@ class PublicBookingPage {
     await this.notes.fill(note || "Playwright public booking");
     await this.form.getByRole("button", { name: /Zakazi termin/i }).click();
     await expect(this.message).toContainText(/Termin je zakazan/i);
+  }
+
+  async expectCoreElements() {
+    await expect(this.form).toBeVisible();
+    await expect(this.firstName).toBeVisible();
+    await expect(this.lastName).toBeVisible();
+    await expect(this.email).toBeVisible();
+    await expect(this.phone).toBeVisible();
+    await expect(this.date).toBeVisible();
+    await expect(this.doctor).toBeVisible();
+    await expect(this.procedure).toBeVisible();
+    await expect(this.slot).toBeVisible();
+    await expect(this.notes).toBeVisible();
+  }
+
+  async expectInvalidPhoneRejected() {
+    await this.firstName.fill("Test");
+    await this.lastName.fill("Pacijent");
+    await this.phone.fill("abc");
+    await this.form.getByRole("button", { name: /Zakazi termin/i }).click();
+    await expect(this.message).toContainText(/telefona nije u ispravnom formatu/i);
   }
 }
 

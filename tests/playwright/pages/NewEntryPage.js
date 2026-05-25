@@ -11,6 +11,7 @@ class NewEntryPage {
     this.paymentStatus = page.locator("#payment-status");
     this.currency = page.locator("#currency");
     this.shift = page.locator("#shift");
+    this.amountPaid = page.locator("#amount-paid");
     this.amountDue = page.locator("#amount-due");
     this.note = page.locator("#note");
     this.submit = page.getByRole("button", { name: /Spremi unos/i });
@@ -56,6 +57,26 @@ class NewEntryPage {
       form.noValidate = true;
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
+  }
+
+  async expectCoreElements() {
+    await expect(this.page.locator(".tooth-node").first()).toBeVisible();
+    await expect(this.patientName).toBeVisible();
+    await expect(this.lastVisit).toBeVisible();
+    await expect(this.activity).toBeVisible();
+    await expect(this.procedure).toBeVisible();
+    await expect(this.status).toBeVisible();
+    await expect(this.paymentStatus).toBeVisible();
+    await expect(this.currency).toBeVisible();
+    await expect(this.shift).toBeVisible();
+    await expect(this.amountPaid).toBeVisible();
+    await expect(this.amountDue).toBeVisible();
+    await expect(this.note).toBeVisible();
+  }
+
+  async expectRequiredValidation() {
+    await this.save();
+    await expect(this.alert).toContainText(/Ispunite pacijenta|odaberite postupak/i);
   }
 }
 

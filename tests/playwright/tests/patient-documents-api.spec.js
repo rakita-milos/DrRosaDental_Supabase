@@ -5,8 +5,7 @@ const { authHeaders, createPatient } = require("../utils/api");
 const { cleanupRegressionData } = require("../utils/cleanup");
 
 const TEST_PREFIX = "DOCAPI";
-const backendDir = path.join(__dirname, "../../../backend");
-const scannerInbox = path.join(backendDir, "data/scanner-inbox");
+const scannerInbox = path.join(__dirname, "../.scanner-inbox");
 
 test.beforeEach(async ({ request, baseURL }) => {
   await cleanupRegressionData(request, baseURL, [TEST_PREFIX]);
@@ -22,7 +21,7 @@ test("api: patient medical profile, upload document and import latest scan", asy
   const patient = await createPatient(request, baseURL, {
     firstName: `${TEST_PREFIX}${stamp}`,
     lastName: "Patient",
-    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.test`
+    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.com`
   }, "staff");
 
   const profileResponse = await request.put(`${baseURL}/api/patients/${patient.id}/medical-profile`, {

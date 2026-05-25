@@ -9,6 +9,11 @@ class AllRecordsPage {
     this.paymentFilter = page.locator("#payment-filter");
     this.exportExcel = page.locator("#export-excel-btn");
     this.exportPdf = page.locator("#export-pdf-btn");
+    this.doctorFilter = page.locator("#doctor-filter");
+    this.dateFilter = page.locator("#date-filter");
+    this.periodFilter = page.locator("#period-filter");
+    this.activityFilter = page.locator("#activity-filter");
+    this.procedureFilter = page.locator("#procedure-filter");
   }
 
   async goto() {
@@ -17,6 +22,20 @@ class AllRecordsPage {
 
   async filterByPatient(name) {
     await this.patientFilter.selectOption(name);
+  }
+
+  async expectCoreElements() {
+    await expect(this.patientFilter).toBeVisible();
+    await expect(this.statusFilter).toBeVisible();
+    await expect(this.doctorFilter).toBeVisible();
+    await expect(this.dateFilter).toBeVisible();
+    await expect(this.periodFilter).toBeVisible();
+    await expect(this.activityFilter).toBeVisible();
+    await expect(this.procedureFilter).toBeVisible();
+    await expect(this.paymentFilter).toBeVisible();
+    await expect(this.exportExcel).toBeVisible();
+    await expect(this.exportPdf).toBeVisible();
+    await expect(this.tableBody).toBeVisible();
   }
 
   async expectPatientVisible(name) {

@@ -9,6 +9,16 @@ class DashboardPage {
     await this.page.goto("/src/pages/index.html");
   }
 
+  async expectCoreElements() {
+    await expect(this.page.locator("body")).toContainText(/Moderna klinika|Evidencija pacijenata/i);
+    await expect(this.page.getByRole("link", { name: "Dashboard" })).toBeVisible();
+    await expect(this.page.getByRole("link", { name: "Kalendar" })).toBeVisible();
+    await expect(this.page.getByRole("link", { name: "Novi unos" })).toBeVisible();
+    await expect(this.page.getByRole("link", { name: "Novi pacijent" })).toBeVisible();
+    await expect(this.page.getByRole("link", { name: "Evidencija", exact: true })).toBeVisible();
+    await expect(this.page.locator("#record-table-body")).toBeVisible();
+  }
+
   async openNewEntry() {
     await this.page.getByRole("link", { name: "Novi unos" }).click();
     await expect(this.page).toHaveURL(/new-entry\.html/);

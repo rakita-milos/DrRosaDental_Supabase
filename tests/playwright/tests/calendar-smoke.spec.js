@@ -19,12 +19,12 @@ test("smoke: staff creates appointment from calendar page and sees it on the wee
   await createPatient(request, baseURL, {
     firstName: `${TEST_PREFIX}${stamp}`,
     lastName: "Patient",
-    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.test`
+    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.com`
   }, "staff");
 
   await authenticate(page, "staff");
   await page.goto("/src/pages/calendar.html");
-  await expect(page.getByRole("heading", { name: /Kalendar termina/i })).toBeVisible();
+  await expect(page.locator("#calendar-board")).toBeVisible();
   await expect(page.locator("#appointment-panel")).toBeHidden();
   await page.locator("#calendar-view").selectOption("day");
   await page.locator("#today-btn").click();

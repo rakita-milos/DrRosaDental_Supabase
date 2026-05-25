@@ -2,14 +2,27 @@
 require('dotenv').config();
 
 const fs = require('fs');
+const fsp = fs.promises;
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const bcrypt = require('bcryptjs');
+const util = require('util');
+const bcryptCompare = util.promisify(bcrypt.compare);
+const bcryptHash = util.promisify(bcrypt.hash);
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
+const {
+  validateBody,
+  loginSchema,
+  changePasswordSchema,
+  patientCreateSchema,
+  patientUpdateSchema,
+  patientDocumentSchema,
+  importScanSchema
+} = require('./validation');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,6 +39,8 @@ fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 const schema = fs.readFileSync(path.join(__dirname, 'database.sql'), 'utf8');
 
 let db = openDatabase();
+let server;
+let automaticBackupTimer;
 
 function openDatabase() {
   const database = new DatabaseSync(dbPath);
@@ -34,9 +49,6 @@ function openDatabase() {
   database.exec(schema);
   return database;
 }
-
-applyMigrations();
-seedDatabase();
 
 app.disable('x-powered-by');
 app.use(helmet({
@@ -114,7 +126,7 @@ const AUTO_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
-function seedDatabase() {
+async function seedDatabase() {
   const doctorCount = db.prepare('SELECT COUNT(*) as count FROM doctors').get().count;
   if (doctorCount === 0) {
     const insertDoctor = db.prepare(`
@@ -146,12 +158,14 @@ function seedDatabase() {
       INSERT INTO users (email, password_hash, name, role)
       VALUES (?, ?, ?, ?)
     `);
-    insertUser.run('director@drosa.com', bcrypt.hashSync(directorPassword, 12), 'Dr Rosa Basic', 'director');
-    insertUser.run('staff@drosa.com', bcrypt.hashSync(staffPassword, 12), 'Ana - Medicinska sestra', 'staff');
+    const directorHash = await bcryptHash(directorPassword, 12);
+    const staffHash = await bcryptHash(staffPassword, 12);
+    insertUser.run('director@drosa.com', directorHash, 'Dr Rosa Basic', 'director');
+    insertUser.run('staff@drosa.com', staffHash, 'Ana - Medicinska sestra', 'staff');
   }
 
   seedCodebooks();
-  rotateDefaultPasswords();
+  await rotateDefaultPasswords();
 }
 
 function applyMigrations() {
@@ -703,9 +717,17 @@ function isStrongInitialPassword(value) {
   return typeof value === 'string' && value.length >= 12 && value !== 'password123';
 }
 
-function rotateDefaultPasswords() {
+async function rotateDefaultPasswords() {
   const users = db.prepare('SELECT id, email, password_hash, role FROM users').all();
-  const weakUsers = users.filter(user => bcrypt.compareSync('password123', user.password_hash));
+  const weakUsers = [];
+  for (const user of users) {
+    try {
+      const isWeak = await bcryptCompare('password123', user.password_hash);
+      if (isWeak) weakUsers.push(user);
+    } catch (e) {
+      // ignore compare errors
+    }
+  }
 
   if (weakUsers.length === 0) return;
 
@@ -715,13 +737,14 @@ function rotateDefaultPasswords() {
   };
 
   const updatePassword = db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-  weakUsers.forEach(user => {
+  for (const user of weakUsers) {
     const replacement = replacements[user.role];
     if (!isStrongInitialPassword(replacement)) {
       throw new Error(`User ${user.email} still has the old default password. Set INITIAL_${user.role.toUpperCase()}_PASSWORD to rotate it.`);
     }
-    updatePassword.run(bcrypt.hashSync(replacement, 12), user.id);
-  });
+    const newHash = await bcryptHash(replacement, 12);
+    updatePassword.run(newHash, user.id);
+  }
 }
 
 function authenticateToken(req, res, next) {
@@ -796,8 +819,21 @@ function createRefreshToken(userId, req) {
   return { token, expiresAt };
 }
 
-function issueSession(user, req) {
+function issueSession(user, req, res) {
   const refresh = createRefreshToken(user.id, req);
+  if (res) {
+    try {
+      res.cookie('drrosa_refresh', refresh.token, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: 'Strict',
+        maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
+        path: '/api'
+      });
+    } catch (e) {
+      console.error('Failed to set refresh cookie', e);
+    }
+  }
   return {
     token: createAccessToken(user),
     refreshToken: refresh.token,
@@ -895,13 +931,13 @@ function backupFilename(type) {
   return `drrosa-${type}-backup-${stamp}.sqlite.enc`;
 }
 
-function createEncryptedBackup({ type = 'manual', userId = null, req = null } = {}) {
+async function createEncryptedBackup({ type = 'manual', userId = null, req = null } = {}) {
   db.exec('PRAGMA wal_checkpoint(FULL)');
-  const plain = fs.readFileSync(dbPath);
+  const plain = await fsp.readFile(dbPath);
   const encrypted = encryptBuffer(plain);
   const filename = backupFilename(type);
   const filePath = path.join(BACKUP_DIR, filename);
-  fs.writeFileSync(filePath, encrypted, { mode: 0o600 });
+  await fsp.writeFile(filePath, encrypted, { mode: 0o600 });
   const result = db.prepare(`
     INSERT INTO backup_files (filename, file_path, file_size, backup_type, encrypted, created_by)
     VALUES (?, ?, ?, ?, 1, ?)
@@ -939,12 +975,12 @@ function backupStatus() {
   };
 }
 
-function restoreEncryptedBackup(backup, userId, req) {
-  createEncryptedBackup({ type: 'pre_restore', userId, req });
-  const encrypted = fs.readFileSync(backup.file_path);
+async function restoreEncryptedBackup(backup, userId, req) {
+  await createEncryptedBackup({ type: 'pre_restore', userId, req });
+  const encrypted = await fsp.readFile(backup.file_path);
   const plain = decryptBuffer(encrypted);
   const tempPath = path.join(path.dirname(dbPath), `restore-${Date.now()}.sqlite`);
-  fs.writeFileSync(tempPath, plain, { mode: 0o600 });
+  await fsp.writeFile(tempPath, plain, { mode: 0o600 });
   const validationDb = new DatabaseSync(tempPath);
   validationDb.prepare('SELECT name FROM sqlite_master WHERE type = ? LIMIT 1').get('table');
   validationDb.close();
@@ -952,22 +988,26 @@ function restoreEncryptedBackup(backup, userId, req) {
   db.close();
   for (const suffix of ['', '-wal', '-shm']) {
     const target = `${dbPath}${suffix}`;
-    if (fs.existsSync(target)) fs.unlinkSync(target);
+    try {
+      await fsp.unlink(target);
+    } catch {
+      // ignore missing files
+    }
   }
-  fs.renameSync(tempPath, dbPath);
+  await fsp.rename(tempPath, dbPath);
   db = openDatabase();
   applyMigrations();
   db.prepare("UPDATE backup_files SET status = 'restored' WHERE id = ?").run(backup.id);
   auditLog({ userId, action: 'backup_restored', entityType: 'backup', entityId: backup.id, req });
 }
 
-function testEncryptedBackupRestore(backup, userId, req) {
-  const encrypted = fs.readFileSync(backup.file_path);
+async function testEncryptedBackupRestore(backup, userId, req) {
+  const encrypted = await fsp.readFile(backup.file_path);
   const plain = decryptBuffer(encrypted);
   const tempPath = path.join(path.dirname(dbPath), `restore-test-${Date.now()}.sqlite`);
   const requiredTables = ['patients', 'visit_records', 'appointments', 'users', 'audit_log'];
   try {
-    fs.writeFileSync(tempPath, plain, { mode: 0o600 });
+    await fsp.writeFile(tempPath, plain, { mode: 0o600 });
     const validationDb = new DatabaseSync(tempPath);
     const foundTables = validationDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(row => row.name);
     const missingTables = requiredTables.filter(table => !foundTables.includes(table));
@@ -983,7 +1023,11 @@ function testEncryptedBackupRestore(backup, userId, req) {
     auditLog({ userId, action: 'backup_restore_tested', entityType: 'backup', entityId: backup.id, req, metadata: { status, missingTables } });
     return serializeRestoreTest(db.prepare('SELECT * FROM backup_restore_tests WHERE id = ?').get(result.lastInsertRowid));
   } finally {
-    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    try {
+      await fsp.unlink(tempPath);
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -1528,9 +1572,9 @@ function mimeFromExtension(filename) {
   return 'application/octet-stream';
 }
 
-function patientUploadDir(patientId) {
+async function patientUploadDir(patientId) {
   const dir = path.join(uploadRoot, 'patients', String(patientId));
-  fs.mkdirSync(dir, { recursive: true });
+  await fsp.mkdir(dir, { recursive: true });
   return dir;
 }
 
@@ -1539,7 +1583,7 @@ function uniqueStoredFilename(originalFilename, mimeType) {
   return `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
 }
 
-function savePatientDocument({ patientId, visitRecordId, documentType, title, description, documentDate, originalFilename, mimeType, buffer, source, userId, imagingModality, toothNumber, acquisitionDate, dicomStudyUid, claimAttachmentReady }) {
+async function savePatientDocument({ patientId, visitRecordId, documentType, title, description, documentDate, originalFilename, mimeType, buffer, source, userId, imagingModality, toothNumber, acquisitionDate, dicomStudyUid, claimAttachmentReady }) {
   if (!rowExists('patients', patientId)) {
     const error = new Error('Patient not found');
     error.status = 404;
@@ -1562,8 +1606,8 @@ function savePatientDocument({ patientId, visitRecordId, documentType, title, de
   }
 
   const storedFilename = uniqueStoredFilename(originalFilename, mimeType);
-  const targetPath = path.join(patientUploadDir(patientId), storedFilename);
-  fs.writeFileSync(targetPath, buffer, { flag: 'wx' });
+  const targetPath = path.join(await patientUploadDir(patientId), storedFilename);
+  await fsp.writeFile(targetPath, buffer, { flag: 'wx' });
   const hash = crypto.createHash('sha256').update(buffer).digest('hex');
 
   const result = db.prepare(`
@@ -1598,37 +1642,38 @@ function savePatientDocument({ patientId, visitRecordId, documentType, title, de
   return serializeDocument(db.prepare('SELECT * FROM patient_documents WHERE id = ?').get(result.lastInsertRowid));
 }
 
-function latestScannerFile() {
-  fs.mkdirSync(scannerInboxDir, { recursive: true });
-  return fs.readdirSync(scannerInboxDir)
-    .map(name => {
-      const filePath = path.join(scannerInboxDir, name);
-      const stat = fs.statSync(filePath);
+async function latestScannerFile() {
+  await fsp.mkdir(scannerInboxDir, { recursive: true });
+  const entries = await fsp.readdir(scannerInboxDir);
+  const files = await Promise.all(entries.map(async (name) => {
+    const filePath = path.join(scannerInboxDir, name);
+    try {
+      const stat = await fsp.stat(filePath);
       return { name, filePath, stat };
-    })
-    .filter(file => file.stat.isFile() && ALLOWED_SCAN_EXTENSIONS.has(path.extname(file.name).toLowerCase()))
+    } catch {
+      return null;
+    }
+  }));
+  return files
+    .filter(file => file && file.stat.isFile() && ALLOWED_SCAN_EXTENSIONS.has(path.extname(file.name).toLowerCase()))
     .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs)[0] || null;
 }
 
 // ============ AUTHENTICATION ENDPOINTS ============
 
-app.post('/api/auth/login', loginLimiter, (req, res) => {
+app.post('/api/auth/login', loginLimiter, validateBody(loginSchema), async (req, res) => {
   try {
-    const email = cleanText(req.body.email, { max: 255, required: true }).toLowerCase();
-    const password = String(req.body.password || '');
+    const email = String(req.body.email).toLowerCase();
+    const password = String(req.body.password);
     const selectedRole = cleanText(req.body.role, { max: 32 });
     const twoFactorCode = cleanText(req.body.twoFactorCode, { max: 16 });
-
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
-    }
 
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     if (user && isUserLocked(user)) {
       return res.status(423).json({ error: 'Account is temporarily locked. Try again later.' });
     }
 
-    if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+    if (!user || !(await bcryptCompare(password, user.password_hash))) {
       registerFailedLogin(user, req);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -1649,7 +1694,7 @@ app.post('/api/auth/login', loginLimiter, (req, res) => {
 
     clearFailedLogins(user.id);
     auditLog({ userId: user.id, action: 'login_success', entityType: 'user', entityId: user.id, req });
-    res.json(issueSession(user, req));
+    res.json(issueSession(user, req, res));
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -1680,7 +1725,7 @@ app.post('/api/auth/refresh', (req, res) => {
       name: row.name,
       role: row.role,
       two_factor_enabled: row.two_factor_enabled
-    }, req);
+    }, req, res);
     res.json(session);
   } catch (error) {
     console.error('Refresh token error:', error);
@@ -1695,6 +1740,11 @@ app.post('/api/auth/logout', authenticateToken, (req, res) => {
       db.prepare('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ?').run(hashToken(refreshToken));
     }
     auditLog({ userId: req.user.id, action: 'logout', entityType: 'user', entityId: req.user.id, req });
+    try {
+      res.clearCookie('drrosa_refresh', { path: '/api' });
+    } catch (e) {
+      // ignore
+    }
     res.json({ success: true });
   } catch (error) {
     console.error('Logout error:', error);
@@ -1702,22 +1752,20 @@ app.post('/api/auth/logout', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/auth/change-password', authenticateToken, (req, res) => {
+app.post('/api/auth/change-password', authenticateToken, validateBody(changePasswordSchema), async (req, res) => {
   try {
-    const currentPassword = String(req.body.currentPassword || '');
-    const newPassword = String(req.body.newPassword || '');
-    if (!isStrongInitialPassword(newPassword)) {
-      return res.status(400).json({ error: 'New password must have at least 12 characters.' });
-    }
+    const currentPassword = String(req.body.currentPassword);
+    const newPassword = String(req.body.newPassword);
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-    if (!user || !bcrypt.compareSync(currentPassword, user.password_hash)) {
+    if (!user || !(await bcryptCompare(currentPassword, user.password_hash))) {
       return res.status(401).json({ error: 'Current password is not correct' });
     }
+    const newHash = await bcryptHash(newPassword, 12);
     db.prepare(`
       UPDATE users
       SET password_hash = ?, password_changed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(bcrypt.hashSync(newPassword, 12), req.user.id);
+    `).run(newHash, req.user.id);
     db.prepare('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(req.user.id);
     auditLog({ userId: req.user.id, action: 'password_changed', entityType: 'user', entityId: req.user.id, req });
     res.json({ success: true });
@@ -1755,7 +1803,7 @@ app.get('/api/patients/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/patients', authenticateToken, (req, res) => {
+app.post('/api/patients', authenticateToken, validateBody(patientCreateSchema), (req, res) => {
   try {
     const first_name = cleanText(req.body.first_name, { max: 80, required: true });
     const last_name = cleanText(req.body.last_name, { max: 80, required: true });
@@ -1799,7 +1847,7 @@ app.post('/api/patients', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/patients/:id', authenticateToken, (req, res) => {
+app.put('/api/patients/:id', authenticateToken, validateBody(patientUpdateSchema), (req, res) => {
   try {
     const current = db.prepare('SELECT * FROM patients WHERE id = ?').get(req.params.id);
     if (!current) return res.status(404).json({ error: 'Patient not found' });
@@ -1955,12 +2003,12 @@ app.get('/api/patients/:id/documents', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/patients/:id/documents', authenticateToken, (req, res) => {
+app.post('/api/patients/:id/documents', authenticateToken, validateBody(patientDocumentSchema), async (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     const base64 = String(req.body.fileBase64 || '').replace(/^data:[^;]+;base64,/, '');
     const buffer = Buffer.from(base64, 'base64');
-    const document = savePatientDocument({
+    const document = await savePatientDocument({
       patientId,
       visitRecordId: positiveInteger(req.body.visitRecordId || req.body.visit_record_id),
       documentType: req.body.documentType || req.body.document_type,
@@ -1985,14 +2033,14 @@ app.post('/api/patients/:id/documents', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/patients/:id/documents/import-scan', authenticateToken, (req, res) => {
+app.post('/api/patients/:id/documents/import-scan', authenticateToken, validateBody(importScanSchema), async (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
-    const scan = latestScannerFile();
+    const scan = await latestScannerFile();
     if (!scan) return res.status(404).json({ error: `Nema skeniranih PDF/slika u folderu: ${scannerInboxDir}` });
 
-    const buffer = fs.readFileSync(scan.filePath);
-    const document = savePatientDocument({
+    const buffer = await fsp.readFile(scan.filePath);
+    const document = await savePatientDocument({
       patientId,
       visitRecordId: positiveInteger(req.body.visitRecordId || req.body.visit_record_id),
       documentType: req.body.documentType || req.body.document_type,
@@ -2012,8 +2060,8 @@ app.post('/api/patients/:id/documents/import-scan', authenticateToken, (req, res
     });
 
     const importedDir = path.join(scannerInboxDir, 'imported');
-    fs.mkdirSync(importedDir, { recursive: true });
-    fs.renameSync(scan.filePath, path.join(importedDir, `${Date.now()}-${scan.name}`));
+    await fsp.mkdir(importedDir, { recursive: true });
+    await fsp.rename(scan.filePath, path.join(importedDir, `${Date.now()}-${scan.name}`));
 
     res.status(201).json(document);
   } catch (error) {
@@ -2022,12 +2070,16 @@ app.post('/api/patients/:id/documents/import-scan', authenticateToken, (req, res
   }
 });
 
-app.get('/api/documents/:id/view', authenticateToken, (req, res) => {
+app.get('/api/documents/:id/view', authenticateToken, async (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const row = db.prepare('SELECT * FROM patient_documents WHERE id = ? AND is_deleted = 0').get(documentId);
     if (!row) return res.status(404).json({ error: 'Document not found' });
-    if (!fs.existsSync(row.file_path)) return res.status(404).json({ error: 'File not found' });
+    try {
+      await fsp.access(row.file_path);
+    } catch {
+      return res.status(404).json({ error: 'File not found' });
+    }
     res.setHeader('Content-Type', row.mime_type);
     res.setHeader('Content-Disposition', `inline; filename="${row.original_filename.replace(/"/g, '')}"`);
     res.sendFile(row.file_path);
@@ -2037,12 +2089,16 @@ app.get('/api/documents/:id/view', authenticateToken, (req, res) => {
   }
 });
 
-app.get('/api/documents/:id/download', authenticateToken, (req, res) => {
+app.get('/api/documents/:id/download', authenticateToken, async (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const row = db.prepare('SELECT * FROM patient_documents WHERE id = ? AND is_deleted = 0').get(documentId);
     if (!row) return res.status(404).json({ error: 'Document not found' });
-    if (!fs.existsSync(row.file_path)) return res.status(404).json({ error: 'File not found' });
+    try {
+      await fsp.access(row.file_path);
+    } catch {
+      return res.status(404).json({ error: 'File not found' });
+    }
     res.download(row.file_path, row.original_filename);
   } catch (error) {
     console.error('Download document error:', error);
@@ -3560,19 +3616,24 @@ app.get('/api/director/backups', authenticateToken, requireDirector, (_req, res)
   }
 });
 
-app.post('/api/director/backups', authenticateToken, requireDirector, (req, res) => {
+app.post('/api/director/backups', authenticateToken, requireDirector, async (req, res) => {
   try {
-    res.status(201).json(createEncryptedBackup({ type: 'manual', userId: req.user.id, req }));
+    res.status(201).json(await createEncryptedBackup({ type: 'manual', userId: req.user.id, req }));
   } catch (error) {
     console.error('Create backup error:', error);
     res.status(500).json({ error: 'Backup could not be created' });
   }
 });
 
-app.get('/api/director/backups/:id/download', authenticateToken, requireDirector, (req, res) => {
+app.get('/api/director/backups/:id/download', authenticateToken, requireDirector, async (req, res) => {
   try {
     const backup = db.prepare("SELECT * FROM backup_files WHERE id = ? AND status IN ('ready', 'restored')").get(positiveInteger(req.params.id));
-    if (!backup || !fs.existsSync(backup.file_path)) return res.status(404).json({ error: 'Backup not found' });
+    if (!backup) return res.status(404).json({ error: 'Backup not found' });
+    try {
+      await fsp.access(backup.file_path);
+    } catch {
+      return res.status(404).json({ error: 'Backup not found' });
+    }
     auditLog({ userId: req.user.id, action: 'backup_downloaded', entityType: 'backup', entityId: backup.id, req });
     res.download(backup.file_path, backup.filename);
   } catch (error) {
@@ -3581,15 +3642,20 @@ app.get('/api/director/backups/:id/download', authenticateToken, requireDirector
   }
 });
 
-app.post('/api/director/backups/:id/restore', authenticateToken, requireDirector, (req, res) => {
+app.post('/api/director/backups/:id/restore', authenticateToken, requireDirector, async (req, res) => {
   try {
     const confirmation = cleanText(req.body.confirmation, { max: 80 });
     if (confirmation !== 'VRATI BACKUP') {
       return res.status(400).json({ error: 'Type VRATI BACKUP to confirm restore.' });
     }
     const backup = db.prepare("SELECT * FROM backup_files WHERE id = ? AND status = 'ready'").get(positiveInteger(req.params.id));
-    if (!backup || !fs.existsSync(backup.file_path)) return res.status(404).json({ error: 'Backup not found' });
-    restoreEncryptedBackup(backup, req.user.id, req);
+    if (!backup) return res.status(404).json({ error: 'Backup not found' });
+    try {
+      await fsp.access(backup.file_path);
+    } catch {
+      return res.status(404).json({ error: 'Backup not found' });
+    }
+    await restoreEncryptedBackup(backup, req.user.id, req);
     res.json({ success: true, message: 'Backup je vracen. Osvezite aplikaciju pre nastavka rada.' });
   } catch (error) {
     console.error('Restore backup error:', error);
@@ -3597,11 +3663,16 @@ app.post('/api/director/backups/:id/restore', authenticateToken, requireDirector
   }
 });
 
-app.post('/api/director/backups/:id/test-restore', authenticateToken, requireDirector, (req, res) => {
+app.post('/api/director/backups/:id/test-restore', authenticateToken, requireDirector, async (req, res) => {
   try {
     const backup = db.prepare("SELECT * FROM backup_files WHERE id = ? AND status IN ('ready', 'restored')").get(positiveInteger(req.params.id));
-    if (!backup || !fs.existsSync(backup.file_path)) return res.status(404).json({ error: 'Backup not found' });
-    res.status(201).json(testEncryptedBackupRestore(backup, req.user.id, req));
+    if (!backup) return res.status(404).json({ error: 'Backup not found' });
+    try {
+      await fsp.access(backup.file_path);
+    } catch {
+      return res.status(404).json({ error: 'Backup not found' });
+    }
+    res.status(201).json(await testEncryptedBackupRestore(backup, req.user.id, req));
   } catch (error) {
     console.error('Test restore backup error:', error);
     res.status(500).json({ error: 'Test restore nije uspeo.' });
@@ -3763,7 +3834,7 @@ app.post('/api/director/security/users/:id/unlock', authenticateToken, requireDi
   }
 });
 
-app.post('/api/director/security/users/:id/reset-password', authenticateToken, requireDirector, (req, res) => {
+app.post('/api/director/security/users/:id/reset-password', authenticateToken, requireDirector, async (req, res) => {
   try {
     const userId = positiveInteger(req.params.id);
     const newPassword = String(req.body.newPassword || '');
@@ -3771,11 +3842,12 @@ app.post('/api/director/security/users/:id/reset-password', authenticateToken, r
     if (!isStrongInitialPassword(newPassword)) {
       return res.status(400).json({ error: 'Password must have at least 12 characters.' });
     }
+    const newHash = await bcryptHash(newPassword, 12);
     db.prepare(`
       UPDATE users
       SET password_hash = ?, failed_login_attempts = 0, locked_until = NULL, password_changed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(bcrypt.hashSync(newPassword, 12), userId);
+    `).run(newHash, userId);
     db.prepare('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(userId);
     auditLog({ userId: req.user.id, action: 'password_reset_by_director', entityType: 'user', entityId: userId, req });
     res.json({ success: true });
@@ -3818,11 +3890,11 @@ app.post('/api/auth/2fa/verify', authenticateToken, requireDirector, (req, res) 
   }
 });
 
-app.post('/api/auth/2fa/disable', authenticateToken, requireDirector, (req, res) => {
+app.post('/api/auth/2fa/disable', authenticateToken, requireDirector, async (req, res) => {
   try {
     const password = String(req.body.password || '');
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-    if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+    if (!user || !(await bcryptCompare(password, user.password_hash))) {
       return res.status(401).json({ error: 'Password is not correct' });
     }
     db.prepare('UPDATE users SET two_factor_enabled = 0, two_factor_secret = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.user.id);
@@ -4299,32 +4371,71 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`Dr Rosa Backend API running on http://localhost:${PORT}`);
-  console.log('SQLite database configured');
-});
-
-function runAutomaticBackupIfNeeded() {
+async function runAutomaticBackupIfNeeded() {
   try {
     const status = backupStatus();
     if (!status.warning) return;
-    createEncryptedBackup({ type: 'automatic' });
+    await createEncryptedBackup({ type: 'automatic' });
   } catch (error) {
     console.error('Automatic backup error:', error);
   }
 }
 
-runAutomaticBackupIfNeeded();
-const automaticBackupTimer = setInterval(runAutomaticBackupIfNeeded, 60 * 60 * 1000);
+async function startServer() {
+  try {
+    applyMigrations();
+    await seedDatabase();
+
+    server = app.listen(PORT, () => {
+      console.log(`Dr Rosa Backend API running on http://localhost:${PORT}`);
+      console.log('SQLite database configured');
+    });
+
+    await runAutomaticBackupIfNeeded();
+    automaticBackupTimer = setInterval(runAutomaticBackupIfNeeded, 60 * 60 * 1000);
+    return server;
+  } catch (error) {
+    console.error('Startup error:', error);
+    try {
+      db.close();
+    } catch {
+      // Ignore close errors during failed startup.
+    }
+    process.exit(1);
+  }
+}
 
 function shutdown() {
-  clearInterval(automaticBackupTimer);
-  server.close(() => {
+  if (automaticBackupTimer) clearInterval(automaticBackupTimer);
+  if (!server) {
     db.close();
+    return;
+  }
+  const forceExit = setTimeout(() => {
+    try {
+      db.close();
+    } catch {
+      // Ignore close errors during forced shutdown.
+    }
+    process.exit(0);
+  }, 1000);
+  forceExit.unref?.();
+  server.closeIdleConnections?.();
+  server.closeAllConnections?.();
+  server.close(() => {
+    clearTimeout(forceExit);
+    try {
+      db.close();
+    } catch {
+      // Ignore close errors during shutdown.
+    }
+    process.exit(0);
   });
 }
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-module.exports = { app, server, db, dbPath };
+startServer();
+
+module.exports = { app, get server() { return server; }, db, dbPath, startServer };

@@ -81,6 +81,14 @@ test("api: director manages encrypted backups and security status", async ({ req
 
 test("api: login issues refresh token and failed login increments lockout counter", async ({ request, baseURL }) => {
   const credentials = credentialsFor("staff");
+  await request.post(`${baseURL}/api/director/security/users/2/reset-password`, {
+    headers: authHeaders("director"),
+    data: { newPassword: credentials.password }
+  });
+  await request.post(`${baseURL}/api/director/security/users/2/unlock`, {
+    headers: authHeaders("director")
+  });
+
   const badLogin = await request.post(`${baseURL}/api/auth/login`, {
     data: {
       email: credentials.email,

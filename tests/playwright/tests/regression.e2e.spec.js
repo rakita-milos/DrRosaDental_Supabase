@@ -33,7 +33,7 @@ test("regression: filtered records export uses visible filtered rows", async ({ 
     patient: {
       firstName: `${TEST_PREFIX}Export${stamp}`,
       lastName: "Patient",
-      email: `e2e.export.${stamp}@example.test`
+      email: `e2e.export.${stamp}@example.com`
     },
     record: {
       procedure: "Kontrola",
@@ -81,7 +81,7 @@ test("regression: director-created procedure is available in visit entry and cle
   const patient = {
     firstName: `${TEST_PREFIX}Proc${stamp}`,
     lastName: "Patient",
-    email: `e2e.proc.${stamp}@example.test`
+    email: `e2e.proc.${stamp}@example.com`
   };
   const fullName = `${patient.firstName} ${patient.lastName}`;
   await createPatient(request, baseURL, patient, "staff");

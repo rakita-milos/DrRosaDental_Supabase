@@ -26,8 +26,7 @@ module.exports = defineConfig({
     {
       name: "chrome",
       use: {
-        ...devices["Desktop Chrome"],
-        channel: "chrome"
+        ...devices["Desktop Chrome"]
       }
     }
   ],
@@ -35,6 +34,13 @@ module.exports = defineConfig({
     command: "node server.js",
     cwd: path.join(__dirname, "../../backend"),
     url: `${baseURL}/api/health`,
+    env: {
+      ...process.env,
+      SQLITE_DB_PATH: "../tests/playwright/.backend-data/playwright.sqlite",
+      BACKUP_DIR: "../tests/playwright/.backend-backups",
+      UPLOAD_DIR: "../tests/playwright/.uploads",
+      SCANNER_IMPORT_DIR: path.join(__dirname, ".scanner-inbox")
+    },
     reuseExistingServer: true,
     timeout: 20_000
   }

@@ -38,7 +38,7 @@ test("api: public booking creates an appointment and patient", async ({ request,
   const booking = await createPublicBooking(request, baseURL, {
     firstName: `${TEST_PREFIX}${stamp}`,
     lastName: "Booking",
-    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.test`,
+    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.com`,
     phone: "060111222",
     doctorId: slot.doctorId,
     chairId: slot.chairId,
@@ -58,7 +58,7 @@ test("api: treatment plan, perio, invoice and insurance workflows", async ({ req
   const patient = await createPatient(request, baseURL, {
     firstName: `${TEST_PREFIX}${stamp}`,
     lastName: "Patient",
-    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.test`
+    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.com`
   });
 
   const plan = await createTreatmentPlan(request, baseURL, patient.id, {
@@ -247,7 +247,7 @@ test("api: treatment plan, perio, invoice and insurance workflows", async ({ req
 
 test("api: director saves Google OAuth settings without exposing client secret", async ({ request, baseURL }) => {
   const update = await apiPut(request, baseURL, "/api/director/google-calendar/settings", {
-    connectedEmail: "advapi.calendar@example.test",
+    connectedEmail: "advapi.calendar@example.com",
     calendarId: "primary",
     calendarName: "ADVAPI Calendar",
     clientId: "advapi-client-id",

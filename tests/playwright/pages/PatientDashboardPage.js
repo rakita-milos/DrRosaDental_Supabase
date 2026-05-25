@@ -21,6 +21,26 @@ class PatientDashboardPage {
     await expect(this.title).toContainText(name);
   }
 
+  async goto(patientName) {
+    await this.page.goto(`/src/pages/patient-dashboard.html?patient=${encodeURIComponent(patientName)}`);
+  }
+
+  async expectCoreElements() {
+    await expect(this.title).not.toHaveText("");
+    await expect(this.editPatient).toBeVisible();
+    await expect(this.deletePatient).toBeVisible();
+    await expect(this.page.locator('[data-patient-tab="medical-card"]')).toBeVisible();
+    await expect(this.page.locator('[data-patient-tab="clinical-chart-card"]')).toBeVisible();
+    await expect(this.page.locator('[data-patient-tab="clinical-notes-card"]')).toBeVisible();
+    await expect(this.page.locator('[data-patient-tab="consents-card"]')).toBeVisible();
+    await expect(this.page.locator('[data-patient-tab="documents-card"]')).toBeVisible();
+    await expect(this.plansTab).toBeVisible();
+    await expect(this.perioTab).toBeVisible();
+    await expect(this.invoicesTab).toBeVisible();
+    await expect(this.insuranceTab).toBeVisible();
+    await expect(this.recordsBody).toBeVisible();
+  }
+
   async expectRecordVisible(text) {
     await expect(this.recordsBody).toContainText(text);
   }

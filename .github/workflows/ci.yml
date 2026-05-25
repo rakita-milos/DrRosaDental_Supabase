@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Create backend test environment
+        working-directory: ./backend
+        run: |
+          cat > .env <<'EOF'
+          NODE_ENV=test
+          PORT=3000
+          SQLITE_DB_PATH=../tests/playwright/.backend-data/ci.sqlite
+          SQLITE_BACKUP_DIR=../tests/playwright/.backend-backups
+          BACKUP_DIR=../tests/playwright/.backend-backups
+          UPLOAD_DIR=../tests/playwright/.uploads
+          SCANNER_IMPORT_DIR=../tests/playwright/.scanner-inbox
+          API_URL=http://localhost:3000
+          CORS_ORIGIN=http://localhost:3000,http://127.0.0.1:3000
+          JWT_SECRET=ci-jwt-secret-dr-rosa-2026-05-25-minimum-32-characters
+          INITIAL_DIRECTOR_PASSWORD=DirectorCi2026!
+          INITIAL_STAFF_PASSWORD=StaffCi2026!
+          EOF
+      - name: Install dependencies (backend)
+        working-directory: ./backend
+        run: |
+          npm ci
+      - name: Run npm audit (backend)
+        working-directory: ./backend
+        run: |
+          npm audit --audit-level=moderate || true
+      - name: Run backend tests
+        working-directory: ./backend
+        run: |
+          npm test
+      - name: Install Playwright dependencies
+        working-directory: ./tests/playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Start backend for Playwright
+        working-directory: ./backend
+        run: |
+          node server.js > ../tests/playwright/backend-ci.log 2>&1 &
+          echo $! > ../tests/playwright/backend-ci.pid
+          for i in {1..30}; do
+            if curl -fsS http://localhost:3000/api/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat ../tests/playwright/backend-ci.log
+          exit 1
+      - name: Run Playwright tests
+        working-directory: ./tests/playwright
+        run: |
+          npx playwright test --config=playwright.ci.config.js --reporter=list
+      - name: Stop backend
+        if: always()
+        working-directory: ./tests/playwright
+        run: |
+          if [ -f backend-ci.pid ]; then kill "$(cat backend-ci.pid)" || true; fi

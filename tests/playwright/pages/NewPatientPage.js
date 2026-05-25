@@ -12,6 +12,9 @@ class NewPatientPage {
     this.email = page.locator("#email");
     this.emergencyContact = page.locator("#emergency-contact");
     this.medicalHistory = page.locator("#medical-history");
+    this.allergies = page.locator("#allergies");
+    this.currentMedications = page.locator("#current-medications");
+    this.previousTreatments = page.locator("#previous-treatments");
     this.submit = page.locator("#patient-form button[type='submit']");
   }
 
@@ -29,6 +32,27 @@ class NewPatientPage {
     await this.email.fill(data.email);
     await this.emergencyContact.fill(data.emergencyContact || "Smoke Contact");
     await this.medicalHistory.fill(data.medicalHistory || "Automated smoke patient");
+  }
+
+  async expectCoreElements() {
+    await expect(this.firstName).toBeVisible();
+    await expect(this.lastName).toBeVisible();
+    await expect(this.birthDate).toBeVisible();
+    await expect(this.gender).toBeVisible();
+    await expect(this.address).toBeVisible();
+    await expect(this.phone).toBeVisible();
+    await expect(this.email).toBeVisible();
+    await expect(this.emergencyContact).toBeVisible();
+    await expect(this.allergies).toBeVisible();
+    await expect(this.medicalHistory).toBeVisible();
+    await expect(this.currentMedications).toBeVisible();
+    await expect(this.previousTreatments).toBeVisible();
+  }
+
+  async expectRequiredValidation() {
+    await this.submit.click();
+    const valid = await this.page.locator("#patient-form").evaluate(form => form.checkValidity());
+    expect(valid).toBe(false);
   }
 
   async saveAndAcceptDialog(expectedText) {

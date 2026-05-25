@@ -17,7 +17,7 @@ test("api: creates, lists, updates status and creates visit from appointment", a
   const patient = await createPatient(request, baseURL, {
     firstName: `${TEST_PREFIX}${stamp}`,
     lastName: "Patient",
-    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.test`
+    email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.com`
   });
 
   const appointment = await createAppointment(request, baseURL, {
@@ -56,7 +56,7 @@ test("api regression: prevents doctor and chair overlapping active appointments"
   const patient = await createPatient(request, baseURL, {
     firstName: `${TEST_PREFIX}Conflict${stamp}`,
     lastName: "Patient",
-    email: `${TEST_PREFIX.toLowerCase()}.conflict.${stamp}@example.test`
+    email: `${TEST_PREFIX.toLowerCase()}.conflict.${stamp}@example.com`
   });
 
   await createAppointment(request, baseURL, {
@@ -92,7 +92,7 @@ test("integration: director configures Google Calendar settings and sync queue i
   const update = await request.put(`${baseURL}/api/director/google-calendar/settings`, {
     headers: authHeaders("director"),
     data: {
-      connectedEmail: "ordinacija.drrosa@example.test",
+      connectedEmail: "ordinacija.drrosa@example.com",
       calendarId: "primary",
       calendarName: "Dr Rosa - Termini",
       syncEnabled: true,
@@ -103,6 +103,6 @@ test("integration: director configures Google Calendar settings and sync queue i
   expect(update.ok()).toBeTruthy();
 
   const saved = await apiGet(request, baseURL, "/api/director/google-calendar/settings", "director");
-  expect(saved.connectedEmail).toBe("ordinacija.drrosa@example.test");
+  expect(saved.connectedEmail).toBe("ordinacija.drrosa@example.com");
   expect(saved.syncEnabled).toBeTruthy();
 });
