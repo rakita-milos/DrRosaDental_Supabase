@@ -180,9 +180,15 @@ function applyMigrations() {
   ensureColumn('payments', 'currency', "TEXT NOT NULL DEFAULT 'EUR'");
   ensureColumn('treatments', 'price', "REAL NOT NULL DEFAULT 0");
   ensureColumn('treatments', 'discount', "REAL NOT NULL DEFAULT 0");
+  ensureColumn('clinical_chart_entries', 'price', "REAL NOT NULL DEFAULT 0");
+  ensureColumn('clinical_chart_entries', 'currency', "TEXT NOT NULL DEFAULT 'EUR'");
+  ensureColumn('clinical_chart_entries', 'price_rsd', "REAL NOT NULL DEFAULT 0");
+  ensureColumn('clinical_chart_entries', 'exchange_rate_to_rsd', "REAL NOT NULL DEFAULT 0");
+  ensureColumn('patient_consents', 'updated_at', 'TEXT');
   ensureCodebookTable();
   ensureColumn('codebook_items', 'metadata', "TEXT");
   ensureDefaultShiftMetadata();
+  ensureDefaultCurrencyMetadata();
 }
 
 function ensureClinicalWorkflowTables() {
@@ -199,6 +205,10 @@ function ensureClinicalWorkflowTables() {
       procedure_code TEXT,
       status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'in_progress', 'completed', 'watch', 'referred')),
       phase INTEGER NOT NULL DEFAULT 1,
+      price REAL NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'EUR',
+      price_rsd REAL NOT NULL DEFAULT 0,
+      exchange_rate_to_rsd REAL NOT NULL DEFAULT 0,
       provider_id INTEGER REFERENCES doctors(id),
       notes TEXT,
       created_by INTEGER REFERENCES users(id),
@@ -670,6 +680,13 @@ function ensureDefaultShiftMetadata() {
   update.run(JSON.stringify({ timeFrom: '14:00', timeTo: '20:00', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] }), 'shift', 'Druga smena', '');
 }
 
+function ensureDefaultCurrencyMetadata() {
+  const update = db.prepare('UPDATE codebook_items SET metadata = ? WHERE type = ? AND value = ? AND (metadata IS NULL OR metadata = ?)');
+  update.run(JSON.stringify({ exchangeRate: 117, rateDate: 'manual', rateBase: 'EUR', rateCurrency: 'RSD', rateSource: 'default' }), 'currency', 'EUR', '');
+  update.run(JSON.stringify({ exchangeRate: 1, rateDate: 'manual', rateBase: 'RSD', rateCurrency: 'RSD', rateSource: 'default' }), 'currency', 'RSD', '');
+  update.run(JSON.stringify({ exchangeRate: 108, rateDate: 'manual', rateBase: 'USD', rateCurrency: 'RSD', rateSource: 'default' }), 'currency', 'USD', '');
+}
+
 function seedCodebooks() {
   const count = db.prepare('SELECT COUNT(*) as count FROM codebook_items').get().count;
   if (count > 0) return;
@@ -708,7 +725,11 @@ function seedCodebooks() {
   ].forEach(([value, groupName, price], index) => add('procedure', value, value, groupName, price, index + 1));
   ['Zakazano', 'U tijeku', 'Zavrseno', 'Otkazano'].forEach((item, index) => add('visit_status', item, item, null, 0, index + 1));
   ['Placeno', 'Dugovanje', 'Delimicno'].forEach((item, index) => add('payment_status', item, item, null, 0, index + 1));
-  ['EUR', 'RSD', 'USD'].forEach((item, index) => add('currency', item, item, null, 0, index + 1));
+  [
+    ['EUR', { exchangeRate: 117, rateDate: 'manual', rateBase: 'EUR', rateCurrency: 'RSD', rateSource: 'default' }],
+    ['RSD', { exchangeRate: 1, rateDate: 'manual', rateBase: 'RSD', rateCurrency: 'RSD', rateSource: 'default' }],
+    ['USD', { exchangeRate: 108, rateDate: 'manual', rateBase: 'USD', rateCurrency: 'RSD', rateSource: 'default' }]
+  ].forEach(([item, metadata], index) => add('currency', item, item, null, 0, index + 1, metadata));
   add('shift', 'Prva smena', 'Prva smena', null, 0, 1, { timeFrom: '08:00', timeTo: '14:00', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] });
   add('shift', 'Druga smena', 'Druga smena', null, 0, 2, { timeFrom: '14:00', timeTo: '20:00', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] });
 }
@@ -1494,8 +1515,8 @@ async function processCalendarSyncQueue({ limit = 10 } = {}) {
 }
 
 const DOCUMENT_TYPES = new Set(['rtg', 'ortopan', 'photo', 'finding', 'lab', 'consent', 'invoice', 'other']);
-const ALLOWED_DOCUMENT_MIME = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
-const ALLOWED_SCAN_EXTENSIONS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp']);
+const ALLOWED_DOCUMENT_MIME = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'application/dicom', 'application/octet-stream']);
+const ALLOWED_SCAN_EXTENSIONS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.dcm', '.dicom']);
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
 const uploadRoot = path.resolve(__dirname, process.env.UPLOAD_DIR || './uploads');
 const scannerInboxDir = path.resolve(__dirname, process.env.SCANNER_IMPORT_DIR || './data/scanner-inbox');
@@ -1560,6 +1581,7 @@ function safeExtension(filename, mimeType) {
   if (mimeType === 'image/jpeg') return '.jpg';
   if (mimeType === 'image/png') return '.png';
   if (mimeType === 'image/webp') return '.webp';
+  if (mimeType === 'application/dicom') return '.dcm';
   return '';
 }
 
@@ -1569,6 +1591,7 @@ function mimeFromExtension(filename) {
   if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
   if (ext === '.png') return 'image/png';
   if (ext === '.webp') return 'image/webp';
+  if (ext === '.dcm' || ext === '.dicom') return 'application/dicom';
   return 'application/octet-stream';
 }
 
@@ -1595,7 +1618,7 @@ async function savePatientDocument({ patientId, visitRecordId, documentType, tit
     throw error;
   }
   if (!ALLOWED_DOCUMENT_MIME.has(mimeType)) {
-    const error = new Error('Dozvoljeni su samo PDF, JPG, PNG i WEBP fajlovi.');
+    const error = new Error('Dozvoljeni su PDF, JPG, PNG, WEBP i DICOM fajlovi.');
     error.status = 400;
     throw error;
   }
@@ -2116,6 +2139,41 @@ app.delete('/api/documents/:id', authenticateToken, (req, res) => {
   } catch (error) {
     console.error('Delete document error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/documents/:id', authenticateToken, (req, res) => {
+  try {
+    const documentId = positiveInteger(req.params.id);
+    const current = db.prepare('SELECT * FROM patient_documents WHERE id = ? AND is_deleted = 0').get(documentId);
+    if (!current) return res.status(404).json({ error: 'Dokument nije pronadjen' });
+
+    db.prepare(`
+      UPDATE patient_documents
+      SET visit_record_id = ?, document_type = ?, title = ?, description = ?, document_date = ?,
+          imaging_modality = ?, tooth_number = ?, acquisition_date = ?, dicom_study_uid = ?,
+          claim_attachment_ready = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      positiveInteger(req.body.visitRecordId || req.body.visit_record_id) || null,
+      normalizeDocumentType(req.body.documentType || req.body.document_type || current.document_type),
+      cleanText(req.body.title ?? current.title, { max: 160, required: true }),
+      cleanText(req.body.description ?? current.description, { max: 1000 }),
+      cleanText(req.body.documentDate ?? req.body.document_date ?? current.document_date, { max: 20 }),
+      cleanText(req.body.imagingModality ?? req.body.imaging_modality ?? current.imaging_modality, { max: 40 }),
+      cleanText(req.body.toothNumber ?? req.body.tooth_number ?? current.tooth_number, { max: 40 }),
+      cleanText(req.body.acquisitionDate ?? req.body.acquisition_date ?? current.acquisition_date, { max: 20 }),
+      cleanText(req.body.dicomStudyUid ?? req.body.dicom_study_uid ?? current.dicom_study_uid, { max: 120 }),
+      req.body.claimAttachmentReady === undefined && req.body.claim_attachment_ready === undefined
+        ? current.claim_attachment_ready
+        : normalizeBoolean(req.body.claimAttachmentReady ?? req.body.claim_attachment_ready),
+      documentId
+    );
+    auditLog({ userId: req.user.id, action: 'document_updated', entityType: 'document', entityId: documentId, req });
+    res.json(serializeDocument(db.prepare('SELECT * FROM patient_documents WHERE id = ?').get(documentId)));
+  } catch (error) {
+    console.error('Update document error:', error);
+    res.status(500).json({ error: 'Dokument nije sacuvan.' });
   }
 });
 
@@ -2888,6 +2946,10 @@ function serializeClinicalChart(row) {
     procedureCode: row.procedure_code || '',
     status: row.status,
     phase: Number(row.phase || 1),
+    price: Number(row.price || 0),
+    currency: row.currency || 'EUR',
+    priceRsd: Number(row.price_rsd || 0),
+    exchangeRateToRsd: Number(row.exchange_rate_to_rsd || 0),
     providerId: row.provider_id,
     notes: row.notes || '',
     createdAt: row.created_at,
@@ -2941,8 +3003,8 @@ app.post('/api/patients/:id/clinical-chart', authenticateToken, (req, res) => {
     const result = db.prepare(`
       INSERT INTO clinical_chart_entries (
         patient_id, visit_record_id, tooth_number, surfaces, cdt_code, ada_code, diagnosis,
-        procedure_code, status, phase, provider_id, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        procedure_code, status, phase, price, currency, price_rsd, exchange_rate_to_rsd, provider_id, notes, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       patientId,
       positiveInteger(req.body.visitRecordId || req.body.visit_record_id),
@@ -2954,6 +3016,10 @@ app.post('/api/patients/:id/clinical-chart', authenticateToken, (req, res) => {
       cleanText(req.body.procedureCode || req.body.procedure_code, { max: 80 }),
       status,
       Math.max(1, Number(req.body.phase || 1)),
+      money(req.body.price),
+      normalizeCurrency(req.body.currency),
+      money(req.body.priceRsd || req.body.price_rsd),
+      money(req.body.exchangeRateToRsd || req.body.exchange_rate_to_rsd),
       positiveInteger(req.body.providerId || req.body.provider_id),
       cleanText(req.body.notes, { max: 2000 }),
       req.user.id
@@ -2980,7 +3046,8 @@ app.put('/api/clinical-chart/:id', authenticateToken, (req, res) => {
     db.prepare(`
       UPDATE clinical_chart_entries
       SET tooth_number = ?, surfaces = ?, cdt_code = ?, ada_code = ?, diagnosis = ?,
-          procedure_code = ?, status = ?, phase = ?, provider_id = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+          procedure_code = ?, status = ?, phase = ?, price = ?, currency = ?, price_rsd = ?,
+          exchange_rate_to_rsd = ?, provider_id = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
       cleanText(req.body.toothNumber || req.body.tooth_number || existing.tooth_number, { max: 20, required: true }),
@@ -2991,6 +3058,10 @@ app.put('/api/clinical-chart/:id', authenticateToken, (req, res) => {
       cleanText(req.body.procedureCode || req.body.procedure_code || existing.procedure_code, { max: 80 }),
       status,
       Math.max(1, Number(req.body.phase || existing.phase || 1)),
+      money(req.body.price ?? existing.price),
+      normalizeCurrency(req.body.currency || existing.currency),
+      money(req.body.priceRsd ?? req.body.price_rsd ?? existing.price_rsd),
+      money(req.body.exchangeRateToRsd ?? req.body.exchange_rate_to_rsd ?? existing.exchange_rate_to_rsd),
       positiveInteger(req.body.providerId || req.body.provider_id || existing.provider_id),
       cleanText(req.body.notes ?? existing.notes, { max: 2000 }),
       chartId
@@ -3073,6 +3144,45 @@ app.post('/api/patients/:id/clinical-notes', authenticateToken, (req, res) => {
   }
 });
 
+app.put('/api/clinical-notes/:id', authenticateToken, (req, res) => {
+  try {
+    const noteId = positiveInteger(req.params.id);
+    const current = db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(noteId);
+    if (!current) return res.status(404).json({ error: 'Klinicka beleska nije pronadjena' });
+    db.prepare(`
+      UPDATE clinical_notes
+      SET visit_record_id = ?, template_id = ?, title = ?, body = ?, signed_by = ?, signed_at = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      positiveInteger(req.body.visitRecordId || req.body.visit_record_id) || current.visit_record_id,
+      positiveInteger(req.body.templateId || req.body.template_id) || current.template_id,
+      cleanText(req.body.title ?? current.title, { max: 160, required: true }),
+      cleanText(req.body.body ?? current.body, { max: 8000, required: true }),
+      cleanText(req.body.signedBy ?? req.body.signed_by ?? current.signed_by, { max: 160 }),
+      req.body.signedBy || req.body.signed_by ? (current.signed_at || new Date().toISOString()) : current.signed_at,
+      noteId
+    );
+    auditLog({ userId: req.user.id, action: 'clinical_note_updated', entityType: 'clinical_note', entityId: noteId, req });
+    res.json(serializeClinicalNote(db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(noteId)));
+  } catch (error) {
+    console.error('Update clinical note error:', error);
+    res.status(500).json({ error: 'Klinicka beleska nije sacuvana.' });
+  }
+});
+
+app.delete('/api/clinical-notes/:id', authenticateToken, (req, res) => {
+  try {
+    const noteId = positiveInteger(req.params.id);
+    if (!rowExists('clinical_notes', noteId)) return res.status(404).json({ error: 'Klinicka beleska nije pronadjena' });
+    db.prepare('DELETE FROM clinical_notes WHERE id = ?').run(noteId);
+    auditLog({ userId: req.user.id, action: 'clinical_note_deleted', entityType: 'clinical_note', entityId: noteId, req });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete clinical note error:', error);
+    res.status(500).json({ error: 'Klinicka beleska nije obrisana.' });
+  }
+});
+
 app.post('/api/clinical-notes/:id/sign', authenticateToken, (req, res) => {
   try {
     const noteId = positiveInteger(req.params.id);
@@ -3119,6 +3229,47 @@ app.post('/api/patients/:id/consents', authenticateToken, (req, res) => {
   } catch (error) {
     console.error('Create consent error:', error);
     res.status(500).json({ error: 'Consent nije sacuvan.' });
+  }
+});
+
+app.put('/api/consents/:id', authenticateToken, (req, res) => {
+  try {
+    const consentId = positiveInteger(req.params.id);
+    const current = db.prepare('SELECT * FROM patient_consents WHERE id = ?').get(consentId);
+    if (!current) return res.status(404).json({ error: 'Saglasnost nije pronadjena' });
+    db.prepare(`
+      UPDATE patient_consents
+      SET treatment_plan_id = ?, consent_type = ?, title = ?, body = ?, signer_name = ?,
+          signature_data = ?, signed_at = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      positiveInteger(req.body.treatmentPlanId || req.body.treatment_plan_id) || current.treatment_plan_id,
+      cleanText(req.body.consentType ?? req.body.consent_type ?? current.consent_type, { max: 80, required: true }),
+      cleanText(req.body.title ?? current.title, { max: 160, required: true }),
+      cleanText(req.body.body ?? current.body, { max: 8000, required: true }),
+      cleanText(req.body.signerName ?? req.body.signer_name ?? current.signer_name, { max: 160, required: true }),
+      cleanText(req.body.signatureData ?? req.body.signature_data ?? current.signature_data, { max: 4000, required: true }),
+      current.signed_at || new Date().toISOString(),
+      consentId
+    );
+    auditLog({ userId: req.user.id, action: 'consent_updated', entityType: 'consent', entityId: consentId, req });
+    res.json(serializeConsent(db.prepare('SELECT * FROM patient_consents WHERE id = ?').get(consentId)));
+  } catch (error) {
+    console.error('Update consent error:', error);
+    res.status(500).json({ error: 'Saglasnost nije sacuvana.' });
+  }
+});
+
+app.delete('/api/consents/:id', authenticateToken, (req, res) => {
+  try {
+    const consentId = positiveInteger(req.params.id);
+    if (!rowExists('patient_consents', consentId)) return res.status(404).json({ error: 'Saglasnost nije pronadjena' });
+    db.prepare('DELETE FROM patient_consents WHERE id = ?').run(consentId);
+    auditLog({ userId: req.user.id, action: 'consent_deleted', entityType: 'consent', entityId: consentId, req });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete consent error:', error);
+    res.status(500).json({ error: 'Saglasnost nije obrisana.' });
   }
 });
 
@@ -3279,11 +3430,14 @@ app.get('/api/patients/:id/invoices', authenticateToken, (req, res) => {
 app.post('/api/patients/:id/invoices', authenticateToken, (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
+    const items = Array.isArray(req.body.items) ? req.body.items : [];
+    if (items.length === 0) return res.status(400).json({ error: 'Dodajte bar jednu stavku racuna.' });
     const result = db.prepare(`
       INSERT INTO invoices (patient_id, visit_record_id, invoice_number, status, issue_date, due_date, currency, discount, tax, notes, created_by)
       VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, ?, ?)
     `).run(patientId, positiveInteger(req.body.visitRecordId || req.body.visit_record_id), cleanText(req.body.invoiceNumber || invoiceNumber(), { max: 80, required: true }), cleanText(req.body.issueDate || req.body.issue_date || todayIsoDate(), { max: 20, required: true }), cleanText(req.body.dueDate || req.body.due_date, { max: 20 }), normalizeCurrency(req.body.currency), money(req.body.discount), money(req.body.tax), cleanText(req.body.notes, { max: 2000 }), req.user.id);
-    saveInvoiceItems(result.lastInsertRowid, req.body.items || []);
+    saveInvoiceItems(result.lastInsertRowid, items);
+    recalculateInvoice(result.lastInsertRowid);
     const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(result.lastInsertRowid);
     addLedgerEntry({
       patientId,
@@ -3400,6 +3554,11 @@ app.get('/api/patients/:id/insurance-claims', authenticateToken, (req, res) => {
 app.post('/api/patients/:id/insurance-claims', authenticateToken, (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
+    if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Pacijent nije pronadjen.' });
+    const provider = cleanText(req.body.provider, { max: 160 });
+    const requestedAmount = money(req.body.requestedAmount || req.body.requested_amount);
+    if (!provider) return res.status(400).json({ error: 'Unesite naziv osiguranja.' });
+    if (requestedAmount <= 0) return res.status(400).json({ error: 'Unesite trazeni iznos veci od 0.' });
     const result = db.prepare(`
       INSERT INTO insurance_claims (
         patient_id, visit_record_id, invoice_id, provider, policy_number, claim_number, status,
@@ -3409,11 +3568,11 @@ app.post('/api/patients/:id/insurance-claims', authenticateToken, (req, res) => 
       patientId,
       positiveInteger(req.body.visitRecordId || req.body.visit_record_id),
       positiveInteger(req.body.invoiceId || req.body.invoice_id),
-      cleanText(req.body.provider, { max: 160, required: true }),
+      provider,
       cleanText(req.body.policyNumber || req.body.policy_number, { max: 120 }),
       cleanText(req.body.claimNumber || req.body.claim_number, { max: 120 }),
       ['draft', 'eligibility_checked', 'preauth_sent', 'submitted', 'approved', 'partially_approved', 'denied', 'paid'].includes(req.body.status) ? req.body.status : 'draft',
-      money(req.body.requestedAmount || req.body.requested_amount),
+      requestedAmount,
       money(req.body.approvedAmount || req.body.approved_amount),
       cleanText(req.body.submittedAt || req.body.submitted_at, { max: 40 }),
       cleanText(req.body.decisionAt || req.body.decision_at, { max: 40 }),
@@ -3425,7 +3584,7 @@ app.post('/api/patients/:id/insurance-claims', authenticateToken, (req, res) => 
     res.status(201).json(serializeClaim(db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(result.lastInsertRowid)));
   } catch (error) {
     console.error('Create insurance claim error:', error);
-    res.status(500).json({ error: 'Insurance claim nije sacuvan.' });
+    res.status(500).json({ error: 'Zahtev za osiguranje nije sacuvan.' });
   }
 });
 

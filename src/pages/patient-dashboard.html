@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pacijent Dashboard | Dr Rosa</title>
+  <title>Karton pacijenta | Dr Rosa</title>
   <link rel="stylesheet" href="../styles/styles.css" />
 </head>
 <body>
@@ -14,12 +14,12 @@
           <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
         </a>
         <div>
-          <p class="eyebrow">Pacijent Dashboard</p>
+          <p class="eyebrow">Karton pacijenta</p>
           <h1 id="patient-name-title">Detalji pacijenta</h1>
         </div>
       </div>
       <nav class="topbar-actions" aria-label="Glavna navigacija">
-        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="index.html" class="nav-link">Kontrolna tabla</a>
         <a href="calendar.html" class="nav-link">Kalendar</a>
         <a href="new-entry.html" class="nav-link">Novi unos</a>
         <a href="new-patient.html" class="nav-link">Novi pacijent</a>
@@ -66,12 +66,12 @@
         </div>
         <div class="patient-tabs" role="tablist" aria-label="Karton pacijenta">
           <button class="patient-tab active" type="button" data-patient-tab="medical-card">Karton</button>
-          <button class="patient-tab" type="button" data-patient-tab="clinical-chart-card">Charting</button>
-          <button class="patient-tab" type="button" data-patient-tab="clinical-notes-card">Clinical notes</button>
-          <button class="patient-tab" type="button" data-patient-tab="consents-card">Consent</button>
+          <button class="patient-tab" type="button" data-patient-tab="clinical-chart-card">Zubni status</button>
+          <button class="patient-tab" type="button" data-patient-tab="clinical-notes-card">Klinicke beleske</button>
+          <button class="patient-tab" type="button" data-patient-tab="consents-card">Saglasnosti</button>
           <button class="patient-tab" type="button" data-patient-tab="documents-card">Dokumenti</button>
           <button class="patient-tab" type="button" data-patient-tab="plans-card">Plan terapije</button>
-          <button class="patient-tab" type="button" data-patient-tab="perio-card">Perio</button>
+          <button class="patient-tab" type="button" data-patient-tab="perio-card">Parodontologija</button>
           <button class="patient-tab" type="button" data-patient-tab="invoices-card">Racuni</button>
           <button class="patient-tab" type="button" data-patient-tab="insurance-card">Osiguranje</button>
         </div>
@@ -133,8 +133,9 @@
 
         <div class="patient-tab-panel" id="clinical-chart-card">
           <form id="clinical-chart-form" class="admin-codebook-form">
+            <input id="clinical-chart-entry-id" type="hidden" />
             <div class="input-grid">
-              <label>Zub
+              <label><span>Zub <span class="required-marker">*</span></span>
                 <input id="clinical-tooth" placeholder="16" required />
               </label>
               <label>Povrsine
@@ -158,6 +159,16 @@
               <label>Faza plana
                 <input id="clinical-phase" type="number" min="1" value="1" />
               </label>
+              <label>Cena
+                <input id="clinical-price" type="number" min="0" step="0.01" />
+              </label>
+              <label>Valuta
+                <select id="clinical-currency">
+                  <option value="EUR">EUR</option>
+                  <option value="RSD">RSD</option>
+                  <option value="USD">USD</option>
+                </select>
+              </label>
               <label>Dijagnoza
                 <input id="clinical-diagnosis" />
               </label>
@@ -168,8 +179,10 @@
             <label>Napomena
               <textarea id="clinical-notes" rows="3"></textarea>
             </label>
+            <div id="clinical-price-preview" class="info-card">RSD iznos: 0.00 RSD</div>
             <div class="form-actions">
-              <button class="primary-btn" type="submit">Sacuvaj charting</button>
+              <button class="primary-btn" type="submit">Sacuvaj zubni status</button>
+              <button class="secondary-btn" id="cancel-clinical-chart-edit-btn" type="button" hidden>Odustani od izmene</button>
             </div>
             <p id="clinical-chart-message" class="form-alert" role="status"></p>
           </form>
@@ -178,30 +191,33 @@
 
         <div class="patient-tab-panel" id="clinical-notes-card">
           <form id="clinical-note-form" class="admin-codebook-form">
+            <input id="clinical-note-id" type="hidden" />
             <div class="input-grid">
-              <label>Template
+              <label>Sablon
                 <select id="clinical-note-template"></select>
               </label>
-              <label>Naslov
+              <label><span>Naslov <span class="required-marker">*</span></span>
                 <input id="clinical-note-title" required />
               </label>
               <label>Potpisuje
                 <input id="clinical-note-signed-by" placeholder="Dr Rosa" />
               </label>
             </div>
-            <label>Clinical note
+            <label><span>Klinicka beleska <span class="required-marker">*</span></span>
               <textarea id="clinical-note-body" rows="8" required></textarea>
             </label>
             <div class="form-actions">
-              <button class="primary-btn" type="submit">Sacuvaj note</button>
+              <button class="primary-btn" type="submit">Sacuvaj belesku</button>
+              <button class="secondary-btn" id="cancel-clinical-note-edit-btn" type="button" hidden>Odustani od izmene</button>
             </div>
             <p id="clinical-note-message" class="form-alert" role="status"></p>
           </form>
-          <div class="table-wrap"><table><thead><tr><th>Note</th><th>Potpis</th><th>Datum</th><th>Akcije</th></tr></thead><tbody id="clinical-notes-body"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Beleska</th><th>Potpis</th><th>Datum</th><th>Akcije</th></tr></thead><tbody id="clinical-notes-body"></tbody></table></div>
         </div>
 
         <div class="patient-tab-panel" id="consents-card">
           <form id="patient-consent-form" class="admin-codebook-form">
+            <input id="consent-id" type="hidden" />
             <div class="input-grid">
               <label>Tip saglasnosti
                 <select id="consent-type">
@@ -211,29 +227,31 @@
                   <option value="financial">Finansije</option>
                 </select>
               </label>
-              <label>Naslov
+              <label><span>Naslov <span class="required-marker">*</span></span>
                 <input id="consent-title" required />
               </label>
-              <label>Potpisnik
+              <label><span>Potpisnik <span class="required-marker">*</span></span>
                 <input id="consent-signer" required />
               </label>
             </div>
-            <label>Tekst saglasnosti
+            <label><span>Tekst saglasnosti <span class="required-marker">*</span></span>
               <textarea id="consent-body" rows="6" required></textarea>
             </label>
-            <label>Potpis
+            <label><span>Potpis <span class="required-marker">*</span></span>
               <input id="consent-signature" placeholder="Ime i prezime / digitalni potpis" required />
             </label>
             <div class="form-actions">
-              <button class="primary-btn" type="submit">Sacuvaj consent</button>
+              <button class="primary-btn" type="submit">Sacuvaj saglasnost</button>
+              <button class="secondary-btn" id="cancel-consent-edit-btn" type="button" hidden>Odustani od izmene</button>
             </div>
             <p id="consent-message" class="form-alert" role="status"></p>
           </form>
-          <div class="table-wrap"><table><thead><tr><th>Saglasnost</th><th>Potpisnik</th><th>Datum</th></tr></thead><tbody id="patient-consents-body"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Saglasnost</th><th>Potpisnik</th><th>Datum</th><th>Akcije</th></tr></thead><tbody id="patient-consents-body"></tbody></table></div>
         </div>
 
         <div class="patient-tab-panel" id="documents-card">
           <form id="document-form" class="admin-codebook-form">
+            <input id="document-id" type="hidden" />
             <div class="input-grid">
               <label>
                 Tip dokumenta
@@ -249,7 +267,7 @@
                 </select>
               </label>
               <label>
-                Naziv
+                <span>Naziv <span class="required-marker">*</span></span>
                 <input id="document-title" type="text" required />
               </label>
               <label>
@@ -283,12 +301,13 @@
                 <textarea id="document-description" rows="2"></textarea>
               </label>
               <label class="full-width">
-                Upload fajla
-                <input id="document-file" type="file" accept=".pdf,image/jpeg,image/png,image/webp" />
+                Otpremanje fajla
+                <input id="document-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.dcm,.dicom,application/pdf,image/jpeg,image/png,image/webp,application/dicom" />
               </label>
             </div>
             <div class="form-actions">
-              <button class="primary-btn" id="upload-document-btn" type="submit">Upload fajla</button>
+              <button class="primary-btn" id="upload-document-btn" type="submit">Otpremi fajl</button>
+              <button class="secondary-btn" id="cancel-document-edit-btn" type="button" hidden>Odustani od izmene</button>
               <button class="secondary-btn" id="import-scan-btn" type="button">Uvezi poslednji sken</button>
             </div>
             <p id="document-message" class="form-alert" role="status"></p>
@@ -309,6 +328,45 @@
               </thead>
               <tbody id="patient-documents-body"></tbody>
             </table>
+          </div>
+
+          <div class="imaging-viewer" id="imaging-viewer" hidden>
+            <div class="imaging-viewer-header">
+              <div>
+                <p class="eyebrow">Pregled snimka</p>
+                <h3 id="imaging-viewer-title">Snimak</h3>
+                <p id="imaging-viewer-meta" class="muted"></p>
+              </div>
+              <div class="imaging-viewer-actions">
+                <button class="secondary-btn" id="imaging-download-btn" type="button">Preuzmi</button>
+                <button class="secondary-btn" id="imaging-close-btn" type="button">Zatvori</button>
+              </div>
+            </div>
+
+            <div class="imaging-toolbar" aria-label="Kontrole snimka">
+              <button class="secondary-btn" type="button" data-imaging-tool="zoom-out">-</button>
+              <button class="secondary-btn" type="button" data-imaging-tool="zoom-in">+</button>
+              <button class="secondary-btn" type="button" data-imaging-tool="fit">Prilagodi</button>
+              <button class="secondary-btn" type="button" data-imaging-tool="rotate-left">Rotiraj levo</button>
+              <button class="secondary-btn" type="button" data-imaging-tool="rotate-right">Rotiraj desno</button>
+              <button class="secondary-btn" type="button" data-imaging-tool="invert">Invertuj</button>
+              <button class="secondary-btn" type="button" data-imaging-tool="reset">Resetuj</button>
+              <label>
+                Svetlina
+                <input id="imaging-brightness" type="range" min="50" max="180" value="100" />
+              </label>
+              <label>
+                Kontrast
+                <input id="imaging-contrast" type="range" min="50" max="220" value="100" />
+              </label>
+            </div>
+
+            <div class="imaging-stage" id="imaging-stage">
+              <img id="imaging-image" alt="Dentalni snimak" draggable="false" hidden />
+              <canvas id="imaging-dicom-canvas" hidden></canvas>
+              <iframe id="imaging-frame" title="Pregled dokumenta" hidden></iframe>
+              <p id="imaging-viewer-empty" class="empty-row" hidden>Pregled nije dostupan za ovaj tip fajla. Koristite Preuzmi.</p>
+            </div>
           </div>
         </div>
 
@@ -339,7 +397,7 @@
                 <input id="plan-item-tooth" placeholder="npr. 16" />
               </label>
               <label>
-                Procedura
+                <span>Procedura <span class="required-marker">*</span></span>
                 <input id="plan-item-procedure" placeholder="Implant" />
               </label>
               <label>
@@ -369,7 +427,7 @@
                 <input id="perio-date" type="date" />
               </label>
               <label>
-                Zub
+                <span>Zub <span class="required-marker">*</span></span>
                 <input id="perio-tooth" placeholder="16" />
               </label>
               <label>
@@ -399,7 +457,7 @@
             </div>
             <div class="form-actions">
               <button class="secondary-btn" id="add-perio-measurement-btn" type="button">Dodaj merenje</button>
-              <button class="primary-btn" type="submit">Sacuvaj perio chart</button>
+              <button class="primary-btn" type="submit">Sacuvaj parodontalni chart</button>
             </div>
             <div id="perio-measurements-preview" class="info-card"></div>
             <p id="perio-message" class="form-alert" role="status"></p>
@@ -419,7 +477,7 @@
                 <input id="invoice-due-date" type="date" />
               </label>
               <label>
-                Stavka
+                <span>Stavka <span class="required-marker">*</span></span>
                 <input id="invoice-item-description" placeholder="Stomatoloska usluga" />
               </label>
               <label>
@@ -442,8 +500,8 @@
           <form id="insurance-form" class="admin-codebook-form">
             <div class="input-grid">
               <label>
-                Osiguranje
-                <input id="insurance-provider" />
+                <span>Osiguranje <span class="required-marker">*</span></span>
+                <input id="insurance-provider" required />
               </label>
               <label>
                 Broj polise
@@ -453,8 +511,8 @@
                 Status
                 <select id="insurance-status">
                   <option value="draft">Nacrt</option>
-                  <option value="eligibility_checked">Eligibility proveren</option>
-                  <option value="preauth_sent">Preauth poslat</option>
+                  <option value="eligibility_checked">Proverena podobnost</option>
+                  <option value="preauth_sent">Predautorizacija poslata</option>
                   <option value="submitted">Poslato</option>
                   <option value="approved">Odobreno</option>
                   <option value="denied">Odbijeno</option>
@@ -462,20 +520,20 @@
                 </select>
               </label>
               <label>
-                Trazeni iznos
-                <input id="insurance-requested" type="number" min="0" step="0.01" />
+                <span>Trazeni iznos <span class="required-marker">*</span></span>
+                <input id="insurance-requested" type="number" min="0" step="0.01" required />
               </label>
               <label class="full-width">
-                Napomene eligibility/preauth
+                Napomene za podobnost/predautorizaciju
                 <textarea id="insurance-notes" rows="3"></textarea>
               </label>
             </div>
             <div class="form-actions">
-              <button class="primary-btn" type="submit">Sacuvaj claim</button>
+              <button class="primary-btn" type="submit">Sacuvaj zahtev</button>
             </div>
             <p id="insurance-message" class="form-alert" role="status"></p>
           </form>
-          <div class="table-wrap"><table><thead><tr><th>Osiguranje</th><th>Status</th><th>Trazeno</th><th>ERA/EOB</th><th>Akcije</th></tr></thead><tbody id="insurance-claims-body"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Osiguranje</th><th>Status</th><th>Trazeno</th><th>Obracun</th><th>Akcije</th></tr></thead><tbody id="insurance-claims-body"></tbody></table></div>
         </div>
       </section>
 

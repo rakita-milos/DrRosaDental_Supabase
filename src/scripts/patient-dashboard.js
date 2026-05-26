@@ -44,6 +44,14 @@ function formatMoney(amount, currency = "EUR") {
   return `${Number(amount || 0).toFixed(2)} ${currency}`;
 }
 
+function setSelectValue(select, value) {
+  if (!select || !value) return;
+  if (!Array.from(select.options).some(item => item.value === value)) {
+    select.appendChild(new Option(value, value));
+  }
+  select.value = value;
+}
+
 function recordDetailsUrl(record) {
   const params = new URLSearchParams({ patient: record.patient });
   if (record.id) params.set("record", record.id);
@@ -133,6 +141,150 @@ const documentsBody = document.getElementById("patient-documents-body");
 let planItemsDraft = [];
 let perioMeasurementsDraft = [];
 let invoiceItemsDraft = [];
+let loadedDocuments = [];
+let loadedClinicalChartEntries = [];
+let loadedClinicalNotes = [];
+let loadedPatientConsents = [];
+let currencyItems = [];
+let imagingObjectUrl = "";
+const imagingState = {
+  documentId: null,
+  url: "",
+  mimeType: "",
+  zoom: 1,
+  rotation: 0,
+  x: 0,
+  y: 0,
+  brightness: 100,
+  contrast: 100,
+  invert: false,
+  dragging: false,
+  dragStartX: 0,
+  dragStartY: 0,
+  originX: 0,
+  originY: 0
+};
+
+const statusLabels = {
+  planned: "Planirano",
+  in_progress: "U toku",
+  completed: "Zavrseno",
+  watch: "Pracenje",
+  referred: "Upucen",
+  draft: "Nacrt",
+  presented: "Prezentovan",
+  accepted: "Prihvacen",
+  declined: "Odbijen",
+  issued: "Izdat",
+  partially_paid: "Delimicno placen",
+  paid: "Placeno",
+  void: "Storniran",
+  refunded: "Refundiran",
+  eligibility_checked: "Proverena podobnost",
+  preauth_sent: "Predautorizacija poslata",
+  submitted: "Poslato",
+  approved: "Odobreno",
+  partially_approved: "Delimicno odobreno",
+  denied: "Odbijeno",
+  eligibility_ok: "Podobnost potvrdjena",
+  eligibility_failed: "Podobnost odbijena",
+  submitted_to_clearinghouse: "Poslato posredniku",
+  era_posted: "Obracun proknjizen",
+  unreconciled: "Nije uskladjeno",
+  reconciled: "Uskladjeno"
+};
+
+const consentTypeLabels = {
+  treatment: "Terapija",
+  surgery: "Hirurgija",
+  privacy: "Privatnost",
+  financial: "Finansije"
+};
+
+const noteCategoryLabels = {
+  general: "Opste",
+  endodontics: "Endodoncija",
+  consent: "Saglasnost"
+};
+
+const imagingModalityLabels = {
+  intraoral_xray: "Intraoralni RTG",
+  panoramic_xray: "Ortopan",
+  cbct: "CBCT",
+  photo: "Fotografija"
+};
+
+const fallbackRsdRates = {
+  EUR: 117,
+  USD: 108,
+  RSD: 1
+};
+
+const fieldLabels = {
+  fileBase64: "Fajl",
+  visitRecordId: "Poseta",
+  documentType: "Tip dokumenta",
+  title: "Naziv",
+  description: "Opis",
+  documentDate: "Datum dokumenta",
+  originalFilename: "Naziv fajla",
+  mimeType: "Tip fajla",
+  imagingModality: "Modalitet snimka",
+  toothNumber: "Zub / regija",
+  acquisitionDate: "Datum snimanja",
+  dicomStudyUid: "DICOM Study UID",
+  claimAttachmentReady: "Spremno za osiguranje",
+  templateId: "Sablon",
+  body: "Tekst",
+  signedBy: "Potpisuje",
+  consentType: "Tip saglasnosti",
+  signerName: "Potpisnik",
+  signatureData: "Potpis"
+};
+
+function labelFromMap(map, value) {
+  return map[value] || value || "-";
+}
+
+function userFacingError(error, fallback) {
+  const raw = error?.message || fallback || "Akcija nije uspela.";
+  return Object.entries(fieldLabels).reduce((message, [field, label]) => {
+    return message.replaceAll(`"${field}"`, `"${label}"`).replaceAll(field, label);
+  }, raw);
+}
+
+function rateToRsd(currency) {
+  const code = String(currency || "EUR").toUpperCase();
+  if (code === "RSD") return 1;
+  const item = currencyItems.find(entry => String(entry.value || "").toUpperCase() === code);
+  const metadata = item?.metadata || {};
+  const rate = Number(metadata.exchangeRate || 0);
+  const base = String(metadata.rateBase || code).toUpperCase();
+  const target = String(metadata.rateCurrency || "RSD").toUpperCase();
+  if (rate > 0 && base === code && target === "RSD") return rate;
+  if (rate > 0 && base === "RSD" && target === code) return 1 / rate;
+  return fallbackRsdRates[code] || 0;
+}
+
+function clinicalPriceState() {
+  const price = Number(document.getElementById("clinical-price")?.value || 0);
+  const currency = document.getElementById("clinical-currency")?.value || "EUR";
+  const exchangeRateToRsd = rateToRsd(currency);
+  const priceRsd = currency === "RSD" ? price : price * exchangeRateToRsd;
+  return { price, currency, exchangeRateToRsd, priceRsd };
+}
+
+function updateClinicalPricePreview() {
+  const preview = document.getElementById("clinical-price-preview");
+  if (!preview) return;
+  const { currency, exchangeRateToRsd, priceRsd } = clinicalPriceState();
+  const rateText = currency === "RSD"
+    ? "Valuta je RSD, preracun nije potreban."
+    : exchangeRateToRsd > 0
+      ? `Kurs: 1 ${currency} = ${exchangeRateToRsd.toFixed(4)} RSD`
+      : `Nema kursa za ${currency}. Unesite kurs u sifarniku valuta.`;
+  preview.innerHTML = `<strong>RSD iznos:</strong> ${formatMoney(priceRsd, "RSD")} <span class="muted">(${rateText})</span>`;
+}
 
 function renderEmpty(message) {
   recordsBody.innerHTML = `<tr><td colspan="10" class="empty-row">${message}</td></tr>`;
@@ -223,23 +375,71 @@ function documentTypeLabel(type) {
   }[type] || type || "-";
 }
 
+function imagingModalityLabel(value) {
+  return labelFromMap(imagingModalityLabels, value);
+}
+
 function renderDocuments(documents) {
+  loadedDocuments = documents;
   documentsBody.innerHTML = documents.length ? documents.map(document => `
     <tr>
       <td>${escapeHtml(document.title)}</td>
       <td>${escapeHtml(documentTypeLabel(document.documentType))}</td>
       <td>${formatDate(document.documentDate || document.createdAt)}</td>
-      <td>${document.source === "scanner" ? "Skener" : "Upload"}</td>
-      <td>${escapeHtml([document.imagingModality, document.toothNumber].filter(Boolean).join(" / ") || "-")}</td>
+      <td>${document.source === "scanner" ? "Skener" : "Otpremanje"}</td>
+      <td>${escapeHtml([imagingModalityLabel(document.imagingModality), document.toothNumber].filter(item => item && item !== "-").join(" / ") || "-")}</td>
       <td>${formatFileSize(document.fileSize)}</td>
       <td>
-        <button class="secondary-btn view-document-btn" type="button" data-document-id="${document.id}">Pogledaj</button>
+        <button class="secondary-btn view-document-btn" type="button" data-document-id="${document.id}">Pregled</button>
+        <button class="secondary-btn edit-document-btn" type="button" data-document-id="${document.id}">Uredi</button>
         <button class="secondary-btn analyze-imaging-btn" type="button" data-document-id="${document.id}">AI pregled</button>
         <button class="secondary-btn download-document-btn" type="button" data-document-id="${document.id}">Preuzmi</button>
         <button class="danger-btn delete-document-btn" type="button" data-document-id="${document.id}">Obrisi</button>
       </td>
     </tr>
   `).join("") : `<tr><td colspan="7" class="empty-row">Nema dokumenata za ovog pacijenta.</td></tr>`;
+}
+
+function documentPayloadFromForm() {
+  return {
+    documentType: document.getElementById("document-type").value,
+    title: document.getElementById("document-title").value,
+    documentDate: document.getElementById("document-date").value,
+    visitRecordId: document.getElementById("document-visit").value,
+    description: document.getElementById("document-description").value,
+    imagingModality: document.getElementById("document-imaging-modality").value,
+    toothNumber: document.getElementById("document-tooth-number").value,
+    acquisitionDate: document.getElementById("document-date").value,
+    dicomStudyUid: document.getElementById("document-dicom-study-uid").value,
+    claimAttachmentReady: Boolean(document.getElementById("document-imaging-modality").value || document.getElementById("document-dicom-study-uid").value)
+  };
+}
+
+function resetDocumentForm(patientRecords) {
+  documentForm.reset();
+  document.getElementById("document-id").value = "";
+  document.getElementById("document-file").required = false;
+  document.getElementById("cancel-document-edit-btn").hidden = true;
+  document.getElementById("upload-document-btn").textContent = "Otpremi fajl";
+  document.getElementById("import-scan-btn").hidden = false;
+  fillVisitOptions(patientRecords);
+}
+
+function fillDocumentForm(documentRow) {
+  document.getElementById("document-id").value = documentRow.id;
+  document.getElementById("document-type").value = documentRow.documentType || "other";
+  document.getElementById("document-title").value = documentRow.title || "";
+  document.getElementById("document-date").value = documentRow.documentDate || documentRow.acquisitionDate || "";
+  document.getElementById("document-imaging-modality").value = documentRow.imagingModality || "";
+  document.getElementById("document-tooth-number").value = documentRow.toothNumber || "";
+  document.getElementById("document-dicom-study-uid").value = documentRow.dicomStudyUid || "";
+  document.getElementById("document-visit").value = documentRow.visitRecordId || "";
+  document.getElementById("document-description").value = documentRow.description || "";
+  document.getElementById("document-file").value = "";
+  document.getElementById("cancel-document-edit-btn").hidden = false;
+  document.getElementById("upload-document-btn").textContent = "Sacuvaj dokument";
+  document.getElementById("import-scan-btn").hidden = true;
+  documentForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function fileToBase64(file) {
@@ -251,13 +451,130 @@ function fileToBase64(file) {
   });
 }
 
-async function openDocument(documentId, download = false) {
+function resetImagingState() {
+  imagingState.zoom = 1;
+  imagingState.rotation = 0;
+  imagingState.x = 0;
+  imagingState.y = 0;
+  imagingState.brightness = 100;
+  imagingState.contrast = 100;
+  imagingState.invert = false;
+  document.getElementById("imaging-brightness").value = "100";
+  document.getElementById("imaging-contrast").value = "100";
+}
+
+function applyImagingTransform() {
+  const image = document.getElementById("imaging-image");
+  image.style.transform = `translate(${imagingState.x}px, ${imagingState.y}px) scale(${imagingState.zoom}) rotate(${imagingState.rotation}deg)`;
+  image.style.filter = `brightness(${imagingState.brightness}%) contrast(${imagingState.contrast}%)${imagingState.invert ? " invert(1)" : ""}`;
+}
+
+function closeImagingViewer() {
+  document.getElementById("imaging-viewer").hidden = true;
+  document.getElementById("imaging-image").hidden = true;
+  document.getElementById("imaging-dicom-canvas").hidden = true;
+  document.getElementById("imaging-frame").hidden = true;
+  document.getElementById("imaging-viewer-empty").hidden = true;
+  if (imagingObjectUrl) URL.revokeObjectURL(imagingObjectUrl);
+  imagingObjectUrl = "";
+  imagingState.documentId = null;
+  imagingState.url = "";
+}
+
+function fitImagingToStage() {
+  const image = document.getElementById("imaging-image");
+  const stage = document.getElementById("imaging-stage");
+  if (image.hidden || !image.naturalWidth || !image.naturalHeight) return;
+  const scaleX = (stage.clientWidth * 0.92) / image.naturalWidth;
+  const scaleY = (stage.clientHeight * 0.92) / image.naturalHeight;
+  imagingState.zoom = Math.max(0.1, Math.min(scaleX, scaleY, 1.6));
+  imagingState.x = 0;
+  imagingState.y = 0;
+  applyImagingTransform();
+}
+
+function initializeImagingViewerControls() {
+  const viewer = document.getElementById("imaging-viewer");
+  const image = document.getElementById("imaging-image");
+  const stage = document.getElementById("imaging-stage");
+  const brightness = document.getElementById("imaging-brightness");
+  const contrast = document.getElementById("imaging-contrast");
+
+  document.getElementById("imaging-close-btn").addEventListener("click", closeImagingViewer);
+  document.getElementById("imaging-download-btn").addEventListener("click", async () => {
+    if (!imagingState.documentId) return;
+    await openDocument(imagingState.documentId, true);
+  });
+
+  viewer.addEventListener("click", event => {
+    const tool = event.target.closest("[data-imaging-tool]")?.dataset.imagingTool;
+    if (!tool || image.hidden) return;
+    if (tool === "zoom-in") imagingState.zoom = Math.min(8, imagingState.zoom + 0.2);
+    if (tool === "zoom-out") imagingState.zoom = Math.max(0.1, imagingState.zoom - 0.2);
+    if (tool === "rotate-left") imagingState.rotation -= 90;
+    if (tool === "rotate-right") imagingState.rotation += 90;
+    if (tool === "invert") imagingState.invert = !imagingState.invert;
+    if (tool === "fit") return fitImagingToStage();
+    if (tool === "reset") resetImagingState();
+    applyImagingTransform();
+  });
+
+  brightness.addEventListener("input", event => {
+    imagingState.brightness = Number(event.target.value || 100);
+    applyImagingTransform();
+  });
+
+  contrast.addEventListener("input", event => {
+    imagingState.contrast = Number(event.target.value || 100);
+    applyImagingTransform();
+  });
+
+  image.addEventListener("load", fitImagingToStage);
+
+  stage.addEventListener("pointerdown", event => {
+    if (image.hidden) return;
+    imagingState.dragging = true;
+    imagingState.dragStartX = event.clientX;
+    imagingState.dragStartY = event.clientY;
+    imagingState.originX = imagingState.x;
+    imagingState.originY = imagingState.y;
+    stage.classList.add("is-dragging");
+    stage.setPointerCapture(event.pointerId);
+  });
+
+  stage.addEventListener("pointermove", event => {
+    if (!imagingState.dragging) return;
+    imagingState.x = imagingState.originX + event.clientX - imagingState.dragStartX;
+    imagingState.y = imagingState.originY + event.clientY - imagingState.dragStartY;
+    applyImagingTransform();
+  });
+
+  stage.addEventListener("pointerup", event => {
+    imagingState.dragging = false;
+    stage.classList.remove("is-dragging");
+    if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
+  });
+
+  stage.addEventListener("wheel", event => {
+    if (image.hidden) return;
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 0.12 : -0.12;
+    imagingState.zoom = Math.max(0.1, Math.min(8, imagingState.zoom + delta));
+    applyImagingTransform();
+  }, { passive: false });
+}
+
+async function fetchDocumentBlob(documentId, download = false) {
   const token = localStorage.getItem("drrosa-token");
   const response = await fetch(`/api/documents/${documentId}/${download ? "download" : "view"}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   if (!response.ok) throw new Error("Dokument nije dostupan.");
-  const blob = await response.blob();
+  return response.blob();
+}
+
+async function openDocument(documentId, download = false) {
+  const blob = await fetchDocumentBlob(documentId, download);
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -267,6 +584,184 @@ async function openDocument(documentId, download = false) {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function isDicomDocument(documentRow, mimeType) {
+  const filename = String(documentRow?.originalFilename || "").toLowerCase();
+  return mimeType === "application/dicom"
+    || filename.endsWith(".dcm")
+    || filename.endsWith(".dicom")
+    || Boolean(documentRow?.dicomStudyUid);
+}
+
+function dicomString(bytes, offset, length) {
+  return Array.from(bytes.slice(offset, offset + length))
+    .map(code => code ? String.fromCharCode(code) : "")
+    .join("")
+    .trim();
+}
+
+function parseDicomImage(buffer) {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  let offset = bytes.length > 132 && dicomString(bytes, 128, 4) === "DICM" ? 132 : 0;
+  const meta = {};
+  const longVr = new Set(["OB", "OW", "OF", "SQ", "UT", "UN"]);
+  let pixelOffset = 0;
+  let pixelLength = 0;
+
+  while (offset + 8 <= bytes.length) {
+    const group = view.getUint16(offset, true);
+    const element = view.getUint16(offset + 2, true);
+    const vr = dicomString(bytes, offset + 4, 2);
+    let valueOffset;
+    let length;
+
+    if (/^[A-Z]{2}$/.test(vr)) {
+      if (longVr.has(vr)) {
+        length = view.getUint32(offset + 8, true);
+        valueOffset = offset + 12;
+      } else {
+        length = view.getUint16(offset + 6, true);
+        valueOffset = offset + 8;
+      }
+    } else {
+      length = view.getUint32(offset + 4, true);
+      valueOffset = offset + 8;
+    }
+
+    if (length === 0xffffffff || valueOffset + length > bytes.length) break;
+    const tag = `${group.toString(16).padStart(4, "0")}${element.toString(16).padStart(4, "0")}`;
+    if (tag === "00280010") meta.rows = view.getUint16(valueOffset, true);
+    if (tag === "00280011") meta.columns = view.getUint16(valueOffset, true);
+    if (tag === "00280100") meta.bitsAllocated = view.getUint16(valueOffset, true);
+    if (tag === "00280103") meta.pixelRepresentation = view.getUint16(valueOffset, true);
+    if (tag === "00280004") meta.photometric = dicomString(bytes, valueOffset, length);
+    if (tag === "00281050") meta.windowCenter = Number(dicomString(bytes, valueOffset, length).split("\\")[0]);
+    if (tag === "00281051") meta.windowWidth = Number(dicomString(bytes, valueOffset, length).split("\\")[0]);
+    if (tag === "00281052") meta.rescaleIntercept = Number(dicomString(bytes, valueOffset, length).split("\\")[0]);
+    if (tag === "00281053") meta.rescaleSlope = Number(dicomString(bytes, valueOffset, length).split("\\")[0]);
+    if (tag === "7fe00010") {
+      pixelOffset = valueOffset;
+      pixelLength = length;
+      break;
+    }
+    offset = valueOffset + length + (length % 2);
+  }
+
+  if (!meta.rows || !meta.columns || !pixelOffset || !pixelLength) {
+    throw new Error("DICOM snimak ne moze da se procita u pregledacu. Preuzmite fajl ili ga otvorite u DICOM programu.");
+  }
+  return { ...meta, pixelOffset, pixelLength };
+}
+
+function renderDicomToCanvas(buffer) {
+  const meta = parseDicomImage(buffer);
+  const canvas = document.getElementById("imaging-dicom-canvas");
+  const ctx = canvas.getContext("2d");
+  const width = meta.columns;
+  const height = meta.rows;
+  const count = width * height;
+  const view = new DataView(buffer, meta.pixelOffset, meta.pixelLength);
+  const pixels = new Float32Array(count);
+  const bits = Number(meta.bitsAllocated || 16);
+  const slope = Number.isFinite(meta.rescaleSlope) ? meta.rescaleSlope : 1;
+  const intercept = Number.isFinite(meta.rescaleIntercept) ? meta.rescaleIntercept : 0;
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (let index = 0; index < count; index += 1) {
+    let value = bits <= 8
+      ? view.getUint8(index)
+      : (meta.pixelRepresentation ? view.getInt16(index * 2, true) : view.getUint16(index * 2, true));
+    value = value * slope + intercept;
+    pixels[index] = value;
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+
+  if (Number.isFinite(meta.windowCenter) && Number.isFinite(meta.windowWidth) && meta.windowWidth > 0) {
+    min = meta.windowCenter - meta.windowWidth / 2;
+    max = meta.windowCenter + meta.windowWidth / 2;
+  }
+
+  const imageData = ctx.createImageData(width, height);
+  const inverted = String(meta.photometric || "").toUpperCase().includes("MONOCHROME1");
+  const range = Math.max(1, max - min);
+  for (let index = 0; index < count; index += 1) {
+    let value = Math.round(((pixels[index] - min) / range) * 255);
+    value = Math.max(0, Math.min(255, inverted ? 255 - value : value));
+    const out = index * 4;
+    imageData.data[out] = value;
+    imageData.data[out + 1] = value;
+    imageData.data[out + 2] = value;
+    imageData.data[out + 3] = 255;
+  }
+
+  canvas.width = width;
+  canvas.height = height;
+  ctx.putImageData(imageData, 0, 0);
+  canvas.style.transform = "none";
+  canvas.hidden = false;
+}
+
+async function openImagingViewer(documentId) {
+  const documentRow = loadedDocuments.find(item => String(item.id) === String(documentId));
+  const blob = await fetchDocumentBlob(documentId, false);
+  const mimeType = blob.type || documentRow?.mimeType || "";
+  if (imagingObjectUrl) URL.revokeObjectURL(imagingObjectUrl);
+  imagingObjectUrl = URL.createObjectURL(blob);
+
+  resetImagingState();
+  imagingState.documentId = documentId;
+  imagingState.url = imagingObjectUrl;
+  imagingState.mimeType = mimeType;
+
+  const viewer = document.getElementById("imaging-viewer");
+  const image = document.getElementById("imaging-image");
+  const dicomCanvas = document.getElementById("imaging-dicom-canvas");
+  const frame = document.getElementById("imaging-frame");
+  const empty = document.getElementById("imaging-viewer-empty");
+  const title = document.getElementById("imaging-viewer-title");
+  const meta = document.getElementById("imaging-viewer-meta");
+  const stage = document.getElementById("imaging-stage");
+
+  title.textContent = documentRow?.title || "Snimak";
+  meta.textContent = [
+    documentTypeLabel(documentRow?.documentType),
+    imagingModalityLabel(documentRow?.imagingModality),
+    documentRow?.toothNumber ? `Zub/regija: ${documentRow.toothNumber}` : "",
+    documentRow?.source === "scanner" ? "Skener" : "Otpremanje",
+    formatFileSize(documentRow?.fileSize)
+  ].filter(Boolean).join(" | ");
+
+  viewer.hidden = false;
+  image.hidden = true;
+  dicomCanvas.hidden = true;
+  frame.hidden = true;
+  empty.hidden = true;
+  stage.classList.remove("is-draggable", "is-dragging");
+
+  if (isDicomDocument(documentRow, mimeType)) {
+    try {
+      renderDicomToCanvas(await blob.arrayBuffer());
+    } catch (error) {
+      empty.textContent = userFacingError(error, "DICOM pregled nije dostupan. Koristite Preuzmi.");
+      empty.hidden = false;
+    }
+  } else if (mimeType.startsWith("image/")) {
+    image.src = imagingObjectUrl;
+    image.hidden = false;
+    stage.classList.add("is-draggable");
+    applyImagingTransform();
+  } else if (mimeType === "application/pdf") {
+    frame.src = imagingObjectUrl;
+    frame.hidden = false;
+  } else {
+    empty.hidden = false;
+  }
+
+  viewer.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function loadDocuments(patientId) {
@@ -289,7 +784,7 @@ function renderPlans(plans) {
   document.getElementById("treatment-plans-body").innerHTML = plans.length ? plans.map(plan => `
     <tr>
       <td>${escapeHtml(plan.title)}<br><small>${plan.items.length} stavki</small></td>
-      <td>${escapeHtml(plan.status)}</td>
+      <td>${escapeHtml(labelFromMap(statusLabels, plan.status))}</td>
       <td>${formatMoney(plan.total, plan.currency)}</td>
       <td>
         <button class="secondary-btn edit-plan-btn" type="button" data-plan-id="${plan.id}">Uredi</button>
@@ -311,7 +806,30 @@ function renderPerioCharts(charts) {
     const deep = chart.measurements.filter(item => item.pocketDepth >= 5).length;
     const bleeding = chart.measurements.filter(item => item.bleeding).length;
     return `<tr><td>${formatDate(chart.chartDate)}</td><td>${chart.measurements.length}</td><td>${deep} dubokih dzepova / ${bleeding} krvarenja</td></tr>`;
-  }).join("") : `<tr><td colspan="3" class="empty-row">Nema perio chartova.</td></tr>`;
+  }).join("") : `<tr><td colspan="3" class="empty-row">Nema parodontalnih chartova.</td></tr>`;
+}
+
+function readPerioMeasurementForm() {
+  const toothNumber = document.getElementById("perio-tooth").value.trim();
+  if (!toothNumber) return null;
+  return {
+    toothNumber,
+    site: document.getElementById("perio-site").value,
+    pocketDepth: Number(document.getElementById("perio-pocket").value || 0),
+    recession: Number(document.getElementById("perio-recession").value || 0),
+    mobility: Number(document.getElementById("perio-mobility").value || 0),
+    furcation: Number(document.getElementById("perio-furcation").value || 0),
+    bleeding: document.getElementById("perio-bleeding").checked
+  };
+}
+
+function clearPerioMeasurementForm() {
+  document.getElementById("perio-tooth").value = "";
+  document.getElementById("perio-pocket").value = "";
+  document.getElementById("perio-recession").value = "";
+  document.getElementById("perio-mobility").value = "";
+  document.getElementById("perio-furcation").value = "";
+  document.getElementById("perio-bleeding").checked = false;
 }
 
 function renderInvoiceDraft() {
@@ -321,11 +839,27 @@ function renderInvoiceDraft() {
     : "<p>Nema stavki racuna.</p>";
 }
 
+function readInvoiceItemForm() {
+  const description = document.getElementById("invoice-item-description").value.trim();
+  if (!description) return null;
+  return {
+    description,
+    quantity: 1,
+    unitPrice: Number(document.getElementById("invoice-item-price").value || 0),
+    discount: 0
+  };
+}
+
+function clearInvoiceItemForm() {
+  document.getElementById("invoice-item-description").value = "";
+  document.getElementById("invoice-item-price").value = "";
+}
+
 function renderInvoices(invoices) {
   document.getElementById("invoices-body").innerHTML = invoices.length ? invoices.map(invoice => `
     <tr>
       <td>${escapeHtml(invoice.invoiceNumber)}</td>
-      <td>${escapeHtml(invoice.status)}</td>
+      <td>${escapeHtml(labelFromMap(statusLabels, invoice.status))}</td>
       <td>${formatMoney(invoice.total, invoice.currency)}</td>
       <td>${formatMoney(invoice.amountPaid, invoice.currency)}</td>
       <td>
@@ -340,63 +874,184 @@ function renderLedger(ledger) {
   const summary = document.getElementById("patient-ledger-summary");
   if (!summary) return;
   const entries = ledger.entries || [];
-  summary.innerHTML = `<strong>Ledger saldo:</strong> ${formatMoney(ledger.balance || 0)} <span class="muted">(${entries.length} knjiženja)</span>`;
+  summary.innerHTML = `<strong>Saldo kartice:</strong> ${formatMoney(ledger.balance || 0)} <span class="muted">(${entries.length} knjizenja)</span>`;
 }
 
 function renderInsuranceClaims(claims) {
   document.getElementById("insurance-claims-body").innerHTML = claims.length ? claims.map(claim => `
     <tr>
       <td>${escapeHtml(claim.provider)}<br><small>${escapeHtml(claim.policyNumber || "-")}</small></td>
-      <td>${escapeHtml(claim.status)}${claim.eligibilityStatus ? `<br><small>${escapeHtml(claim.eligibilityStatus)}</small>` : ""}</td>
+      <td>${escapeHtml(labelFromMap(statusLabels, claim.status))}${claim.eligibilityStatus ? `<br><small>${escapeHtml(labelFromMap(statusLabels, claim.eligibilityStatus))}</small>` : ""}</td>
       <td>${formatMoney(claim.requestedAmount)}</td>
-      <td>${claim.eob ? `${formatMoney(claim.paidAmount)}<br><small>${escapeHtml(claim.eraStatus || "ERA")}</small>` : escapeHtml(claim.denialReason || claim.eligibilityNotes || "-")}</td>
+      <td>${claim.eob ? `${formatMoney(claim.paidAmount)}<br><small>${escapeHtml(labelFromMap(statusLabels, claim.eraStatus) || "Obracun")}</small>` : escapeHtml(claim.denialReason || claim.eligibilityNotes || "-")}</td>
       <td>
-        <button class="secondary-btn claim-eligibility-btn" type="button" data-claim-id="${claim.id}">Eligibility</button>
-        <button class="secondary-btn claim-submit-btn" type="button" data-claim-id="${claim.id}">eClaim</button>
-        <button class="secondary-btn claim-era-btn" type="button" data-claim-id="${claim.id}" data-amount="${claim.approvedAmount || claim.requestedAmount || 0}">ERA</button>
+        <button class="secondary-btn claim-eligibility-btn" type="button" data-claim-id="${claim.id}">Proveri podobnost</button>
+        <button class="secondary-btn claim-submit-btn" type="button" data-claim-id="${claim.id}">Posalji zahtev</button>
+        <button class="secondary-btn claim-era-btn" type="button" data-claim-id="${claim.id}" data-amount="${claim.approvedAmount || claim.requestedAmount || 0}">Proknjizi obracun</button>
       </td>
     </tr>
-  `).join("") : `<tr><td colspan="5" class="empty-row">Nema insurance claimova.</td></tr>`;
+  `).join("") : `<tr><td colspan="5" class="empty-row">Nema zahteva za osiguranje.</td></tr>`;
 }
 
 function renderClinicalChart(entries) {
+  loadedClinicalChartEntries = entries;
   document.getElementById("clinical-chart-body").innerHTML = entries.length ? entries.map(entry => `
     <tr>
       <td>${escapeHtml(entry.toothNumber)}<br><small>${escapeHtml((entry.surfaces || []).join(", ") || "-")}</small></td>
       <td>${escapeHtml([entry.cdtCode, entry.adaCode].filter(Boolean).join(" / ") || "-")}</td>
-      <td>${escapeHtml(entry.status)}<br><small>Faza ${escapeHtml(entry.phase)}</small></td>
+      <td>${escapeHtml(labelFromMap(statusLabels, entry.status))}<br><small>Faza ${escapeHtml(entry.phase)}</small>${Number(entry.price || 0) > 0 ? `<br><small>${formatMoney(entry.price, entry.currency)} / ${formatMoney(entry.priceRsd, "RSD")}</small>` : ""}</td>
       <td>${escapeHtml(entry.diagnosis || entry.notes || "-")}</td>
-      <td><button class="danger-btn delete-clinical-chart-btn" type="button" data-entry-id="${entry.id}">Obrisi</button></td>
+      <td>
+        <button class="secondary-btn edit-clinical-chart-btn" type="button" data-entry-id="${entry.id}">Uredi</button>
+        <button class="danger-btn delete-clinical-chart-btn" type="button" data-entry-id="${entry.id}">Obrisi</button>
+      </td>
     </tr>
-  `).join("") : `<tr><td colspan="5" class="empty-row">Nema dental charting unosa.</td></tr>`;
+  `).join("") : `<tr><td colspan="5" class="empty-row">Nema unosa zubnog statusa.</td></tr>`;
+}
+
+function clinicalChartPayloadFromForm() {
+  const { price, currency, exchangeRateToRsd, priceRsd } = clinicalPriceState();
+  return {
+    toothNumber: document.getElementById("clinical-tooth").value,
+    surfaces: document.getElementById("clinical-surfaces").value.split(",").map(item => item.trim()).filter(Boolean),
+    cdtCode: document.getElementById("clinical-cdt").value,
+    adaCode: document.getElementById("clinical-ada").value,
+    status: document.getElementById("clinical-status").value,
+    phase: Number(document.getElementById("clinical-phase").value || 1),
+    price,
+    currency,
+    priceRsd,
+    exchangeRateToRsd,
+    diagnosis: document.getElementById("clinical-diagnosis").value,
+    procedureCode: document.getElementById("clinical-procedure-code").value,
+    notes: document.getElementById("clinical-notes").value
+  };
+}
+
+function resetClinicalChartForm() {
+  const form = document.getElementById("clinical-chart-form");
+  form.reset();
+  document.getElementById("clinical-chart-entry-id").value = "";
+  document.getElementById("clinical-phase").value = "1";
+  document.getElementById("clinical-currency").value = "EUR";
+  document.getElementById("cancel-clinical-chart-edit-btn").hidden = true;
+  form.querySelector('button[type="submit"]').textContent = "Sacuvaj zubni status";
+  updateClinicalPricePreview();
+}
+
+function fillClinicalChartForm(entry) {
+  document.getElementById("clinical-chart-entry-id").value = entry.id;
+  document.getElementById("clinical-tooth").value = entry.toothNumber || "";
+  document.getElementById("clinical-surfaces").value = (entry.surfaces || []).join(", ");
+  document.getElementById("clinical-cdt").value = entry.cdtCode || "";
+  document.getElementById("clinical-ada").value = entry.adaCode || "";
+  document.getElementById("clinical-status").value = entry.status || "planned";
+  document.getElementById("clinical-phase").value = entry.phase || 1;
+  document.getElementById("clinical-price").value = Number(entry.price || 0) || "";
+  setSelectValue(document.getElementById("clinical-currency"), entry.currency || "EUR");
+  document.getElementById("clinical-diagnosis").value = entry.diagnosis || "";
+  document.getElementById("clinical-procedure-code").value = entry.procedureCode || "";
+  document.getElementById("clinical-notes").value = entry.notes || "";
+  document.getElementById("cancel-clinical-chart-edit-btn").hidden = false;
+  document.getElementById("clinical-chart-form").querySelector('button[type="submit"]').textContent = "Sacuvaj izmenu";
+  updateClinicalPricePreview();
+  document.getElementById("clinical-chart-form").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderClinicalNoteTemplates(templates) {
   const select = document.getElementById("clinical-note-template");
-  select.innerHTML = `<option value="">Prazan note</option>${templates.map(template => `
-    <option value="${template.id}" data-title="${escapeHtml(template.title)}" data-body="${escapeHtml(template.body)}">${escapeHtml(template.category)} - ${escapeHtml(template.title)}</option>
+  select.innerHTML = `<option value="">Prazna beleska</option>${templates.map(template => `
+    <option value="${template.id}" data-title="${escapeHtml(template.title)}" data-body="${escapeHtml(template.body)}">${escapeHtml(labelFromMap(noteCategoryLabels, template.category))} - ${escapeHtml(template.title)}</option>
   `).join("")}`;
 }
 
 function renderClinicalNotes(notes) {
+  loadedClinicalNotes = notes;
   document.getElementById("clinical-notes-body").innerHTML = notes.length ? notes.map(note => `
     <tr>
       <td>${escapeHtml(note.title)}<br><small>${escapeHtml(String(note.body || "").slice(0, 120))}</small></td>
       <td>${note.signedAt ? `${escapeHtml(note.signedBy || "-")}<br><small>${formatDate(note.signedAt)}</small>` : "Nije potpisano"}</td>
       <td>${formatDate(note.createdAt)}</td>
-      <td>${note.signedAt ? "-" : `<button class="primary-btn sign-clinical-note-btn" type="button" data-note-id="${note.id}">Potpis</button>`}</td>
+      <td>
+        <button class="secondary-btn edit-clinical-note-btn" type="button" data-note-id="${note.id}">Uredi</button>
+        ${note.signedAt ? "" : `<button class="primary-btn sign-clinical-note-btn" type="button" data-note-id="${note.id}">Potpis</button>`}
+        <button class="danger-btn delete-clinical-note-btn" type="button" data-note-id="${note.id}">Obrisi</button>
+      </td>
     </tr>
-  `).join("") : `<tr><td colspan="4" class="empty-row">Nema clinical notes.</td></tr>`;
+  `).join("") : `<tr><td colspan="4" class="empty-row">Nema klinickih beleski.</td></tr>`;
 }
 
 function renderPatientConsents(consents) {
+  loadedPatientConsents = consents;
   document.getElementById("patient-consents-body").innerHTML = consents.length ? consents.map(consent => `
     <tr>
-      <td>${escapeHtml(consent.title)}<br><small>${escapeHtml(consent.consentType)}</small></td>
+      <td>${escapeHtml(consent.title)}<br><small>${escapeHtml(labelFromMap(consentTypeLabels, consent.consentType))}</small></td>
       <td>${escapeHtml(consent.signerName)}<br><small>${escapeHtml(consent.signatureData)}</small></td>
       <td>${formatDate(consent.signedAt)}</td>
+      <td>
+        <button class="secondary-btn edit-consent-btn" type="button" data-consent-id="${consent.id}">Uredi</button>
+        <button class="danger-btn delete-consent-btn" type="button" data-consent-id="${consent.id}">Obrisi</button>
+      </td>
     </tr>
-  `).join("") : `<tr><td colspan="3" class="empty-row">Nema sacuvanih saglasnosti.</td></tr>`;
+  `).join("") : `<tr><td colspan="4" class="empty-row">Nema sacuvanih saglasnosti.</td></tr>`;
+}
+
+function clinicalNotePayloadFromForm() {
+  return {
+    templateId: document.getElementById("clinical-note-template").value,
+    title: document.getElementById("clinical-note-title").value,
+    body: document.getElementById("clinical-note-body").value,
+    signedBy: document.getElementById("clinical-note-signed-by").value
+  };
+}
+
+function resetClinicalNoteForm() {
+  const form = document.getElementById("clinical-note-form");
+  form.reset();
+  document.getElementById("clinical-note-id").value = "";
+  document.getElementById("cancel-clinical-note-edit-btn").hidden = true;
+  form.querySelector('button[type="submit"]').textContent = "Sacuvaj belesku";
+}
+
+function fillClinicalNoteForm(note) {
+  document.getElementById("clinical-note-id").value = note.id;
+  document.getElementById("clinical-note-template").value = note.templateId || "";
+  document.getElementById("clinical-note-title").value = note.title || "";
+  document.getElementById("clinical-note-body").value = note.body || "";
+  document.getElementById("clinical-note-signed-by").value = note.signedBy || "";
+  document.getElementById("cancel-clinical-note-edit-btn").hidden = false;
+  document.getElementById("clinical-note-form").querySelector('button[type="submit"]').textContent = "Sacuvaj izmenu";
+  document.getElementById("clinical-note-form").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function consentPayloadFromForm() {
+  return {
+    consentType: document.getElementById("consent-type").value,
+    title: document.getElementById("consent-title").value,
+    body: document.getElementById("consent-body").value,
+    signerName: document.getElementById("consent-signer").value,
+    signatureData: document.getElementById("consent-signature").value
+  };
+}
+
+function resetConsentForm() {
+  const form = document.getElementById("patient-consent-form");
+  form.reset();
+  document.getElementById("consent-id").value = "";
+  document.getElementById("cancel-consent-edit-btn").hidden = true;
+  form.querySelector('button[type="submit"]').textContent = "Sacuvaj saglasnost";
+}
+
+function fillConsentForm(consent) {
+  document.getElementById("consent-id").value = consent.id;
+  document.getElementById("consent-type").value = consent.consentType || "treatment";
+  document.getElementById("consent-title").value = consent.title || "";
+  document.getElementById("consent-body").value = consent.body || "";
+  document.getElementById("consent-signer").value = consent.signerName || "";
+  document.getElementById("consent-signature").value = consent.signatureData || "";
+  document.getElementById("cancel-consent-edit-btn").hidden = false;
+  document.getElementById("patient-consent-form").querySelector('button[type="submit"]').textContent = "Sacuvaj izmenu";
+  document.getElementById("patient-consent-form").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 async function initializeClinicalWorkflows(patientId) {
@@ -410,7 +1065,24 @@ async function initializeClinicalWorkflows(patientId) {
     renderPatientConsents(await window.DrRosaApi.getPatientConsents(patientId));
   }
 
-  const templates = await window.DrRosaApi.getClinicalNoteTemplates();
+  const [templates, currencies] = await Promise.all([
+    window.DrRosaApi.getClinicalNoteTemplates(),
+    window.DrRosaApi.getCodebooks ? window.DrRosaApi.getCodebooks("currency").catch(() => []) : []
+  ]);
+  currencyItems = currencies.length ? currencies : [
+    { value: "EUR", label: "EUR", metadata: { exchangeRate: 117, rateBase: "EUR", rateCurrency: "RSD" } },
+    { value: "RSD", label: "RSD", metadata: { exchangeRate: 1, rateBase: "RSD", rateCurrency: "RSD" } },
+    { value: "USD", label: "USD", metadata: { exchangeRate: 108, rateBase: "USD", rateCurrency: "RSD" } }
+  ];
+  const currencySelect = document.getElementById("clinical-currency");
+  const currentCurrency = currencySelect.value;
+  currencySelect.innerHTML = currencyItems.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label || item.value)}</option>`).join("");
+  setSelectValue(currencySelect, currentCurrency || "EUR");
+  ["clinical-price", "clinical-currency"].forEach(id => {
+    document.getElementById(id).addEventListener("input", updateClinicalPricePreview);
+    document.getElementById(id).addEventListener("change", updateClinicalPricePreview);
+  });
+  updateClinicalPricePreview();
   renderClinicalNoteTemplates(templates);
 
   document.getElementById("clinical-note-template").addEventListener("change", event => {
@@ -423,77 +1095,126 @@ async function initializeClinicalWorkflows(patientId) {
   document.getElementById("clinical-chart-form").addEventListener("submit", async event => {
     event.preventDefault();
     try {
-      await window.DrRosaApi.createClinicalChartEntry(patientId, {
-        toothNumber: document.getElementById("clinical-tooth").value,
-        surfaces: document.getElementById("clinical-surfaces").value.split(",").map(item => item.trim()).filter(Boolean),
-        cdtCode: document.getElementById("clinical-cdt").value,
-        adaCode: document.getElementById("clinical-ada").value,
-        status: document.getElementById("clinical-status").value,
-        phase: Number(document.getElementById("clinical-phase").value || 1),
-        diagnosis: document.getElementById("clinical-diagnosis").value,
-        procedureCode: document.getElementById("clinical-procedure-code").value,
-        notes: document.getElementById("clinical-notes").value
-      });
-      event.target.reset();
-      document.getElementById("clinical-phase").value = "1";
-      setMessage("clinical-chart-message", "Dental charting je sacuvan.");
+      const entryId = document.getElementById("clinical-chart-entry-id").value;
+      const payload = clinicalChartPayloadFromForm();
+      if (entryId) {
+        await window.DrRosaApi.updateClinicalChartEntry(entryId, payload);
+      } else {
+        await window.DrRosaApi.createClinicalChartEntry(patientId, payload);
+      }
+      resetClinicalChartForm();
+      setMessage("clinical-chart-message", entryId ? "Zubni status je izmenjen." : "Zubni status je sacuvan.");
       await refreshClinicalChart();
     } catch (error) {
-      setMessage("clinical-chart-message", error.message || "Charting nije sacuvan.", true);
+      setMessage("clinical-chart-message", error.message || "Zubni status nije sacuvan.", true);
     }
   });
 
+  document.getElementById("cancel-clinical-chart-edit-btn").addEventListener("click", () => {
+    resetClinicalChartForm();
+    setMessage("clinical-chart-message", "");
+  });
+
   document.getElementById("clinical-chart-body").addEventListener("click", async event => {
-    const button = event.target.closest(".delete-clinical-chart-btn");
-    if (!button) return;
-    await window.DrRosaApi.deleteClinicalChartEntry(button.dataset.entryId);
-    setMessage("clinical-chart-message", "Charting unos je obrisan.");
+    const editButton = event.target.closest(".edit-clinical-chart-btn");
+    const deleteButton = event.target.closest(".delete-clinical-chart-btn");
+    if (editButton) {
+      const entry = loadedClinicalChartEntries.find(item => String(item.id) === String(editButton.dataset.entryId));
+      if (entry) fillClinicalChartForm(entry);
+      return;
+    }
+    if (!deleteButton) return;
+    await window.DrRosaApi.deleteClinicalChartEntry(deleteButton.dataset.entryId);
+    setMessage("clinical-chart-message", "Unos zubnog statusa je obrisan.");
+    resetClinicalChartForm();
     await refreshClinicalChart();
   });
 
   document.getElementById("clinical-note-form").addEventListener("submit", async event => {
     event.preventDefault();
     try {
-      await window.DrRosaApi.createClinicalNote(patientId, {
-        templateId: document.getElementById("clinical-note-template").value,
-        title: document.getElementById("clinical-note-title").value,
-        body: document.getElementById("clinical-note-body").value,
-        signedBy: document.getElementById("clinical-note-signed-by").value
-      });
-      event.target.reset();
-      setMessage("clinical-note-message", "Clinical note je sacuvan.");
+      const noteId = document.getElementById("clinical-note-id").value;
+      const payload = clinicalNotePayloadFromForm();
+      if (noteId) {
+        await window.DrRosaApi.updateClinicalNote(noteId, payload);
+      } else {
+        await window.DrRosaApi.createClinicalNote(patientId, payload);
+      }
+      resetClinicalNoteForm();
+      setMessage("clinical-note-message", noteId ? "Klinicka beleska je izmenjena." : "Klinicka beleska je sacuvana.");
       await refreshClinicalNotes();
     } catch (error) {
-      setMessage("clinical-note-message", error.message || "Clinical note nije sacuvan.", true);
+      setMessage("clinical-note-message", userFacingError(error, "Klinicka beleska nije sacuvana."), true);
     }
   });
 
+  document.getElementById("cancel-clinical-note-edit-btn").addEventListener("click", () => {
+    resetClinicalNoteForm();
+    setMessage("clinical-note-message", "");
+  });
+
   document.getElementById("clinical-notes-body").addEventListener("click", async event => {
-    const button = event.target.closest(".sign-clinical-note-btn");
-    if (!button) return;
-    const signedBy = window.prompt("Potpisuje:", "Dr Rosa");
-    if (!signedBy) return;
-    await window.DrRosaApi.signClinicalNote(button.dataset.noteId, { signedBy });
-    setMessage("clinical-note-message", "Clinical note je potpisan.");
+    const editButton = event.target.closest(".edit-clinical-note-btn");
+    const signButton = event.target.closest(".sign-clinical-note-btn");
+    const deleteButton = event.target.closest(".delete-clinical-note-btn");
+    if (editButton) {
+      const note = loadedClinicalNotes.find(item => String(item.id) === String(editButton.dataset.noteId));
+      if (note) fillClinicalNoteForm(note);
+      return;
+    }
+    if (signButton) {
+      const signedBy = window.prompt("Potpisuje:", "Dr Rosa");
+      if (!signedBy) return;
+      await window.DrRosaApi.signClinicalNote(signButton.dataset.noteId, { signedBy });
+      setMessage("clinical-note-message", "Klinicka beleska je potpisana.");
+      await refreshClinicalNotes();
+      return;
+    }
+    if (!deleteButton) return;
+    if (!confirm("Da li zelite da obrisete ovu klinicku belesku?")) return;
+    await window.DrRosaApi.deleteClinicalNote(deleteButton.dataset.noteId);
+    resetClinicalNoteForm();
+    setMessage("clinical-note-message", "Klinicka beleska je obrisana.");
     await refreshClinicalNotes();
   });
 
   document.getElementById("patient-consent-form").addEventListener("submit", async event => {
     event.preventDefault();
     try {
-      await window.DrRosaApi.createPatientConsent(patientId, {
-        consentType: document.getElementById("consent-type").value,
-        title: document.getElementById("consent-title").value,
-        body: document.getElementById("consent-body").value,
-        signerName: document.getElementById("consent-signer").value,
-        signatureData: document.getElementById("consent-signature").value
-      });
-      event.target.reset();
-      setMessage("consent-message", "Consent je sacuvan i potpisan.");
+      const consentId = document.getElementById("consent-id").value;
+      const payload = consentPayloadFromForm();
+      if (consentId) {
+        await window.DrRosaApi.updatePatientConsent(consentId, payload);
+      } else {
+        await window.DrRosaApi.createPatientConsent(patientId, payload);
+      }
+      resetConsentForm();
+      setMessage("consent-message", consentId ? "Saglasnost je izmenjena." : "Saglasnost je sacuvana i potpisana.");
       await refreshConsents();
     } catch (error) {
-      setMessage("consent-message", error.message || "Consent nije sacuvan.", true);
+      setMessage("consent-message", userFacingError(error, "Saglasnost nije sacuvana."), true);
     }
+  });
+
+  document.getElementById("cancel-consent-edit-btn").addEventListener("click", () => {
+    resetConsentForm();
+    setMessage("consent-message", "");
+  });
+
+  document.getElementById("patient-consents-body").addEventListener("click", async event => {
+    const editButton = event.target.closest(".edit-consent-btn");
+    const deleteButton = event.target.closest(".delete-consent-btn");
+    if (editButton) {
+      const consent = loadedPatientConsents.find(item => String(item.id) === String(editButton.dataset.consentId));
+      if (consent) fillConsentForm(consent);
+      return;
+    }
+    if (!deleteButton) return;
+    if (!confirm("Da li zelite da obrisete ovu saglasnost?")) return;
+    await window.DrRosaApi.deletePatientConsent(deleteButton.dataset.consentId);
+    resetConsentForm();
+    setMessage("consent-message", "Saglasnost je obrisana.");
+    await refreshConsents();
   });
 
   await Promise.all([refreshClinicalChart(), refreshClinicalNotes(), refreshConsents()]);
@@ -544,6 +1265,10 @@ async function initializeAdvancedWorkflows(patientId) {
   });
   document.getElementById("treatment-plan-form").addEventListener("submit", async event => {
     event.preventDefault();
+    if (planItemsDraft.length === 0) {
+      setMessage("treatment-plan-message", "Dodajte bar jednu stavku plana.", true);
+      return;
+    }
     try {
       await window.DrRosaApi.createTreatmentPlan(patientId, {
         title: document.getElementById("plan-title").value || "Plan terapije",
@@ -570,18 +1295,12 @@ async function initializeAdvancedWorkflows(patientId) {
   });
 
   document.getElementById("add-perio-measurement-btn").addEventListener("click", () => {
-    const toothNumber = document.getElementById("perio-tooth").value.trim();
-    if (!toothNumber) return setMessage("perio-message", "Unesite zub.", true);
-    perioMeasurementsDraft.push({
-      toothNumber,
-      site: document.getElementById("perio-site").value,
-      pocketDepth: Number(document.getElementById("perio-pocket").value || 0),
-      recession: Number(document.getElementById("perio-recession").value || 0),
-      mobility: Number(document.getElementById("perio-mobility").value || 0),
-      furcation: Number(document.getElementById("perio-furcation").value || 0),
-      bleeding: document.getElementById("perio-bleeding").checked
-    });
+    const measurement = readPerioMeasurementForm();
+    if (!measurement) return setMessage("perio-message", "Unesite zub.", true);
+    perioMeasurementsDraft.push(measurement);
+    clearPerioMeasurementForm();
     renderPerioDraft();
+    setMessage("perio-message", "Merenje je dodato na listu.");
   });
   document.getElementById("perio-measurements-preview").addEventListener("click", event => {
     const button = event.target.closest(".remove-perio-item");
@@ -591,25 +1310,37 @@ async function initializeAdvancedWorkflows(patientId) {
   });
   document.getElementById("perio-form").addEventListener("submit", async event => {
     event.preventDefault();
+    const currentMeasurement = readPerioMeasurementForm();
+    if (currentMeasurement) {
+      perioMeasurementsDraft.push(currentMeasurement);
+    }
+    if (perioMeasurementsDraft.length === 0) {
+      setMessage("perio-message", "Dodajte bar jedno merenje.", true);
+      return;
+    }
     try {
       await window.DrRosaApi.createPerioChart(patientId, {
         chartDate: document.getElementById("perio-date").value || today(),
         measurements: perioMeasurementsDraft
       });
       perioMeasurementsDraft = [];
+      event.target.reset();
+      document.getElementById("perio-date").value = today();
       renderPerioDraft();
       await refreshPerio();
-      setMessage("perio-message", "Perio chart je sacuvan.");
+      setMessage("perio-message", "Parodontalni chart je sacuvan.");
     } catch (error) {
-      setMessage("perio-message", error.message || "Perio chart nije sacuvan.", true);
+      setMessage("perio-message", error.message || "Parodontalni chart nije sacuvan.", true);
     }
   });
 
   document.getElementById("add-invoice-item-btn").addEventListener("click", () => {
-    const description = document.getElementById("invoice-item-description").value.trim();
-    if (!description) return setMessage("invoice-message", "Unesite stavku.", true);
-    invoiceItemsDraft.push({ description, quantity: 1, unitPrice: Number(document.getElementById("invoice-item-price").value || 0), discount: 0 });
+    const item = readInvoiceItemForm();
+    if (!item) return setMessage("invoice-message", "Unesite stavku.", true);
+    invoiceItemsDraft.push(item);
+    clearInvoiceItemForm();
     renderInvoiceDraft();
+    setMessage("invoice-message", "Stavka je dodata na racun.");
   });
   document.getElementById("invoice-items-preview").addEventListener("click", event => {
     const button = event.target.closest(".remove-invoice-item");
@@ -619,6 +1350,14 @@ async function initializeAdvancedWorkflows(patientId) {
   });
   document.getElementById("invoice-form").addEventListener("submit", async event => {
     event.preventDefault();
+    const currentItem = readInvoiceItemForm();
+    if (currentItem) {
+      invoiceItemsDraft.push(currentItem);
+    }
+    if (invoiceItemsDraft.length === 0) {
+      setMessage("invoice-message", "Dodajte bar jednu stavku racuna.", true);
+      return;
+    }
     try {
       await window.DrRosaApi.createInvoice(patientId, {
         issueDate: document.getElementById("invoice-date").value || today(),
@@ -658,20 +1397,30 @@ async function initializeAdvancedWorkflows(patientId) {
 
   document.getElementById("insurance-form").addEventListener("submit", async event => {
     event.preventDefault();
+    const provider = document.getElementById("insurance-provider").value.trim();
+    const requestedAmount = Number(document.getElementById("insurance-requested").value || 0);
+    if (!provider) {
+      setMessage("insurance-message", "Unesite naziv osiguranja.", true);
+      return;
+    }
+    if (requestedAmount <= 0) {
+      setMessage("insurance-message", "Unesite trazeni iznos veci od 0.", true);
+      return;
+    }
     try {
       await window.DrRosaApi.createInsuranceClaim(patientId, {
-        provider: document.getElementById("insurance-provider").value,
+        provider,
         policyNumber: document.getElementById("insurance-policy").value,
         status: document.getElementById("insurance-status").value,
-        requestedAmount: Number(document.getElementById("insurance-requested").value || 0),
+        requestedAmount,
         eligibilityNotes: document.getElementById("insurance-notes").value,
         preauthorizationNotes: document.getElementById("insurance-notes").value
       });
       event.target.reset();
       await refreshClaims();
-      setMessage("insurance-message", "Insurance claim je sacuvan.");
+      setMessage("insurance-message", "Zahtev za osiguranje je sacuvan.");
     } catch (error) {
-      setMessage("insurance-message", error.message || "Claim nije sacuvan.", true);
+      setMessage("insurance-message", userFacingError(error, "Zahtev nije sacuvan."), true);
     }
   });
 
@@ -682,21 +1431,21 @@ async function initializeAdvancedWorkflows(patientId) {
     try {
       if (eligibilityButton) {
         await window.DrRosaApi.checkInsuranceEligibility(eligibilityButton.dataset.claimId);
-        setMessage("insurance-message", "Eligibility je proveren.");
+        setMessage("insurance-message", "Podobnost je proverena.");
       }
       if (submitButton) {
         await window.DrRosaApi.submitInsuranceClaim(submitButton.dataset.claimId);
-        setMessage("insurance-message", "eClaim je poslat u clearinghouse red.");
+        setMessage("insurance-message", "Zahtev je poslat u red za obradu.");
       }
       if (eraButton) {
         const amount = Number(eraButton.dataset.amount || 0);
         await window.DrRosaApi.postInsuranceEra(eraButton.dataset.claimId, { paidAmount: amount, approvedAmount: amount });
         await refreshInvoices();
-        setMessage("insurance-message", "ERA/EOB je proknjizen u ledger.");
+        setMessage("insurance-message", "Obracun je proknjizen u karticu.");
       }
       await refreshClaims();
     } catch (error) {
-      setMessage("insurance-message", error.message || "Claim akcija nije uspela.", true);
+      setMessage("insurance-message", error.message || "Akcija nad zahtevom nije uspela.", true);
     }
   });
 }
@@ -732,34 +1481,36 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
 
   documentForm.addEventListener("submit", async event => {
     event.preventDefault();
+    const documentId = document.getElementById("document-id").value;
     const file = document.getElementById("document-file").files[0];
-    if (!file) {
+    if (!documentId && !file) {
       setMessage("document-message", "Izaberite fajl za upload.", true);
       return;
     }
     try {
-      await window.DrRosaApi.createPatientDocument(patientId, {
-        documentType: document.getElementById("document-type").value,
-        title: document.getElementById("document-title").value || file.name,
-        documentDate: document.getElementById("document-date").value,
-        visitRecordId: document.getElementById("document-visit").value,
-        description: document.getElementById("document-description").value,
-        imagingModality: document.getElementById("document-imaging-modality").value,
-        toothNumber: document.getElementById("document-tooth-number").value,
-        acquisitionDate: document.getElementById("document-date").value,
-        dicomStudyUid: document.getElementById("document-dicom-study-uid").value,
-        claimAttachmentReady: Boolean(document.getElementById("document-imaging-modality").value),
-        originalFilename: file.name,
-        mimeType: file.type,
-        fileBase64: await fileToBase64(file)
-      });
-      documentForm.reset();
-      fillVisitOptions(patientRecords);
+      const payload = documentPayloadFromForm();
+      if (documentId) {
+        await window.DrRosaApi.updatePatientDocument(documentId, payload);
+      } else {
+        await window.DrRosaApi.createPatientDocument(patientId, {
+          ...payload,
+          title: payload.title || file.name,
+          originalFilename: file.name,
+          mimeType: file.type || (file.name.toLowerCase().endsWith(".dcm") || file.name.toLowerCase().endsWith(".dicom") ? "application/dicom" : "application/octet-stream"),
+          fileBase64: await fileToBase64(file)
+        });
+      }
+      resetDocumentForm(patientRecords);
       await loadDocuments(patientId);
-      setMessage("document-message", "Dokument je dodat.");
+      setMessage("document-message", documentId ? "Dokument je izmenjen." : "Dokument je dodat.");
     } catch (error) {
-      setMessage("document-message", error.message || "Dokument nije dodat.", true);
+      setMessage("document-message", userFacingError(error, "Dokument nije sacuvan."), true);
     }
+  });
+
+  document.getElementById("cancel-document-edit-btn").addEventListener("click", () => {
+    resetDocumentForm(patientRecords);
+    setMessage("document-message", "");
   });
 
   document.getElementById("import-scan-btn").addEventListener("click", async () => {
@@ -787,11 +1538,16 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
 
   documentsBody.addEventListener("click", async event => {
     const viewButton = event.target.closest(".view-document-btn");
+    const editButton = event.target.closest(".edit-document-btn");
     const analyzeButton = event.target.closest(".analyze-imaging-btn");
     const downloadButton = event.target.closest(".download-document-btn");
     const deleteButton = event.target.closest(".delete-document-btn");
     try {
-      if (viewButton) await openDocument(viewButton.dataset.documentId, false);
+      if (viewButton) await openImagingViewer(viewButton.dataset.documentId);
+      if (editButton) {
+        const documentRow = loadedDocuments.find(item => String(item.id) === String(editButton.dataset.documentId));
+        if (documentRow) fillDocumentForm(documentRow);
+      }
       if (analyzeButton) {
         await window.DrRosaApi.analyzeDocumentImaging(analyzeButton.dataset.documentId);
         await loadDocuments(patientId);
@@ -801,12 +1557,15 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
       if (deleteButton) {
         if (!confirm("Da li zelite da obrisete ovaj dokument?")) return;
         await window.DrRosaApi.deleteDocument(deleteButton.dataset.documentId);
+        resetDocumentForm(patientRecords);
         await loadDocuments(patientId);
       }
     } catch (error) {
-      setMessage("document-message", error.message || "Akcija nije uspela.", true);
+      setMessage("document-message", userFacingError(error, "Akcija nije uspela."), true);
     }
   });
+
+  initializeImagingViewerControls();
 }
 
 (async function init() {

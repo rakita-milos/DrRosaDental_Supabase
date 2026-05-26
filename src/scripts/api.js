@@ -238,6 +238,13 @@
     });
   }
 
+  async function updatePatientDocument(documentId, document) {
+    return request(`/documents/${documentId}`, {
+      method: "PUT",
+      body: JSON.stringify(document)
+    });
+  }
+
   async function importPatientScan(patientId, payload) {
     return request(`/patients/${patientId}/documents/import-scan`, {
       method: "POST",
@@ -424,6 +431,17 @@
     });
   }
 
+  async function updateClinicalNote(noteId, note) {
+    return request(`/clinical-notes/${noteId}`, {
+      method: "PUT",
+      body: JSON.stringify(note)
+    });
+  }
+
+  async function deleteClinicalNote(noteId) {
+    return request(`/clinical-notes/${noteId}`, { method: "DELETE" });
+  }
+
   async function signClinicalNote(noteId, payload) {
     return request(`/clinical-notes/${noteId}/sign`, {
       method: "POST",
@@ -440,6 +458,17 @@
       method: "POST",
       body: JSON.stringify(consent)
     });
+  }
+
+  async function updatePatientConsent(consentId, consent) {
+    return request(`/consents/${consentId}`, {
+      method: "PUT",
+      body: JSON.stringify(consent)
+    });
+  }
+
+  async function deletePatientConsent(consentId) {
+    return request(`/consents/${consentId}`, { method: "DELETE" });
   }
 
   async function getInvoices(patientId) {
@@ -688,6 +717,7 @@
     updateMedicalProfile,
     getPatientDocuments,
     createPatientDocument,
+    updatePatientDocument,
     importPatientScan,
     deleteDocument,
     getDoctors,
@@ -729,9 +759,13 @@
     getClinicalNoteTemplates,
     getClinicalNotes,
     createClinicalNote,
+    updateClinicalNote,
+    deleteClinicalNote,
     signClinicalNote,
     getPatientConsents,
     createPatientConsent,
+    updatePatientConsent,
+    deletePatientConsent,
     getInvoices,
     createInvoice,
     addInvoicePayment,

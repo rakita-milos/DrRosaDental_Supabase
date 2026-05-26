@@ -4,7 +4,9 @@ const ALLOWED_DOCUMENT_MIME = [
   'application/pdf',
   'image/jpeg',
   'image/png',
-  'image/webp'
+  'image/webp',
+  'application/dicom',
+  'application/octet-stream'
 ];
 
 function validateBody(schema) {
