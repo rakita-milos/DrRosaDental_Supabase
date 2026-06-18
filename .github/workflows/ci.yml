@@ -66,6 +66,8 @@ jobs:
           exit 1
       - name: Run Playwright tests
         working-directory: ./tests/playwright
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
         run: |
           npx playwright test --config=playwright.ci.config.js --reporter=list
       - name: Stop backend
