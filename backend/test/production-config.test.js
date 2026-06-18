@@ -6,6 +6,8 @@ const path = require('node:path');
 const { test } = require('node:test');
 
 function runServerImport(extraEnv = {}, removeEnv = []) {
+  const cwd = mkdtempSync(path.join(tmpdir(), 'drrosa-config-cwd-'));
+  const serverPath = path.join(__dirname, '..', 'server.js');
   const env = {
     ...process.env,
     NODE_ENV: 'production',
@@ -21,8 +23,8 @@ function runServerImport(extraEnv = {}, removeEnv = []) {
   };
   Object.assign(env, extraEnv);
   for (const key of removeEnv) delete env[key];
-  return spawnSync(process.execPath, ['-e', "require('./server.js')"], {
-    cwd: path.join(__dirname, '..'),
+  return spawnSync(process.execPath, ['-e', `require(${JSON.stringify(serverPath)})`], {
+    cwd,
     env,
     encoding: 'utf8',
     timeout: 5000
