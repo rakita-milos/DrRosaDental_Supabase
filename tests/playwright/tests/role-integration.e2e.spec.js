@@ -24,7 +24,7 @@ test("staff-created patient and visit are visible to director reports", async ({
     patient: {
       firstName: `${TEST_PREFIX}Staff${stamp}`,
       lastName: "Visible",
-      email: `${TEST_PREFIX.toLowerCase()}.staff.${stamp}@example.test`
+      email: `${TEST_PREFIX.toLowerCase()}.staff.${stamp}@example.com`
     },
     record: {
       visitDate: "2026-05-11",
@@ -60,7 +60,7 @@ test("director-created patient and visit are visible to staff work screens", asy
     patient: {
       firstName: `${TEST_PREFIX}Director${stamp}`,
       lastName: "Visible",
-      email: `${TEST_PREFIX.toLowerCase()}.director.${stamp}@example.test`
+      email: `${TEST_PREFIX.toLowerCase()}.director.${stamp}@example.com`
     },
     record: {
       visitDate: "2026-05-11",

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kalendar termina | Dr Rosa</title>
+  <link rel="stylesheet" href="../styles/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <a class="logo-link" href="index.html" aria-label="Pocetna strana">
+          <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        </a>
+        <div>
+          <p class="eyebrow">Zakazivanje</p>
+          <h1>Kalendar termina</h1>
+        </div>
+      </div>
+      <nav class="topbar-actions" aria-label="Glavna navigacija">
+        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="calendar.html" class="nav-link" aria-current="page">Kalendar</a>
+        <a href="new-entry.html" class="nav-link">Novi unos</a>
+        <a href="new-patient.html" class="nav-link">Novi pacijent</a>
+        <a href="all-records.html" class="nav-link">Evidencija</a>
+        <a href="public-booking.html" class="nav-link">Online zakazivanje</a>
+        <a id="director-panel-link" href="director-panel.html" class="nav-link" style="display: none;">Direktor panel</a>
+        <button id="logout-btn" class="nav-link" type="button">Odjava</button>
+      </nav>
+    </header>
+
+    <main class="calendar-page">
+      <section class="list-section calendar-toolbar">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Raspored</p>
+            <h2 id="calendar-title">Nedelja</h2>
+          </div>
+          <div class="calendar-actions">
+            <button id="prev-period" class="secondary-btn" type="button" aria-label="Prethodni period">&lt;</button>
+            <button id="today-btn" class="secondary-btn" type="button">Danas</button>
+            <button id="next-period" class="secondary-btn" type="button" aria-label="Sledeci period">&gt;</button>
+          </div>
+        </div>
+        <div class="calendar-filters filter-actions" aria-label="Filteri kalendara">
+          <label>
+            <span>Prikaz</span>
+            <select id="calendar-view">
+              <option value="day">Dan</option>
+              <option value="week" selected>Nedelja</option>
+              <option value="month">Mesec</option>
+            </select>
+          </label>
+          <label>
+            <span>Doktor</span>
+            <select id="doctor-filter"></select>
+          </label>
+          <label>
+            <span>Status</span>
+            <select id="status-filter">
+              <option value="">Svi statusi</option>
+              <option value="scheduled">Zakazano</option>
+              <option value="confirmed">Potvrdjeno</option>
+              <option value="arrived">Dosao</option>
+              <option value="completed">Zavrseno</option>
+              <option value="cancelled">Otkazano</option>
+              <option value="no_show">Nije dosao</option>
+            </select>
+          </label>
+          <button id="new-appointment-btn" class="primary-btn" type="button">Novi termin</button>
+        </div>
+      </section>
+
+      <section class="calendar-layout">
+        <div class="calendar-board" id="calendar-board" aria-live="polite"></div>
+      </section>
+
+      <div class="appointment-modal" id="appointment-panel" hidden role="dialog" aria-modal="true" aria-labelledby="appointment-panel-title">
+        <div class="appointment-modal-backdrop" data-close-appointment-modal></div>
+        <section class="appointment-dialog">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Termin</p>
+              <h2 id="appointment-panel-title">Novi termin</h2>
+            </div>
+            <button id="close-appointment-modal" class="secondary-btn" type="button" aria-label="Zatvori">X</button>
+          </div>
+          <div id="appointment-alert" class="form-alert" aria-live="polite"></div>
+          <form id="appointment-form">
+            <input type="hidden" id="appointment-id" />
+            <div class="input-grid">
+              <label class="full-width">
+                Pacijent
+                <select id="appointment-patient" required></select>
+              </label>
+              <label>
+                Datum
+                <input id="appointment-date" type="date" required />
+              </label>
+              <label>
+                Vreme
+                <input id="appointment-time" type="time" required />
+              </label>
+              <label>
+                Trajanje
+                <select id="appointment-duration">
+                  <option value="15">15 min</option>
+                  <option value="30" selected>30 min</option>
+                  <option value="45">45 min</option>
+                  <option value="60">60 min</option>
+                  <option value="90">90 min</option>
+                  <option value="120">120 min</option>
+                </select>
+              </label>
+              <label>
+                Doktor
+                <select id="appointment-doctor" required></select>
+              </label>
+              <label>
+                Stolica
+                <select id="appointment-chair" required></select>
+              </label>
+              <label>
+                Status
+                <select id="appointment-status">
+                  <option value="scheduled">Zakazano</option>
+                  <option value="confirmed">Potvrdjeno</option>
+                  <option value="arrived">Dosao</option>
+                  <option value="completed">Zavrseno</option>
+                  <option value="cancelled">Otkazano</option>
+                  <option value="no_show">Nije dosao</option>
+                </select>
+              </label>
+              <label>
+                Postupak
+                <select id="appointment-procedure" required></select>
+              </label>
+              <label class="full-width">
+                Napomena
+                <textarea id="appointment-notes" rows="3"></textarea>
+              </label>
+            </div>
+            <div class="form-actions appointment-actions">
+              <button class="primary-btn" type="submit">Sacuvaj termin</button>
+              <button id="dismiss-appointment-btn" class="secondary-btn" type="button">Odustani</button>
+              <button id="create-visit-btn" class="secondary-btn" type="button" disabled>Kreiraj posetu</button>
+              <button id="cancel-appointment-btn" class="danger-btn" type="button" disabled>Otkazi termin</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="../scripts/api.js"></script>
+  <script src="../scripts/script.js"></script>
+  <script src="../scripts/calendar.js"></script>
+</body>
+</html>

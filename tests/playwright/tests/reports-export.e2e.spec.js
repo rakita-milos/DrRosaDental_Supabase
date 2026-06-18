@@ -24,7 +24,7 @@ async function createExportFixture(request, baseURL) {
     patient: {
       firstName: `${TEST_PREFIX}${stamp}`,
       lastName: "Patient",
-      email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.test`
+      email: `${TEST_PREFIX.toLowerCase()}.${stamp}@example.com`
     },
     record: {
       visitDate: "2026-05-11",

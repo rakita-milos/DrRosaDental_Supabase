@@ -1,7 +1,7 @@
 const path = require("path");
 const { defineConfig, devices } = require("@playwright/test");
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || process.env.APP_BASE_URL || "http://localhost:3000";
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || process.env.APP_BASE_URL || "http://localhost:3010";
 
 module.exports = defineConfig({
   testDir: path.join(__dirname, "tests"),
@@ -26,16 +26,8 @@ module.exports = defineConfig({
     {
       name: "chrome",
       use: {
-        ...devices["Desktop Chrome"],
-        channel: "chrome"
+        ...devices["Desktop Chrome"]
       }
     }
-  ],
-  webServer: {
-    command: "node server.js",
-    cwd: path.join(__dirname, "../../backend"),
-    url: `${baseURL}/api/health`,
-    reuseExistingServer: true,
-    timeout: 20_000
-  }
+  ]
 });

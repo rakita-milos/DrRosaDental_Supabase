@@ -14,8 +14,9 @@ async function requireAccess() {
   if (logoutBtn) {
     logoutBtn.addEventListener("click", (event) => {
       event.preventDefault();
-      window.DrRosaApi.clearSession();
-      window.location.href = "login.html";
+      window.DrRosaApi.logout().finally(() => {
+        window.location.href = "login.html";
+      });
     });
   }
 
@@ -31,6 +32,7 @@ const previewElements = {
   procedure: document.getElementById("preview-procedure"),
   status: document.getElementById("preview-status"),
   paymentStatus: document.getElementById("preview-payment-status"),
+  amountPaid: document.getElementById("preview-amount-paid"),
   amountDue: document.getElementById("preview-amount-due"),
   currency: document.getElementById("preview-currency"),
   shift: document.getElementById("preview-shift"),
@@ -45,6 +47,7 @@ const inputs = {
   doctor: document.getElementById("doctor"),
   status: document.getElementById("status"),
   paymentStatus: document.getElementById("payment-status"),
+  amountPaid: document.getElementById("amount-paid"),
   amountDue: document.getElementById("amount-due"),
   currency: document.getElementById("currency"),
   shift: document.getElementById("shift"),
@@ -89,6 +92,7 @@ function updatePreview() {
   previewElements.procedure.textContent = procedureText ? `${activityText ? `${activityText} / ` : ""}${procedureText}` : (hasToothTreatments() ? "Rad po zubima" : "-");
   previewElements.status.textContent = inputs.status.value;
   previewElements.paymentStatus.textContent = inputs.paymentStatus.value;
+  previewElements.amountPaid.textContent = Number(inputs.amountPaid.value || 0).toFixed(2);
   previewElements.amountDue.textContent = Number(inputs.amountDue.value || 0).toFixed(2);
   previewElements.currency.textContent = inputs.currency.value;
   previewElements.shift.textContent = inputs.shift.value;
@@ -107,14 +111,41 @@ function findDoctorByName(name) {
   return doctors.find(doctor => doctor.name === name || doctor.name.toLowerCase().includes(name.toLowerCase()));
 }
 
+function normalizedPatientQuery(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function foldText(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function closePatientSuggestions() {
+  const list = document.getElementById("existing-patients");
+  list?.classList.remove("open");
+}
+
+function renderPatientSuggestions(query = inputs.patient.value) {
+  const list = document.getElementById("existing-patients");
+  if (!list) return;
+
+  const normalizedQuery = normalizedPatientQuery(query);
+  const names = patients
+    .map(patientName)
+    .filter(Boolean)
+    .filter(name => !normalizedQuery || normalizedPatientQuery(name).includes(normalizedQuery));
+
+  list.innerHTML = names.length
+    ? names.map(name => `
+      <button class="patient-autocomplete-option" type="button" role="option" data-patient-name="${escapeHtml(name)}">
+        ${escapeHtml(name)}
+      </button>
+    `).join("")
+    : `<div class="patient-autocomplete-empty">Nema pacijenata za prikaz.</div>`;
+  list.classList.toggle("open", document.activeElement === inputs.patient);
+}
+
 function populatePatientList() {
-  const datalist = document.getElementById("existing-patients");
-  datalist.innerHTML = "";
-  patients.map(patientName).filter(Boolean).forEach(name => {
-    const option = document.createElement("option");
-    option.value = name;
-    datalist.appendChild(option);
-  });
+  renderPatientSuggestions("");
 }
 
 function populateDoctors() {
@@ -126,6 +157,10 @@ function option(value, label = value) {
   return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
 }
 
+function procedureOption(procedure) {
+  return `<option value="${escapeHtml(procedure)}" data-price="${Number(procedureCatalog.getPrice(procedure) || 0)}">${escapeHtml(procedure)}</option>`;
+}
+
 function populateActivitySelect(select, placeholder = "Odaberi delatnost") {
   if (!select || !procedureCatalog) return;
   select.innerHTML = option("", placeholder) + procedureCatalog.getActivities().map(activity => option(activity)).join("");
@@ -135,7 +170,7 @@ function populateProcedureSelect(activitySelect, procedureSelect, placeholder = 
   if (!activitySelect || !procedureSelect || !procedureCatalog) return;
   const activity = activitySelect.value;
   const procedures = activity ? procedureCatalog.getProcedures(activity) : [];
-  procedureSelect.innerHTML = option("", activity ? placeholder : "Prvo odaberi delatnost") + procedures.map(procedure => option(procedure)).join("");
+  procedureSelect.innerHTML = option("", activity ? placeholder : "Prvo odaberi delatnost") + procedures.map(procedureOption).join("");
   procedureSelect.disabled = !activity;
 }
 
@@ -189,6 +224,7 @@ function openRecordInForm(record) {
   setSelectValue(inputs.status, record.status || "");
   setSelectValue(inputs.paymentStatus, record.paymentStatus || "");
   inputs.amountDue.value = Number(record.amountDue || 0).toFixed(2);
+  inputs.amountPaid.value = "";
   setSelectValue(inputs.currency, record.currency || "EUR");
   setSelectValue(inputs.shift, record.shift || "");
   inputs.note.value = record.note === "-" ? "" : (record.note || "");
@@ -197,6 +233,8 @@ function openRecordInForm(record) {
   updateTeethSummary();
   updateToothHighlights();
   updateAmountDueLimit();
+  inputs.amountPaid.value = Math.max(0, currentVisitTotal() - Number(record.amountDue || 0)).toFixed(2);
+  updatePaymentCalculation();
   updatePreview();
   showAlert("Pregled je otvoren sa postojecim podacima.");
 }
@@ -268,13 +306,46 @@ function currentFinalTotal() {
   return Math.max(0, currentGrossTotal() - currentTreatmentDiscountTotal() - currentManualTotalDiscount());
 }
 
+function currentSelectedProcedureTotal() {
+  return Math.max(0, Number(
+    inputs.procedure.selectedOptions[0]?.dataset.price
+    || procedureCatalog.getPrice(inputs.procedure.value)
+    || 0
+  ));
+}
+
+function currentVisitTotal() {
+  return hasToothTreatments() ? currentFinalTotal() : currentSelectedProcedureTotal();
+}
+
+function setPaymentStatusByBalance(status) {
+  const target = foldText(status);
+  const match = Array.from(inputs.paymentStatus.options).find(option => foldText(option.value) === target || foldText(option.textContent) === target);
+  inputs.paymentStatus.value = match?.value || status;
+  inputs.paymentStatus.dispatchEvent(new Event("drrosa-select-value"));
+}
+
+function updatePaymentCalculation() {
+  const total = currentVisitTotal();
+  const paid = Math.max(0, Number(inputs.amountPaid.value || 0));
+  const clampedPaid = total > 0 ? Math.min(paid, total) : paid;
+  if (paid !== clampedPaid) inputs.amountPaid.value = clampedPaid.toFixed(2);
+  inputs.amountPaid.max = total > 0 ? total.toFixed(2) : "";
+  inputs.amountDue.value = Math.max(0, total - clampedPaid).toFixed(2);
+  if (total > 0) {
+    setPaymentStatusByBalance(clampedPaid <= 0
+      ? "Dugovanje"
+      : clampedPaid >= total
+        ? "Plaćeno"
+        : "Delimično");
+  }
+}
+
 function updateAmountDueLimit() {
-  const maxDue = currentFinalTotal();
+  updatePaymentCalculation();
+  const maxDue = currentVisitTotal();
   if (maxDue > 0) {
     inputs.amountDue.max = maxDue.toFixed(2);
-    if (Number(inputs.amountDue.value || 0) > maxDue) {
-      inputs.amountDue.value = maxDue.toFixed(2);
-    }
     return;
   }
 
@@ -392,6 +463,8 @@ saveTreatmentBtn.addEventListener("click", () => {
   selectedTeeth.clear();
   updateTeethSummary();
   updateToothHighlights();
+  updatePaymentCalculation();
+  updatePreview();
 });
 
 treatmentActivity.addEventListener("change", () => {
@@ -411,8 +484,14 @@ inputs.amountDue.addEventListener("input", () => {
   updatePreview();
 });
 
+inputs.amountPaid.addEventListener("input", () => {
+  updatePaymentCalculation();
+  updatePreview();
+});
+
 inputs.procedureActivity.addEventListener("change", () => {
   populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
+  updatePaymentCalculation();
   updatePreview();
 });
 
@@ -420,6 +499,7 @@ inputs.procedure.addEventListener("change", () => {
   if (!inputs.procedureActivity.value) {
     inputs.procedureActivity.value = procedureCatalog.findActivityForProcedure(inputs.procedure.value);
   }
+  updatePaymentCalculation();
   updatePreview();
 });
 
@@ -494,6 +574,7 @@ function updateTeethSummary() {
         delete teethTreatments[tooth];
       }
       updateTeethSummary();
+      updatePaymentCalculation();
       updatePreview();
     });
   });
@@ -544,8 +625,69 @@ inputs.patient.addEventListener("change", () => {
 });
 
 inputs.patient.addEventListener("input", () => {
+  inputs.patient.value = inputs.patient.value.replace(/\s+/g, " ");
+  renderPatientSuggestions();
   updateTeethSummary();
   updateToothHighlights();
+});
+
+inputs.patient.addEventListener("focus", () => {
+  renderPatientSuggestions();
+});
+
+inputs.patient.addEventListener("blur", () => {
+  inputs.patient.value = inputs.patient.value.replace(/\s+/g, " ").trim();
+  setTimeout(() => {
+    if (!document.activeElement?.closest(".patient-autocomplete-field")) closePatientSuggestions();
+  }, 120);
+});
+
+inputs.patient.addEventListener("keydown", event => {
+  const list = document.getElementById("existing-patients");
+  const options = Array.from(list?.querySelectorAll(".patient-autocomplete-option") || []);
+  if (event.key === "Escape") {
+    closePatientSuggestions();
+    return;
+  }
+  if (event.key !== "ArrowDown" || !options.length) return;
+  event.preventDefault();
+  list.classList.add("open");
+  options[0].focus();
+});
+
+document.getElementById("existing-patients")?.addEventListener("click", event => {
+  const option = event.target.closest(".patient-autocomplete-option");
+  if (!option) return;
+  inputs.patient.value = option.dataset.patientName || option.textContent.trim();
+  closePatientSuggestions();
+  inputs.patient.dispatchEvent(new Event("input", { bubbles: true }));
+  inputs.patient.dispatchEvent(new Event("change", { bubbles: true }));
+});
+
+document.getElementById("existing-patients")?.addEventListener("keydown", event => {
+  const options = Array.from(event.currentTarget.querySelectorAll(".patient-autocomplete-option"));
+  const index = options.indexOf(document.activeElement);
+  if (event.key === "Escape") {
+    closePatientSuggestions();
+    inputs.patient.focus();
+    return;
+  }
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    document.activeElement.click();
+    inputs.patient.focus();
+    return;
+  }
+  if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+  event.preventDefault();
+  const nextIndex = event.key === "ArrowDown"
+    ? Math.min(options.length - 1, index + 1)
+    : Math.max(0, index - 1);
+  options[nextIndex]?.focus();
+});
+
+document.addEventListener("click", event => {
+  if (!event.target.closest(".patient-autocomplete-field")) closePatientSuggestions();
 });
 
 form.addEventListener("input", updatePreview);
@@ -558,6 +700,7 @@ form.addEventListener("submit", async (event) => {
   const hasTreatments = hasToothTreatments();
   const finalTotal = currentFinalTotal();
   const amountDueValue = Number(inputs.amountDue.value || 0);
+  const amountPaidValue = Number(inputs.amountPaid.value || 0);
   if (!patientNameValue || !inputs.lastVisit.value || (!procedureValue && !hasTreatments)) {
     showAlert("Ispunite pacijenta, datum i odaberite postupak ili rad na mapi zuba.", "error");
     return;
@@ -569,10 +712,28 @@ form.addEventListener("submit", async (event) => {
     showAlert("Iznos duga ne može biti veći od ukupne cene svih radova.", "error");
     return;
   }
+  if (amountPaidValue > currentVisitTotal()) {
+    updatePaymentCalculation();
+    showAlert("Plaćeni iznos ne može biti veći od ukupne cene.", "error");
+    return;
+  }
 
-  const patient = findPatientByName(patientNameValue);
-  const doctor = findDoctorByName(inputs.doctor.value);
   const hasBackendSession = Boolean(localStorage.getItem("drrosa-token"));
+  let patient = findPatientByName(patientNameValue);
+  const doctor = findDoctorByName(inputs.doctor.value);
+
+  // If we're authenticated but patient isn't found locally, refresh patient list
+  // from the backend once to avoid transient race conditions between test setup
+  // and frontend fetch. If still not found, show an error.
+  if (hasBackendSession && !patient) {
+    try {
+      patients = await window.DrRosaApi.getPatients();
+      populatePatientList();
+      patient = findPatientByName(patientNameValue);
+    } catch (e) {
+      console.error('Error refreshing patients list:', e);
+    }
+  }
 
   if (hasBackendSession && !patient) {
     showAlert("Pacijent mora postojati u bazi prije unosa zapisa.", "error");
@@ -595,6 +756,7 @@ form.addEventListener("submit", async (event) => {
     status: inputs.status.value,
     paymentStatus: inputs.paymentStatus.value,
     amountDue: amountDueValue,
+    amountPaid: amountPaidValue,
     currency: inputs.currency.value,
     shift: inputs.shift.value,
     totalDiscount: currentManualTotalDiscount(),
@@ -620,6 +782,7 @@ form.addEventListener("submit", async (event) => {
     allRecords = await window.DrRosaApi.getRecords();
     updateTeethSummary();
     updateToothHighlights();
+    updatePaymentCalculation();
     updatePreview();
   } catch (error) {
     showAlert(error.message || "Unos nije sacuvan.", "error");
@@ -654,5 +817,6 @@ form.addEventListener("submit", async (event) => {
   updatePreview();
   updateTeethSummary();
   updateToothHighlights();
+  updatePaymentCalculation();
   spreadToothMap();
 })();

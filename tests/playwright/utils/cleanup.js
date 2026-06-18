@@ -7,6 +7,18 @@ function authHeaders(role = "director") {
 }
 
 async function cleanupPatientsAndRecords(request, baseURL, prefixes) {
+  const appointmentsResponse = await request.get(`${baseURL}/api/appointments?from=1970-01-01T00:00:00.000Z&to=2999-12-31T23:59:59.999Z`, { headers: authHeaders("staff") });
+  if (appointmentsResponse.ok()) {
+    const appointments = await appointmentsResponse.json();
+    for (const appointment of appointments) {
+      const patient = String(appointment.patientName || "");
+      const note = String(appointment.notes || "");
+      if (prefixes.some(prefix => patient.includes(prefix) || note.includes(prefix))) {
+        await request.delete(`${baseURL}/api/appointments/${appointment.id}?hard=1`, { headers: authHeaders("staff") });
+      }
+    }
+  }
+
   const recordsResponse = await request.get(`${baseURL}/api/records`, { headers: authHeaders("staff") });
   if (recordsResponse.ok()) {
     const records = await recordsResponse.json();
@@ -26,7 +38,38 @@ async function cleanupPatientsAndRecords(request, baseURL, prefixes) {
     const fullName = `${patient.first_name || ""} ${patient.last_name || ""}`.trim();
     const email = String(patient.email || "");
     if (prefixes.some(prefix => fullName.includes(prefix) || email.includes(prefix.toLowerCase()))) {
+      await cleanupPatientAdvancedData(request, baseURL, patient.id);
       await request.delete(`${baseURL}/api/patients/${patient.id}`, { headers: authHeaders("staff") });
+    }
+  }
+}
+
+async function cleanupPatientAdvancedData(request, baseURL, patientId) {
+  const datasets = [
+    {
+      path: `/api/patients/${patientId}/treatment-plans`,
+      deletePath: item => `/api/treatment-plans/${item.id}`
+    },
+    {
+      path: `/api/patients/${patientId}/perio-charts`,
+      deletePath: item => `/api/perio-charts/${item.id}`
+    },
+    {
+      path: `/api/patients/${patientId}/invoices`,
+      deletePath: item => `/api/invoices/${item.id}`
+    },
+    {
+      path: `/api/patients/${patientId}/insurance-claims`,
+      deletePath: item => `/api/insurance-claims/${item.id}`
+    }
+  ];
+
+  for (const dataset of datasets) {
+    const response = await request.get(`${baseURL}${dataset.path}`, { headers: authHeaders("staff") });
+    if (!response.ok()) continue;
+    const items = await response.json();
+    for (const item of items) {
+      await request.delete(`${baseURL}${dataset.deletePath(item)}`, { headers: authHeaders("staff") });
     }
   }
 }

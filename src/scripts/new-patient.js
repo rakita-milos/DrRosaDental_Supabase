@@ -5,12 +5,18 @@ async function requireAccess() {
     return false;
   }
 
+  const directorPanelLink = document.getElementById("director-panel-link");
+  if (directorPanelLink && session.role === "director") {
+    directorPanelLink.style.display = "";
+  }
+
   const logoutBtn = document.getElementById("logout-btn");
   if (logoutBtn) {
     logoutBtn.addEventListener("click", (event) => {
       event.preventDefault();
-      window.DrRosaApi.clearSession();
-      window.location.href = "login.html";
+      window.DrRosaApi.logout().finally(() => {
+        window.location.href = "login.html";
+      });
     });
   }
 

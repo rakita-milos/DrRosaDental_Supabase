@@ -10,17 +10,23 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        <a class="logo-link" href="index.html" aria-label="Pocetna strana">
+          <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
+        </a>
         <div>
           <p class="eyebrow">Sve evidencije</p>
           <h1>Pregled svih zapisa</h1>
         </div>
       </div>
-      <nav>
-        <a href="index.html">Dashboard</a>
-        <a href="new-entry.html">Novi unos</a>
-        <a href="new-patient.html">Novi pacijent</a>
-        <button id="logout-btn" type="button">Odjava</button>
+      <nav class="topbar-actions" aria-label="Glavna navigacija">
+        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="calendar.html" class="nav-link">Kalendar</a>
+        <a href="new-entry.html" class="nav-link">Novi unos</a>
+        <a href="new-patient.html" class="nav-link">Novi pacijent</a>
+        <a href="all-records.html" class="nav-link" aria-current="page">Evidencija</a>
+        <a href="public-booking.html" class="nav-link">Online zakazivanje</a>
+        <a id="director-panel-link" href="director-panel.html" class="nav-link" style="display: none;">Direktor panel</a>
+        <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
     </header>
 

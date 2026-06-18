@@ -4,7 +4,11 @@ node_modules/
 *.log
 npm-debug.log*
 data/
+uploads/
+backend/uploads/
 backups/
+backend/backups/
+backend/.env
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
@@ -13,3 +17,9 @@ dist/
 build/
 .vscode/
 .idea/
+tests/playwright/test-results/
+tests/playwright/playwright-report/
+tests/playwright/.backend-backups/
+tests/playwright/.backend-data/
+tests/playwright/.scanner-inbox/
+tests/playwright/.uploads/

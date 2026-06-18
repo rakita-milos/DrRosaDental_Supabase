@@ -10,6 +10,22 @@ class DirectorPanelPage {
     await this.page.goto("/src/pages/director-panel.html");
   }
 
+  async expectCoreElements() {
+    await expect(this.page.locator("body")).toContainText(/Direktor panel|Finansijski/i);
+    await expect(this.reportsGrid).toBeVisible();
+    await expect(this.reportsGrid).toContainText(/Finansijski/i);
+    await expect(this.reportsGrid).toContainText(/Admin sifarnici/i);
+    await expect(this.reportsGrid).toContainText(/Backup i sigurnost/i);
+  }
+
+  async expectCodebookValidation() {
+    await this.openCodebookAdmin();
+    await this.openCodebookType("activity");
+    await this.page.getByRole("button", { name: /Sa.*ifru/i }).click();
+    const valid = await this.page.locator("#codebook-form").evaluate(form => form.checkValidity());
+    expect(valid).toBe(false);
+  }
+
   async openReport(reportId, tableSelector) {
     await this.page.locator(`[data-report-id="${reportId}"]`).click();
     await expect(this.page.locator(`#${reportId}`)).toHaveClass(/active/);

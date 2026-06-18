@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { authenticate } = require("../utils/auth");
+const { authenticate, credentialsFor } = require("../utils/auth");
 const { LoginPage } = require("../pages/LoginPage");
 const { DashboardPage } = require("../pages/DashboardPage");
 const { NewPatientPage } = require("../pages/NewPatientPage");
@@ -7,22 +7,40 @@ const { NewEntryPage } = require("../pages/NewEntryPage");
 const { AllRecordsPage } = require("../pages/AllRecordsPage");
 const { PatientDashboardPage } = require("../pages/PatientDashboardPage");
 const { DirectorPanelPage } = require("../pages/DirectorPanelPage");
+const { authHeaders } = require("../utils/api");
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/src/pages/login.html");
   await page.evaluate(() => localStorage.clear());
 });
 
-test("login smoke test for staff and director roles", async ({ page }) => {
+async function unlockStaffForLogin(request, baseURL) {
+  const staff = credentialsFor("staff");
+  const director = credentialsFor("director");
+  await request.post(`${baseURL}/api/director/security/users/1/reset-password`, {
+    headers: authHeaders("director"),
+    data: { newPassword: director.password }
+  });
+  await request.post(`${baseURL}/api/director/security/users/2/reset-password`, {
+    headers: authHeaders("director"),
+    data: { newPassword: staff.password }
+  });
+  await request.post(`${baseURL}/api/director/security/users/2/unlock`, {
+    headers: authHeaders("director")
+  });
+}
+
+test("login smoke test for staff and director roles", async ({ page, request, baseURL }) => {
+  await unlockStaffForLogin(request, baseURL);
   const loginPage = new LoginPage(page);
 
   await loginPage.loginAs("staff");
-  await expect(page.locator("h1")).toBeVisible();
+  await expect(page.locator("body")).toContainText(/Moderna klinika|Evidencija pacijenata/i);
   await page.locator("#logout-btn").click();
   await expect(page).toHaveURL(/login\.html/);
 
   await loginPage.loginAs("director");
-  await expect(page.getByRole("heading", { name: /Direktor panel/i })).toBeVisible();
+  await expect(page.locator("#reports-grid")).toBeVisible();
 });
 
 test("staff navigation smoke test", async ({ page }) => {
@@ -31,11 +49,11 @@ test("staff navigation smoke test", async ({ page }) => {
 
   await dashboard.goto();
   await dashboard.openNewEntry();
-  await expect(page.getByRole("heading", { name: /Dodaj pregled/i })).toBeVisible();
+  await expect(page.locator("#new-entry-form")).toBeVisible();
 
   await dashboard.goto();
   await dashboard.openNewPatient();
-  await expect(page.getByRole("heading", { name: /Unos novog pacijenta/i })).toBeVisible();
+  await expect(page.locator("#patient-form")).toBeVisible();
 
   await dashboard.goto();
   await dashboard.openAllRecords();
@@ -50,7 +68,7 @@ test("full patient and visit CRUD smoke test", async ({ page }) => {
     firstName: `Smoke${stamp}`,
     lastName: "Playwright",
     birthDate: "1986-05-08",
-    email: `smoke${stamp}@example.test`,
+    email: `smoke${stamp}@example.com`,
     phone: "060123456"
   };
   const updatedPatient = {

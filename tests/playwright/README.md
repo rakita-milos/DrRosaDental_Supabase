@@ -1,6 +1,6 @@
-# Playwright Smoke Tests
+# Playwright Tests
 
-Automatizovani smoke testovi za Dr Rosa aplikaciju.
+Automatizovani Playwright testovi za Dr Rosa aplikaciju.
 
 ## Sta pokrivaju
 
@@ -10,10 +10,15 @@ Automatizovani smoke testovi za Dr Rosa aplikaciju.
 - Full CRUD tok za pacijenta preko UI-ja: create, read, update, delete
 - Full CRUD tok za posetu preko UI-ja: create, read, update, delete
 - Proveru da brisanje pacijenta sa istorijom bude blokirano uz potvrdu i poruku
+- Kalendar API i UI smoke tokove
+- Public booking tok
+- Dokumenta pacijenata: upload, metadata, view/download i soft delete API
+- Advanced workflow API/UI tokove za planove terapije, klinicki karton, beleske, saglasnosti, perio chart, fakture, osiguranje i ledger
 - Direktor panel i sve glavne izvestaje
 - Direktor admin deo za sifarnike: otvaranje, dodavanje i brisanje test sifre
 - Smena u sifarniku se testira sa vremenom i vise odabranih dana
 - Valute u sifarniku sakrivaju grupu/cenu i prikazuju polja za kurs
+- Backup/security API tokove za direktor rolu
 - Integracione tokove izmedju rola: staff unese podatke pa direktor vidi u izvestajima, direktor unese podatke pa staff vidi u evidenciji
 - Integraciju sifarnika: direktor doda delatnost/postupak, staff ih vidi u unosu pregleda
 - Excel/PDF export validaciju za kompletnu evidenciju, finansijski izvestaj i Excel-style PAZARI tab
@@ -32,6 +37,7 @@ tests/playwright/
     AllRecordsPage.js
     PatientDashboardPage.js
     DirectorPanelPage.js
+    PublicBookingPage.js
   utils/
     auth.js
     api.js
@@ -39,19 +45,33 @@ tests/playwright/
     exports.js
     env.js
   tests/
+    advanced-workflows-api.spec.js
+    advanced-workflows-ui.spec.js
     app-smoke.spec.js
+    backup-security-api.spec.js
+    calendar-api.spec.js
+    calendar-smoke.spec.js
+    patient-documents-api.spec.js
+    page-object-coverage.spec.js
+    regression.e2e.spec.js
     reports-export.e2e.spec.js
     role-integration.e2e.spec.js
-    regression.e2e.spec.js
     smoke.spec.js
 ```
 
-Selektori i akcije su smesteni u page object klase. Non-login testovi koriste test JWT iz `backend/.env`, da ne trose login rate limiter; pravi UI login je pokriven posebnim testom.
+Selektori i akcije su smesteni u page object klase. Non-login testovi koriste test JWT iz backend environment konfiguracije, da ne trose login rate limiter; pravi UI login je pokriven posebnim testom.
 
 ## Test grupe
 
 - `smoke.spec.js`: osnovni UI login, navigacija, CRUD i direktor panel smoke.
 - `app-smoke.spec.js`: ucitavanje svih glavnih stranica po rolama i access pravila.
+- `calendar-smoke.spec.js`: kalendar UI i javni booking smoke.
+- `calendar-api.spec.js`: termini, kolizije, statusi i public booking API.
+- `patient-documents-api.spec.js`: dokumenta pacijenta, imaging metadata i delete tok.
+- `page-object-coverage.spec.js`: proverava da svaka aplikaciona stranica ima page object elemente i osnovne failure tokove.
+- `advanced-workflows-api.spec.js`: planovi terapije, charts, notes, consents, fakture, claims i ledger API.
+- `advanced-workflows-ui.spec.js`: UI smoke za advanced workflow panele.
+- `backup-security-api.spec.js`: backup, restore-test, audit, sessions, 2FA i legal export.
 - `role-integration.e2e.spec.js`: vidljivost podataka izmedju staff i director role, plus sifarnik -> unos pregleda.
 - `reports-export.e2e.spec.js`: proverava da Excel/PDF export sadrzi stvarne filtrirane i izvestajne podatke.
 - `regression.e2e.spec.js`: ciljane regresije za zastitu direktor panela, filtered export i direktor-kreiran postupak.
@@ -63,6 +83,8 @@ cd tests/playwright
 npm install
 npm test
 ```
+
+By default the suite starts its own backend on `http://localhost:3010` with isolated SQLite, backup, upload and scanner directories.
 
 Samo smoke testovi:
 
@@ -96,10 +118,16 @@ Za vidljiv browser:
 npm run test:headed
 ```
 
-Config automatski pokrece backend iz `backend/server.js` ako lokalni health check vec nije aktivan. Lozinke cita iz `backend/.env`.
+`npm test` koristi `scripts/run-with-server.js`, koji pokrece izolovani backend iz `backend/server.js`, ceka `/api/health`, zatim pokrece Playwright kroz `playwright.ci.config.js` i na kraju gasi samo taj backend proces. Login vrednosti cita iz backend environment konfiguracije.
 
 Za drugi host ili server koristi promenljivu:
 
 ```bash
 PLAYWRIGHT_BASE_URL=https://your-server.example npm test
+```
+
+Ako backend vec pokreces samostalno, mozes direktno koristiti CI konfiguraciju:
+
+```bash
+npx playwright test -c playwright.ci.config.js --reporter=list
 ```

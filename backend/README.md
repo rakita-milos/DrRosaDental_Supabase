@@ -4,24 +4,35 @@ Express + SQLite backend for the Dr Rosa dental clinic application.
 
 ## Production Environment
 
-Create `backend/.env`:
+Create the backend environment file and keep local credentials out of documentation and source control.
 
-```env
-NODE_ENV=production
-PORT=3000
-JWT_SECRET=use-a-unique-secret-with-at-least-32-characters
-CORS_ORIGIN=https://your-frontend-origin.example
-SQLITE_DB_PATH=./data/drosa.sqlite
-SQLITE_BACKUP_DIR=./backups
-INITIAL_DIRECTOR_PASSWORD=set-a-strong-initial-password
-INITIAL_STAFF_PASSWORD=set-a-different-strong-password
+Required settings:
+
+```text
+NODE_ENV
+PORT
+JWT_SECRET
+CORS_ORIGIN
+SQLITE_DB_PATH
+SQLITE_BACKUP_DIR
+BACKUP_DIR
+UPLOAD_DIR
+SCANNER_IMPORT_DIR
+BACKUP_ENCRYPTION_KEY
+STAFF_DEFAULT_PERMISSIONS
 ```
 
+Optional runtime settings include Google Calendar OAuth values and initial director/staff login values.
+
 Notes:
-- `JWT_SECRET` is required. The server will not start with a missing or weak secret.
-- Initial passwords are used only when the `users` table is empty.
-- `CORS_ORIGIN` is an allowlist. Use comma-separated origins if needed.
+- `JWT_SECRET` is required. The server validates it at startup.
+- Initial login values are used only when the `users` table is empty.
+- `CORS_ORIGIN` is an allow-list. Use comma-separated origins if needed. In production it must be explicit and must not use localhost origins.
 - Relative SQLite paths are resolved from the `backend` directory, so the project can move between computers and servers.
+- `BACKUP_DIR` is used for encrypted application backups. `SQLITE_BACKUP_DIR` is supported as a legacy fallback.
+- `BACKUP_ENCRYPTION_KEY` must be set separately from `JWT_SECRET` in production; startup fails if it is missing or reused.
+- `UPLOAD_DIR`, `SCANNER_IMPORT_DIR` and `STAFF_DEFAULT_PERMISSIONS` are required in production so live deploys do not inherit development defaults.
+- `STAFF_DEFAULT_PERMISSIONS` is a comma-separated allow-list, for example `patients:read,patients:write,records:read,records:write,calendar:read,calendar:write,documents:read,documents:write`.
 
 ## Commands
 
@@ -34,17 +45,7 @@ npm.cmd run backup
 
 ## Auth
 
-`POST /api/auth/login`
-
-```json
-{
-  "email": "director@drosa.com",
-  "password": "configured-password",
-  "role": "director"
-}
-```
-
-The API returns a JWT. Send it as:
+Clients authenticate with `POST /api/auth/login`. The server sets HttpOnly SameSite cookies for browser clients. Non-production responses also include explicit tokens for automated tests and local tooling. If a token is provided explicitly, send it as:
 
 ```text
 Authorization: Bearer <token>
@@ -52,33 +53,24 @@ Authorization: Bearer <token>
 
 ## Main Endpoints
 
-- `POST /api/auth/login`
-- `POST /api/auth/verify`
-- `GET /api/patients`
-- `GET /api/patients/:id`
-- `POST /api/patients`
-- `PUT /api/patients/:id`
-- `DELETE /api/patients/:id`
-- `GET /api/records`
-- `POST /api/records`
-- `PUT /api/records/:id`
-- `DELETE /api/records/:id`
-- `GET /api/codebooks`
-- `GET /api/director/codebooks`
-- `POST /api/director/codebooks`
-- `PUT /api/director/codebooks/:id`
-- `DELETE /api/director/codebooks/:id`
-- `GET /api/director/exchange-rate`
-- `GET /api/doctors`
-- `GET /api/director/reports/financial`
-- `GET /api/director/reports/patients`
-- `GET /api/director/reports/doctors`
-- `GET /api/director/reports/procedures`
-- `GET /api/health`
+- Auth: login, verify, refresh and logout
+- Patients: list, detail, create, update and delete
+- Medical profile: get/update profile per patient
+- Patient documents: upload, scan import, view, download, imaging metadata and soft delete
+- Records: list, create, update and delete visit records
+- Chairs and appointments: list/create/update/delete appointments and create visit from appointment
+- Public booking: options, availability and request creation
+- Treatment plans, clinical chart, clinical notes, consents, perio charts, invoices, claims and ledger
+- Director backups: status, list, create, download, restore and test restore
+- Director security: audit log, sessions, permissions, legal export, status, unlock, 2FA setup/verify/disable
+- Director Google Calendar: settings, OAuth exchange, sync status, retry and test sync
+- Director reports: financial, patients, doctors and procedures
+- Codebooks: public codebooks and director codebook CRUD
+- Doctors and health check
 
 ## Security
 
-- Passwords are hashed with bcrypt.
+- Credentials are hashed with bcrypt.
 - JWT secret is mandatory and validated at startup.
 - Login is rate-limited in memory.
 - CORS is restricted to configured frontend origins.
@@ -87,11 +79,16 @@ Authorization: Bearer <token>
 - User input is normalized before storage.
 - SQL queries use prepared statements.
 - Health checks do not expose the SQLite file path.
+- Backup files are encrypted.
+- The `npm run backup` command also writes encrypted `.sqlite.enc` files.
+- Backup restore enters a short maintenance window and other API requests return `503` while the active SQLite file is being replaced.
+- Legal export is paginated by a `limit` query parameter with a production safety cap; the response includes `meta.counts` and `meta.truncated`.
 
 ## Delete Rules
 
 - Patient delete returns `409 Conflict` when the patient has linked visit history or payments.
 - Visit record delete removes the selected history entry and its owned payment/treatment rows through SQLite foreign keys.
+- Document delete is soft-delete.
 - The UI asks for confirmation before every exposed delete action.
 
 ## Codebook Notes

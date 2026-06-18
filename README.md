@@ -1,14 +1,16 @@
 # Dr Rosa Dental Dashboard
 
-A dental clinic management system with role-based access control, patient tracking, visit records, payment status, tooth-map treatments, financial reports and director-only analytics.
+A dental clinic management system with role-based access control, patient tracking, visit records, payment status, tooth-map treatments, appointment scheduling, patient documents, financial reports and director-only analytics.
 
 ## Features
 
 **Staff interface**
-- Patient dashboard with visit history
+- Patient dashboard with visit history, medical profile, documents, imaging metadata and clinical workflow tabs
 - New patient registration
 - Patient edit/delete with protected deletion when visit history exists
 - Visit/treatment logging with FDI tooth mapping
+- Calendar page for chairs, doctors, appointments and visit creation from an appointment
+- Public booking request page
 - Payment tracking: Placeno, Delimicno, Dugovanje
 - Patient filtering, search and detail pages
 - Excel/PDF export from filtered records
@@ -23,15 +25,18 @@ A dental clinic management system with role-based access control, patient tracki
 - Admin area for codebooks: activities, procedures, visit/payment statuses, currencies and shifts
 - Shift codebook stores working time and one or more weekdays
 - Currency codebook stores exchange-rate metadata instead of group/price fields
+- Google Calendar settings and sync status
+- Backup, restore-test, audit-log, sessions, 2FA and legal-export tools
 
 **Security**
 - Role-based access control: director/staff
 - JWT authentication
-- bcrypt password hashing
+- bcrypt credential hashing
 - Helmet security headers
 - CORS allow-list
 - SQLite prepared statements
 - Login rate limiting
+- Encrypted SQLite backup files
 
 ## Project Structure
 
@@ -40,13 +45,17 @@ DrRosaWebApp/
   index.html
   README.md
   DIRECTOR_PANEL_GUIDE.md
+  BACKEND_SETUP.md
+  database_schema.sql  (legacy reference; active schema is backend/database.sql)
+  sql/
   backend/
     server.js
     database.sql
     package.json
-    .env
     data/
+    backups/
     scripts/
+    uploads/
   src/
     pages/
       login.html
@@ -56,6 +65,8 @@ DrRosaWebApp/
       patient-dashboard.html
       new-patient.html
       director-panel.html
+      calendar.html
+      public-booking.html
     scripts/
       api.js
       login.js
@@ -67,6 +78,8 @@ DrRosaWebApp/
       director-reports.js
       export-utils.js
       procedure-catalog.js
+      calendar.js
+      public-booking.js
     styles/
       styles.css
     assets/
@@ -75,7 +88,9 @@ DrRosaWebApp/
     playwright/
       package.json
       playwright.config.js
-      tests/smoke.spec.js
+      pages/
+      utils/
+      tests/
       README.md
 ```
 
@@ -90,19 +105,27 @@ npm install
 
 ### 2. Configure backend
 
-Create or update `backend/.env`.
+Create or update the backend environment file. Keep local credentials and runtime secrets only in that file, outside README documentation.
 
-```env
-SQLITE_DB_PATH=./data/drosa.sqlite
-SQLITE_BACKUP_DIR=./backups
-PORT=3000
-NODE_ENV=development
-JWT_SECRET=change-this-to-a-unique-32-character-minimum-secret
-API_URL=http://localhost:3000
-CORS_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000
-INITIAL_DIRECTOR_PASSWORD=change-this-password
-INITIAL_STAFF_PASSWORD=change-this-password
+Required runtime settings include:
+
+```text
+SQLITE_DB_PATH
+BACKUP_DIR
+UPLOAD_DIR
+SCANNER_IMPORT_DIR
+BACKUP_ENCRYPTION_KEY
+STAFF_DEFAULT_PERMISSIONS
+PORT
+NODE_ENV
+JWT_SECRET
+API_URL
+CORS_ORIGIN
 ```
+
+The initial director and staff login values are also configured through backend environment variables and are used only when the users table is empty.
+
+For production, `NODE_ENV=production` enforces explicit `CORS_ORIGIN`, `UPLOAD_DIR`, `SCANNER_IMPORT_DIR`, `BACKUP_ENCRYPTION_KEY` and `STAFF_DEFAULT_PERMISSIONS`. Production `CORS_ORIGIN` must point to the real HTTPS frontend origin, not localhost.
 
 ### 3. Start the app
 
@@ -124,18 +147,16 @@ cd backend
 npm run dev
 ```
 
-## Credentials
+## Access
 
-Passwords are read from `backend/.env`.
+Default role accounts are created from the backend environment configuration.
 
 **Director**
 - Email: `director@drosa.com`
-- Password: `INITIAL_DIRECTOR_PASSWORD`
 - Role: Direktor Ordinacije
 
 **Staff**
 - Email: `staff@drosa.com`
-- Password: `INITIAL_STAFF_PASSWORD`
 - Role: Zaposlenik
 
 ## Useful Runtime Checks
@@ -153,15 +174,13 @@ Get-Process | Where-Object { $_.ProcessName -eq 'node' } | Select-Object Id,Proc
 
 ## Authentication
 
-1. User submits credentials on `login.html`.
+1. User submits login data on `login.html`.
 2. Frontend calls `POST /api/auth/login`.
 3. Backend validates the user in SQLite.
-4. Backend returns a JWT and user object.
-5. Frontend stores:
-   - `localStorage['drrosa-token']`
-   - `localStorage['drrosa-session']`
+4. Server sets HttpOnly SameSite cookies for browser clients.
+5. Frontend stores only non-secret session display metadata in `localStorage['drrosa-session']`.
 6. Protected pages call `POST /api/auth/verify`.
-7. Director-only pages additionally require `role === "director"`.
+7. Director-only pages additionally require the database-backed `director` role.
 
 ## Data Persistence
 
@@ -169,7 +188,9 @@ Primary data is stored in SQLite.
 
 - Default database: `backend/data/drosa.sqlite`
 - Schema: `backend/database.sql`
-- Config: `backend/.env`
+- Config: backend environment file
+- Uploaded patient files: `backend/uploads`
+- Encrypted backups: `backend/backups`
 
 Browser storage is only used for active auth/session state.
 
@@ -183,7 +204,7 @@ Excel/PDF export utilities live in `src/scripts/export-utils.js`.
 - Director report export follows the currently opened report/table.
 - If there are no rows, export shows `Nema podataka za export.`
 
-## Playwright Smoke Tests
+## Playwright Tests
 
 Automated Playwright tests live in `tests/playwright`.
 
@@ -198,8 +219,13 @@ Automated Playwright tests live in `tests/playwright`.
 - Full patient CRUD: create, read, update, delete
 - Full visit CRUD: create, read, update, delete
 - Delete protection: patient deletion is blocked while linked visit history exists
+- Calendar API and UI smoke coverage
+- Public booking flow coverage
+- Patient document upload, view/download metadata and soft delete API coverage
+- Advanced workflow API/UI coverage for treatment plans, charts, notes, consents, invoicing, claims and ledger
 - Director panel reports
 - Director admin codebooks: open, create and delete smoke item
+- Backup/security API coverage: encrypted backups, restore tests, audit log, sessions, 2FA and legal export
 - Cross-role integration: staff-created data is visible in director reports
 - Cross-role integration: director-created data is visible in staff evidence screens
 - Director-created codebook activity/procedure is available in staff visit entry
@@ -226,12 +252,6 @@ cd tests/playwright
 npm run test:smoke
 npm run test:integration
 npm run test:exports
-```
-
-### Run full regression E2E tests
-
-```bash
-cd tests/playwright
 npm run test:regression
 ```
 
@@ -251,14 +271,12 @@ npm run report
 
 ### Test notes
 
-- `playwright.config.js` checks `http://localhost:3000/api/health`.
-- If the backend is not already running, Playwright starts `backend/server.js`.
-- Test credentials are read from `backend/.env`.
+- `playwright.config.js` uses isolated default base URL `http://localhost:3010`.
+- `npm test` in `tests/playwright` starts `backend/server.js` through `scripts/run-with-server.js` with isolated SQLite, backup, upload and scanner directories, then stops that backend after the run.
+- Test login values are read from the backend environment file.
 - Tests use Page Object Model classes from `tests/playwright/pages`.
 - For a different host/port, run tests with `PLAYWRIGHT_BASE_URL`, for example `PLAYWRIGHT_BASE_URL=https://your-server.example npm test`.
-- The full CRUD smoke test creates, updates and deletes its own smoke patient/visit records.
-- Integration, export and regression E2E tests clean up created test patients, visits and codebook items through API cleanup.
-- Last verified result: `25 passed`.
+- CRUD, integration, export and regression tests clean up created test patients, visits and codebook items through API cleanup.
 
 ## Maintenance Commands
 
@@ -283,13 +301,15 @@ npm audit
 git status --short
 ```
 
+`npm run backup` creates an encrypted `.sqlite.enc` backup. `BACKUP_DIR` controls the backup directory; `SQLITE_BACKUP_DIR` is supported as a legacy fallback.
+
 ## Security Test Summary
 
-Recent local checks covered:
+Recent local checks cover:
 
 - Health endpoint
 - Auth-required API routes
-- Wrong password rejection
+- Invalid login rejection
 - SQLi-style login payload rejection
 - Staff blocked from director report routes
 - Director report access
@@ -297,6 +317,10 @@ Recent local checks covered:
 - Login rate limiter returning `429`
 - npm audit with `0` known vulnerabilities
 - Patient and visit CRUD integration
+- Backup/security director routes
+- Patient document routes
+- Calendar routes
+- Advanced clinical and billing workflow routes
 
 ## Technologies
 
@@ -313,12 +337,13 @@ Recent local checks covered:
 
 ## Production Hardening Notes
 
-- Rotate `JWT_SECRET` and all initial passwords.
+- Rotate `JWT_SECRET` and all initial login credentials before production use.
 - Use HTTPS.
-- Consider moving JWT storage from `localStorage` to HttpOnly Secure SameSite cookies.
+- Keep JWT storage in HttpOnly Secure SameSite cookies; do not reintroduce browser localStorage token persistence.
 - Remove inline styles where possible and tighten CSP by removing `style-src 'unsafe-inline'`.
 - Add user-management UI for staff accounts.
 - Add automated database backup scheduling.
+- Set `BACKUP_ENCRYPTION_KEY` separately from `JWT_SECRET`; production startup fails if it is missing or reused.
 
 ## Support
 
@@ -326,6 +351,6 @@ For director panel documentation, see [DIRECTOR_PANEL_GUIDE.md](DIRECTOR_PANEL_G
 
 ---
 
-**Version:** 2.2  
+**Version:** 2.3  
 **Last Updated:** May 2026  
-**Status:** Demo with backend integration, SQLite persistence, export support and Playwright smoke tests; production hardening still required.
+**Status:** Demo with backend integration, SQLite persistence, calendar, documents, backup/security, advanced workflow support, export support and Playwright tests; production hardening still required.
