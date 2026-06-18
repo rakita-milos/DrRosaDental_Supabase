@@ -2,6 +2,7 @@ node_modules/
 .env
 .env.local
 *.log
+!logs/.gitkeep
 npm-debug.log*
 data/
 uploads/

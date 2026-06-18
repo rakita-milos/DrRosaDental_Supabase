@@ -78,13 +78,28 @@ curl http://localhost:3000/api/health
 
 Health odgovor ne prikazuje putanju baze.
 
-## 6. Production deploy napomene
+## 6. Logovi
+
+Svi runtime `.log` fajlovi treba da budu u root folderu `logs\`.
+
+- `start-app.bat` upisuje backend output u `logs\backend.out.log`.
+- `start-app.bat` upisuje backend error output u `logs\backend.err.log`.
+- Stari lokalni logovi mogu biti u `logs\archive\`.
+- Brisanje starih logova radi skripta:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\cleanup-logs.ps1 -Days 30
+```
+
+Preporuka: runtime `.log` fajlove brisati posle 30 dana. Audit/security podatke iz baze ne brisati ovim pravilom; za njih koristi pravni/ordinacijski retention policy.
+
+## 7. Production deploy napomene
 
 - Ne kopiraj lokalne `backend/data`, `backend/uploads` ili `backend/backups` foldere u deploy osim ako namerno migriras stvarne podatke.
 - Pokreni `npm.cmd audit --audit-level=moderate` i testove pre deploy-a.
 - Za Playwright koristi izolovani default `http://localhost:3010`; ne testiraj protiv produkcione baze.
 
-## 7. HTTPS, servis i rollback
+## 8. HTTPS, servis i rollback
 
 - Aplikaciju pokreni iza HTTPS reverse proxy-ja ili load balancera koji terminira TLS za javni domen iz `CORS_ORIGIN`.
 - Backend proces pokreni kroz servisni menadzer koji restartuje proces posle pada, na primer Windows Service/NSSM/PM2/systemd u zavisnosti od servera.

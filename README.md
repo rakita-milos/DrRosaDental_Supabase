@@ -303,6 +303,17 @@ git status --short
 
 `npm run backup` creates an encrypted `.sqlite.enc` backup. `BACKUP_DIR` controls the backup directory; `SQLITE_BACKUP_DIR` is supported as a legacy fallback.
 
+## Runtime Logs
+
+Runtime log files are kept under `logs/`.
+
+- `logs/backend.out.log` stores backend standard output when using `start-app.bat`.
+- `logs/backend.err.log` stores backend errors when using `start-app.bat`.
+- Old local logs can be archived under `logs/archive/`.
+- `scripts/cleanup-logs.ps1` deletes `.log` files older than the configured number of days.
+
+Recommended retention for runtime file logs is 30 days. Keep database audit/security records according to legal and clinic policy; they are not the same as runtime `.log` files.
+
 ## Security Test Summary
 
 Recent local checks cover:
