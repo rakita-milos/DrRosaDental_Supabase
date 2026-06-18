@@ -1,6 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const { authHeaders } = require("../utils/api");
-const { authenticate, credentialsFor } = require("../utils/auth");
+const { authenticate, credentialsFor, signTestToken } = require("../utils/auth");
 
 test("api: director manages encrypted backups and security status", async ({ request, baseURL }) => {
   const statusResponse = await request.get(`${baseURL}/api/director/backups/status`, {
@@ -70,13 +70,36 @@ test("api: director manages encrypted backups and security status", async ({ req
   expect(permissionsResponse.ok()).toBeTruthy();
   expect(await permissionsResponse.json()).toHaveProperty("permissions");
 
-  const legalExport = await request.get(`${baseURL}/api/director/legal-export`, {
+  const invalidPermissionsResponse = await request.put(`${baseURL}/api/director/security/users/${staff.id}/permissions`, {
+    headers: authHeaders("director"),
+    data: { permissions: ["patients:read", "invalid:permission"] }
+  });
+  expect(invalidPermissionsResponse.status()).toBe(400);
+
+  const legalExport = await request.get(`${baseURL}/api/director/legal-export?limit=2`, {
     headers: authHeaders("director")
   });
   expect(legalExport.ok()).toBeTruthy();
   const exportBody = await legalExport.json();
   expect(exportBody.generatedAt).toBeTruthy();
+  expect(exportBody.meta.limit).toBe(2);
+  expect(exportBody.meta.counts).toHaveProperty("patients");
+  expect(exportBody.meta.truncated).toHaveProperty("patients");
   expect(Array.isArray(exportBody.patients)).toBeTruthy();
+  expect(exportBody.patients.length).toBeLessThanOrEqual(2);
+});
+
+test("api: director endpoints reject signed tokens for users missing from the database", async ({ request, baseURL }) => {
+  const ghostToken = signTestToken({
+    id: 999999,
+    email: "ghost@example.invalid",
+    name: "Ghost Director",
+    role: "director"
+  });
+  const response = await request.get(`${baseURL}/api/director/security/status`, {
+    headers: { Authorization: `Bearer ${ghostToken}` }
+  });
+  expect(response.status()).toBe(403);
 });
 
 test("api: login issues refresh token and failed login increments lockout counter", async ({ request, baseURL }) => {

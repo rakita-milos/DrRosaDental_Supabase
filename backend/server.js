@@ -33,6 +33,17 @@ if (!JWT_SECRET || JWT_SECRET.length < 32 || JWT_SECRET === 'your-secret-key-cha
   throw new Error('Set JWT_SECRET in backend/.env to a unique value with at least 32 characters.');
 }
 
+function requireProductionEnv(name) {
+  if (isProduction && !String(process.env[name] || '').trim()) {
+    throw new Error(`Set ${name} before production startup.`);
+  }
+}
+
+requireProductionEnv('CORS_ORIGIN');
+requireProductionEnv('UPLOAD_DIR');
+requireProductionEnv('SCANNER_IMPORT_DIR');
+requireProductionEnv('STAFF_DEFAULT_PERMISSIONS');
+
 const dbPath = path.resolve(__dirname, process.env.SQLITE_DB_PATH || './data/drosa.sqlite');
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
@@ -41,6 +52,7 @@ const schema = fs.readFileSync(path.join(__dirname, 'database.sql'), 'utf8');
 let db = openDatabase();
 let server;
 let automaticBackupTimer;
+let restoreInProgress = false;
 
 function openDatabase() {
   const database = new DatabaseSync(dbPath);
@@ -74,12 +86,20 @@ app.use(cors({
       return;
     }
     callback(new Error('CORS origin not allowed'));
-  }
+  },
+  credentials: true
 }));
 app.use(express.json({ limit: '15mb' }));
+app.use((req, res, next) => {
+  if (!restoreInProgress || req.path === '/api/health') return next();
+  return res.status(503).json({ error: 'Maintenance in progress. Try again shortly.' });
+});
 
 function allowedCorsOrigins() {
-  const configured = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || 'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500';
+  const configured = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || (isProduction ? '' : 'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500');
+  if (isProduction && /(^|,)\s*https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|,|$)/i.test(configured)) {
+    throw new Error('Production CORS_ORIGIN must not include localhost origins.');
+  }
   return configured
     .split(',')
     .map(origin => origin.trim())
@@ -116,13 +136,29 @@ const loginLimiter = createRateLimiter({
   message: 'Too many login attempts. Try again later.'
 });
 
+const publicBookingReadLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.PUBLIC_BOOKING_READ_RATE_LIMIT_MAX || 120),
+  message: 'Too many booking requests. Try again later.'
+});
+
+const publicBookingWriteLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.PUBLIC_BOOKING_RATE_LIMIT_MAX || 20),
+  message: 'Too many booking requests. Try again later.'
+});
+
 const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '15m';
 const REFRESH_TOKEN_DAYS = Number(process.env.REFRESH_TOKEN_DAYS || 14);
 const LOCKOUT_ATTEMPTS = Number(process.env.LOCKOUT_ATTEMPTS || 5);
 const LOCKOUT_MINUTES = Number(process.env.LOCKOUT_MINUTES || 15);
-const BACKUP_DIR = path.resolve(__dirname, process.env.BACKUP_DIR || './backups');
+const BACKUP_DIR = path.resolve(__dirname, process.env.BACKUP_DIR || process.env.SQLITE_BACKUP_DIR || './backups');
 const BACKUP_KEY_SOURCE = process.env.BACKUP_ENCRYPTION_KEY || JWT_SECRET;
 const AUTO_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+if (isProduction && (!process.env.BACKUP_ENCRYPTION_KEY || process.env.BACKUP_ENCRYPTION_KEY === JWT_SECRET)) {
+  throw new Error('Set BACKUP_ENCRYPTION_KEY to a unique value separate from JWT_SECRET before production startup.');
+}
 
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -770,15 +806,26 @@ async function rotateDefaultPasswords() {
 
 function authenticateToken(req, res, next) {
   const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(' ')[1];
+  const cookies = parseCookies(req);
+  const token = (authHeader && authHeader.split(' ')[1]) || cookies.drrosa_access;
 
   if (!token) {
     return res.status(401).json({ error: 'No token provided' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, (err, tokenUser) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
-    req.user = user;
+    const user = db.prepare('SELECT * FROM users WHERE id = ? AND email = ?').get(
+      positiveInteger(tokenUser.id),
+      String(tokenUser.email || '').toLowerCase()
+    );
+    if (!user) return res.status(403).json({ error: 'Invalid token user' });
+    if (isUserLocked(user)) return res.status(423).json({ error: 'Account is temporarily locked. Try again later.' });
+    if (user.password_changed_at && tokenUser.iat && new Date(user.password_changed_at).getTime() > tokenUser.iat * 1000) {
+      return res.status(403).json({ error: 'Session expired after password change' });
+    }
+    req.user = publicUser(user);
+    req.user.permissions = permissionsForUser(user);
     next();
   });
 }
@@ -788,6 +835,14 @@ function requireDirector(req, res, next) {
     return res.status(403).json({ error: 'Director access required' });
   }
   next();
+}
+
+function requirePermission(permission) {
+  return (req, res, next) => {
+    const permissions = Array.isArray(req.user?.permissions) ? req.user.permissions : [];
+    if (permissions.includes('*') || permissions.includes(permission)) return next();
+    return res.status(403).json({ error: 'Permission required' });
+  };
 }
 
 function publicUser(user) {
@@ -822,6 +877,44 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+function parseCookies(req) {
+  return String(req.headers.cookie || '')
+    .split(';')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .reduce((cookies, part) => {
+      const index = part.indexOf('=');
+      if (index === -1) return cookies;
+      const key = part.slice(0, index);
+      const value = part.slice(index + 1);
+      try {
+        cookies[key] = decodeURIComponent(value);
+      } catch {
+        cookies[key] = value;
+      }
+      return cookies;
+    }, {});
+}
+
+function cookieOptions(maxAge) {
+  return {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'Strict',
+    maxAge,
+    path: '/api'
+  };
+}
+
+function tokenTtlMs(value) {
+  const match = String(value || '').trim().match(/^(\d+)([smhd])?$/i);
+  if (!match) return 15 * 60 * 1000;
+  const amount = Number(match[1]);
+  const unit = (match[2] || 's').toLowerCase();
+  const multipliers = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
+  return amount * multipliers[unit];
+}
+
 function createAccessToken(user) {
   return jwt.sign(
     { id: user.id, email: user.email, name: user.name, role: user.role },
@@ -842,22 +935,17 @@ function createRefreshToken(userId, req) {
 
 function issueSession(user, req, res) {
   const refresh = createRefreshToken(user.id, req);
+  const accessToken = createAccessToken(user);
   if (res) {
     try {
-      res.cookie('drrosa_refresh', refresh.token, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: 'Strict',
-        maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
-        path: '/api'
-      });
+      res.cookie('drrosa_access', accessToken, cookieOptions(tokenTtlMs(ACCESS_TOKEN_TTL)));
+      res.cookie('drrosa_refresh', refresh.token, cookieOptions(REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000));
     } catch (e) {
       console.error('Failed to set refresh cookie', e);
     }
   }
   return {
-    token: createAccessToken(user),
-    refreshToken: refresh.token,
+    ...(isProduction ? {} : { token: accessToken, refreshToken: refresh.token }),
     refreshExpiresAt: refresh.expiresAt,
     user: publicUser(user)
   };
@@ -920,8 +1008,12 @@ function totpCode(secret, step = Math.floor(Date.now() / 30000)) {
 function verifyTotp(secret, code) {
   const clean = String(code || '').replace(/\s+/g, '');
   if (!/^\d{6}$/.test(clean)) return false;
+  const submitted = Buffer.from(clean);
   const currentStep = Math.floor(Date.now() / 30000);
-  return [-1, 0, 1].some(offset => totpCode(secret, currentStep + offset) === clean);
+  return [-1, 0, 1].some(offset => {
+    const expected = Buffer.from(totpCode(secret, currentStep + offset));
+    return expected.length === submitted.length && crypto.timingSafeEqual(expected, submitted);
+  });
 }
 
 function backupKey() {
@@ -1155,9 +1247,42 @@ function safeJsonParse(value, fallback = null) {
   }
 }
 
+const KNOWN_PERMISSIONS = new Set([
+  'patients:read',
+  'patients:write',
+  'records:read',
+  'records:write',
+  'calendar:read',
+  'calendar:write',
+  'documents:read',
+  'documents:write',
+  'clinical:read',
+  'clinical:write',
+  'billing:read',
+  'billing:write'
+]);
+
+function parsePermissionList(value) {
+  return String(value || '')
+    .split(',')
+    .map(permission => permission.trim())
+    .filter(Boolean);
+}
+
+function configuredStaffPermissions() {
+  const permissions = parsePermissionList(process.env.STAFF_DEFAULT_PERMISSIONS);
+  const invalid = invalidPermissions(permissions);
+  if (invalid.length) {
+    throw new Error(`Invalid STAFF_DEFAULT_PERMISSIONS values: ${invalid.join(', ')}`);
+  }
+  return permissions;
+}
+
+const staffDefaultPermissions = configuredStaffPermissions();
+
 const DEFAULT_PERMISSIONS = {
   director: ['*'],
-  staff: [
+  staff: staffDefaultPermissions.length ? staffDefaultPermissions : [
     'patients:read',
     'patients:write',
     'records:read',
@@ -1179,6 +1304,10 @@ function permissionsForUser(user) {
   return DEFAULT_PERMISSIONS[user?.role] || [];
 }
 
+function invalidPermissions(permissions) {
+  return permissions.filter(permission => permission !== '*' && !KNOWN_PERMISSIONS.has(permission));
+}
+
 function serializeUserSecurity(user) {
   return {
     id: user.id,
@@ -1195,6 +1324,14 @@ function serializeUserSecurity(user) {
   };
 }
 
+function legalExportRows(table, limit) {
+  return db.prepare(`SELECT * FROM ${table} ORDER BY id LIMIT ?`).all(limit);
+}
+
+function legalExportCount(table) {
+  return Number(db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get().count || 0);
+}
+
 function cleanText(value, { max = 255, required = false } = {}) {
   if (value === undefined || value === null) {
     return required ? '' : null;
@@ -1206,6 +1343,15 @@ function cleanText(value, { max = 255, required = false } = {}) {
     .trim()
     .slice(0, max);
   return required ? cleaned : cleaned || null;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function hasCodeLikeContent(value) {
@@ -1282,6 +1428,11 @@ function addMinutes(date, minutes) {
 
 function money(value) {
   return Math.max(0, Number(value || 0));
+}
+
+function signedMoney(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
 }
 
 function appointmentDurationMinutes(startsAt, endsAt) {
@@ -1595,6 +1746,28 @@ function mimeFromExtension(filename) {
   return 'application/octet-stream';
 }
 
+function detectedDocumentMime(buffer, filename) {
+  if (!buffer || buffer.length < 4) return null;
+  const ext = path.extname(filename || '').toLowerCase();
+  if (buffer.subarray(0, 4).toString() === '%PDF') return 'application/pdf';
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (
+    buffer.subarray(0, 4).toString() === 'RIFF'
+    && buffer.length >= 12
+    && buffer.subarray(8, 12).toString() === 'WEBP'
+  ) return 'image/webp';
+  if (buffer.length > 132 && buffer.subarray(128, 132).toString() === 'DICM') return 'application/dicom';
+  if (ext === '.dcm' || ext === '.dicom') return 'application/dicom';
+  return null;
+}
+
+function documentMimeMatches({ declaredMime, detectedMime }) {
+  if (!detectedMime) return false;
+  if (declaredMime === detectedMime) return true;
+  return declaredMime === 'application/octet-stream' && detectedMime === 'application/dicom';
+}
+
 async function patientUploadDir(patientId) {
   const dir = path.join(uploadRoot, 'patients', String(patientId));
   await fsp.mkdir(dir, { recursive: true });
@@ -1624,6 +1797,12 @@ async function savePatientDocument({ patientId, visitRecordId, documentType, tit
   }
   if (!buffer || buffer.length === 0 || buffer.length > MAX_DOCUMENT_SIZE) {
     const error = new Error('Fajl mora biti manji od 10 MB.');
+    error.status = 400;
+    throw error;
+  }
+  const detectedMime = detectedDocumentMime(buffer, originalFilename);
+  if (!documentMimeMatches({ declaredMime: mimeType, detectedMime })) {
+    const error = new Error('Sadrzaj fajla ne odgovara dozvoljenom tipu dokumenta.');
     error.status = 400;
     throw error;
   }
@@ -1730,7 +1909,7 @@ app.post('/api/auth/verify', authenticateToken, (req, res) => {
 
 app.post('/api/auth/refresh', (req, res) => {
   try {
-    const refreshToken = String(req.body.refreshToken || '');
+    const refreshToken = String(req.body.refreshToken || parseCookies(req).drrosa_refresh || '');
     if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });
     const row = db.prepare(`
       SELECT rt.*, u.email, u.name, u.role, u.two_factor_enabled
@@ -1758,12 +1937,13 @@ app.post('/api/auth/refresh', (req, res) => {
 
 app.post('/api/auth/logout', authenticateToken, (req, res) => {
   try {
-    const refreshToken = String(req.body.refreshToken || '');
+    const refreshToken = String(req.body.refreshToken || parseCookies(req).drrosa_refresh || '');
     if (refreshToken) {
       db.prepare('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ?').run(hashToken(refreshToken));
     }
     auditLog({ userId: req.user.id, action: 'logout', entityType: 'user', entityId: req.user.id, req });
     try {
+      res.clearCookie('drrosa_access', { path: '/api' });
       res.clearCookie('drrosa_refresh', { path: '/api' });
     } catch (e) {
       // ignore
@@ -1800,7 +1980,7 @@ app.post('/api/auth/change-password', authenticateToken, validateBody(changePass
 
 // ============ PATIENTS ENDPOINTS ============
 
-app.get('/api/patients', authenticateToken, (_req, res) => {
+app.get('/api/patients', authenticateToken, requirePermission('patients:read'), (_req, res) => {
   try {
     const patients = db.prepare(`
       SELECT id, first_name, last_name, date_of_birth, gender, email, phone, address,
@@ -1815,7 +1995,7 @@ app.get('/api/patients', authenticateToken, (_req, res) => {
   }
 });
 
-app.get('/api/patients/:id', authenticateToken, (req, res) => {
+app.get('/api/patients/:id', authenticateToken, requirePermission('patients:read'), (req, res) => {
   try {
     const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(req.params.id);
     if (!patient) return res.status(404).json({ error: 'Patient not found' });
@@ -1826,7 +2006,7 @@ app.get('/api/patients/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/patients', authenticateToken, validateBody(patientCreateSchema), (req, res) => {
+app.post('/api/patients', authenticateToken, requirePermission('patients:write'), validateBody(patientCreateSchema), (req, res) => {
   try {
     const first_name = cleanText(req.body.first_name, { max: 80, required: true });
     const last_name = cleanText(req.body.last_name, { max: 80, required: true });
@@ -1870,7 +2050,7 @@ app.post('/api/patients', authenticateToken, validateBody(patientCreateSchema), 
   }
 });
 
-app.put('/api/patients/:id', authenticateToken, validateBody(patientUpdateSchema), (req, res) => {
+app.put('/api/patients/:id', authenticateToken, requirePermission('patients:write'), validateBody(patientUpdateSchema), (req, res) => {
   try {
     const current = db.prepare('SELECT * FROM patients WHERE id = ?').get(req.params.id);
     if (!current) return res.status(404).json({ error: 'Patient not found' });
@@ -1915,7 +2095,7 @@ app.put('/api/patients/:id', authenticateToken, validateBody(patientUpdateSchema
   }
 });
 
-app.delete('/api/patients/:id', authenticateToken, (req, res) => {
+app.delete('/api/patients/:id', authenticateToken, requirePermission('patients:write'), (req, res) => {
   try {
     const current = db.prepare('SELECT id FROM patients WHERE id = ?').get(req.params.id);
     if (!current) return res.status(404).json({ error: 'Patient not found' });
@@ -1942,7 +2122,7 @@ app.delete('/api/patients/:id', authenticateToken, (req, res) => {
 
 // ============ PATIENT MEDICAL PROFILE / DOCUMENTS ============
 
-app.get('/api/patients/:id/medical-profile', authenticateToken, (req, res) => {
+app.get('/api/patients/:id/medical-profile', authenticateToken, requirePermission('patients:read'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
@@ -1954,7 +2134,7 @@ app.get('/api/patients/:id/medical-profile', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/patients/:id/medical-profile', authenticateToken, (req, res) => {
+app.put('/api/patients/:id/medical-profile', authenticateToken, requirePermission('patients:write'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
@@ -2010,7 +2190,7 @@ app.put('/api/patients/:id/medical-profile', authenticateToken, (req, res) => {
   }
 });
 
-app.get('/api/patients/:id/documents', authenticateToken, (req, res) => {
+app.get('/api/patients/:id/documents', authenticateToken, requirePermission('documents:read'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
@@ -2026,7 +2206,7 @@ app.get('/api/patients/:id/documents', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/patients/:id/documents', authenticateToken, validateBody(patientDocumentSchema), async (req, res) => {
+app.post('/api/patients/:id/documents', authenticateToken, requirePermission('documents:write'), validateBody(patientDocumentSchema), async (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     const base64 = String(req.body.fileBase64 || '').replace(/^data:[^;]+;base64,/, '');
@@ -2056,7 +2236,7 @@ app.post('/api/patients/:id/documents', authenticateToken, validateBody(patientD
   }
 });
 
-app.post('/api/patients/:id/documents/import-scan', authenticateToken, validateBody(importScanSchema), async (req, res) => {
+app.post('/api/patients/:id/documents/import-scan', authenticateToken, requirePermission('documents:write'), validateBody(importScanSchema), async (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     const scan = await latestScannerFile();
@@ -2093,7 +2273,7 @@ app.post('/api/patients/:id/documents/import-scan', authenticateToken, validateB
   }
 });
 
-app.get('/api/documents/:id/view', authenticateToken, async (req, res) => {
+app.get('/api/documents/:id/view', authenticateToken, requirePermission('documents:read'), async (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const row = db.prepare('SELECT * FROM patient_documents WHERE id = ? AND is_deleted = 0').get(documentId);
@@ -2112,7 +2292,7 @@ app.get('/api/documents/:id/view', authenticateToken, async (req, res) => {
   }
 });
 
-app.get('/api/documents/:id/download', authenticateToken, async (req, res) => {
+app.get('/api/documents/:id/download', authenticateToken, requirePermission('documents:read'), async (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const row = db.prepare('SELECT * FROM patient_documents WHERE id = ? AND is_deleted = 0').get(documentId);
@@ -2129,7 +2309,7 @@ app.get('/api/documents/:id/download', authenticateToken, async (req, res) => {
   }
 });
 
-app.delete('/api/documents/:id', authenticateToken, (req, res) => {
+app.delete('/api/documents/:id', authenticateToken, requirePermission('documents:write'), (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const row = db.prepare('SELECT id FROM patient_documents WHERE id = ? AND is_deleted = 0').get(documentId);
@@ -2142,7 +2322,7 @@ app.delete('/api/documents/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/documents/:id', authenticateToken, (req, res) => {
+app.put('/api/documents/:id', authenticateToken, requirePermission('documents:write'), (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const current = db.prepare('SELECT * FROM patient_documents WHERE id = ? AND is_deleted = 0').get(documentId);
@@ -2177,7 +2357,7 @@ app.put('/api/documents/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.get('/api/patients/:id/imaging', authenticateToken, (req, res) => {
+app.get('/api/patients/:id/imaging', authenticateToken, requirePermission('documents:read'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
@@ -2195,7 +2375,7 @@ app.get('/api/patients/:id/imaging', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/documents/:id/imaging', authenticateToken, (req, res) => {
+app.put('/api/documents/:id/imaging', authenticateToken, requirePermission('documents:write'), (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const current = db.prepare('SELECT * FROM patient_documents WHERE id = ? AND is_deleted = 0').get(documentId);
@@ -2223,7 +2403,7 @@ app.put('/api/documents/:id/imaging', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/documents/:id/imaging/analyze', authenticateToken, (req, res) => {
+app.post('/api/documents/:id/imaging/analyze', authenticateToken, requirePermission('documents:write'), (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const current = db.prepare('SELECT * FROM patient_documents WHERE id = ? AND is_deleted = 0').get(documentId);
@@ -2253,7 +2433,7 @@ app.post('/api/documents/:id/imaging/analyze', authenticateToken, (req, res) => 
 
 // ============ VISIT RECORDS ENDPOINTS ============
 
-app.get('/api/records', authenticateToken, (_req, res) => {
+app.get('/api/records', authenticateToken, requirePermission('records:read'), (_req, res) => {
   try {
     const records = db.prepare(`
       SELECT
@@ -2367,7 +2547,7 @@ function insertRecordTransaction(record) {
   }
 }
 
-app.post('/api/records', authenticateToken, (req, res) => {
+app.post('/api/records', authenticateToken, requirePermission('records:write'), (req, res) => {
   try {
     const patient_id = positiveInteger(req.body.patient_id);
     const doctor_id = positiveInteger(req.body.doctor_id);
@@ -2391,7 +2571,7 @@ app.post('/api/records', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/records/:id', authenticateToken, (req, res) => {
+app.put('/api/records/:id', authenticateToken, requirePermission('records:write'), (req, res) => {
   try {
     const current = db.prepare('SELECT * FROM visit_records WHERE id = ?').get(req.params.id);
     if (!current) return res.status(404).json({ error: 'Record not found' });
@@ -2415,7 +2595,7 @@ app.put('/api/records/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.delete('/api/records/:id', authenticateToken, (req, res) => {
+app.delete('/api/records/:id', authenticateToken, requirePermission('records:write'), (req, res) => {
   try {
     const current = db.prepare('SELECT id FROM visit_records WHERE id = ?').get(req.params.id);
     if (!current) return res.status(404).json({ error: 'Record not found' });
@@ -2430,7 +2610,7 @@ app.delete('/api/records/:id', authenticateToken, (req, res) => {
 
 // ============ APPOINTMENTS / CALENDAR ENDPOINTS ============
 
-app.get('/api/chairs', authenticateToken, (_req, res) => {
+app.get('/api/chairs', authenticateToken, requirePermission('calendar:read'), (_req, res) => {
   try {
     res.json(db.prepare('SELECT id, name, is_active FROM chairs WHERE is_active = 1 ORDER BY name').all());
   } catch (error) {
@@ -2439,7 +2619,7 @@ app.get('/api/chairs', authenticateToken, (_req, res) => {
   }
 });
 
-app.get('/api/appointments', authenticateToken, (req, res) => {
+app.get('/api/appointments', authenticateToken, requirePermission('calendar:read'), (req, res) => {
   try {
     const from = normalizeIsoDateTime(req.query.from || '1970-01-01T00:00:00.000Z');
     const to = normalizeIsoDateTime(req.query.to || '2999-12-31T23:59:59.999Z');
@@ -2478,7 +2658,7 @@ app.get('/api/appointments', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/appointments', authenticateToken, (req, res) => {
+app.post('/api/appointments', authenticateToken, requirePermission('calendar:write'), (req, res) => {
   try {
     const patientId = positiveInteger(req.body.patient_id ?? req.body.patientId);
     const doctorId = positiveInteger(req.body.doctor_id ?? req.body.doctorId);
@@ -2545,7 +2725,7 @@ app.post('/api/appointments', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/appointments/:id', authenticateToken, (req, res) => {
+app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:write'), (req, res) => {
   try {
     const current = appointmentById(req.params.id);
     if (!current) return res.status(404).json({ error: 'Appointment not found' });
@@ -2612,7 +2792,7 @@ app.put('/api/appointments/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.patch('/api/appointments/:id/status', authenticateToken, (req, res) => {
+app.patch('/api/appointments/:id/status', authenticateToken, requirePermission('calendar:write'), (req, res) => {
   try {
     const current = appointmentById(req.params.id);
     if (!current) return res.status(404).json({ error: 'Appointment not found' });
@@ -2630,7 +2810,7 @@ app.patch('/api/appointments/:id/status', authenticateToken, (req, res) => {
   }
 });
 
-app.delete('/api/appointments/:id', authenticateToken, (req, res) => {
+app.delete('/api/appointments/:id', authenticateToken, requirePermission('calendar:write'), (req, res) => {
   try {
     const current = appointmentById(req.params.id);
     if (!current) return res.status(404).json({ error: 'Appointment not found' });
@@ -2649,7 +2829,7 @@ app.delete('/api/appointments/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/appointments/:id/create-visit', authenticateToken, (req, res) => {
+app.post('/api/appointments/:id/create-visit', authenticateToken, requirePermission('calendar:write'), requirePermission('records:write'), (req, res) => {
   try {
     const appointment = appointmentById(req.params.id);
     if (!appointment) return res.status(404).json({ error: 'Appointment not found' });
@@ -2688,7 +2868,7 @@ app.post('/api/appointments/:id/create-visit', authenticateToken, (req, res) => 
 
 // ============ PUBLIC BOOKING ENDPOINTS ============
 
-app.get('/api/public/booking/options', (_req, res) => {
+app.get('/api/public/booking/options', publicBookingReadLimiter, (_req, res) => {
   try {
     res.json({
       doctors: db.prepare('SELECT id, name, specialization FROM doctors ORDER BY name').all(),
@@ -2700,7 +2880,7 @@ app.get('/api/public/booking/options', (_req, res) => {
   }
 });
 
-app.get('/api/public/booking/availability', (req, res) => {
+app.get('/api/public/booking/availability', publicBookingReadLimiter, (req, res) => {
   try {
     const dateText = cleanText(req.query.date, { max: 20, required: true });
     const doctorId = positiveInteger(req.query.doctor_id);
@@ -2730,7 +2910,7 @@ app.get('/api/public/booking/availability', (req, res) => {
   }
 });
 
-app.post('/api/public/booking', (req, res) => {
+app.post('/api/public/booking', publicBookingWriteLimiter, (req, res) => {
   try {
     const namePattern = /^[\p{L}][\p{L}\p{N}\s.'-]{0,79}$/u;
     const firstNameResult = validatedText(req.body.firstName || req.body.first_name, { field: 'Ime', max: 80, required: true, pattern: namePattern });
@@ -2767,29 +2947,39 @@ app.post('/api/public/booking', (req, res) => {
     const conflict = appointmentConflict({ doctorId, chairId, startsAt, endsAt });
     if (conflict) return res.status(409).json({ error: 'Termin vise nije slobodan.' });
 
-    let patient = email ? db.prepare('SELECT * FROM patients WHERE lower(email) = lower(?) LIMIT 1').get(email) : null;
-    if (!patient) {
-      const result = db.prepare(`
-        INSERT INTO patients (first_name, last_name, email, phone)
-        VALUES (?, ?, ?, ?)
-      `).run(firstName, lastName, email, phone);
-      patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(result.lastInsertRowid);
+    db.exec('BEGIN');
+    let responsePayload;
+    try {
+      let patient = email ? db.prepare('SELECT * FROM patients WHERE lower(email) = lower(?) LIMIT 1').get(email) : null;
+      if (!patient) {
+        const result = db.prepare(`
+          INSERT INTO patients (first_name, last_name, email, phone)
+          VALUES (?, ?, ?, ?)
+        `).run(firstName, lastName, email, phone);
+        patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(result.lastInsertRowid);
+      }
+
+      const appointmentResult = db.prepare(`
+        INSERT INTO appointments (patient_id, doctor_id, chair_id, procedure_id, procedure_name, starts_at, ends_at, duration_minutes, status, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
+      `).run(patient.id, doctorId, chairId, procedure.id, procedureName, startsAt, endsAt, duration, notesResult.value);
+      queueCalendarSync(appointmentResult.lastInsertRowid, 'create_google_event');
+
+      const bookingResult = db.prepare(`
+        INSERT INTO public_booking_requests (
+          patient_id, appointment_id, first_name, last_name, email, phone, doctor_id, procedure_id, procedure_name,
+          requested_starts_at, duration_minutes, status, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?)
+      `).run(patient.id, appointmentResult.lastInsertRowid, firstName, lastName, email, phone, doctorId, procedure.id, procedureName, startsAt, duration, notesResult.value);
+      responsePayload = { id: bookingResult.lastInsertRowid, appointmentId: appointmentResult.lastInsertRowid, patientId: patient.id, status: 'booked' };
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
     }
 
-    const appointmentResult = db.prepare(`
-      INSERT INTO appointments (patient_id, doctor_id, chair_id, procedure_id, procedure_name, starts_at, ends_at, duration_minutes, status, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)
-    `).run(patient.id, doctorId, chairId, procedure.id, procedureName, startsAt, endsAt, duration, notesResult.value);
-    queueCalendarSync(appointmentResult.lastInsertRowid, 'create_google_event');
-
-    const bookingResult = db.prepare(`
-      INSERT INTO public_booking_requests (
-        patient_id, appointment_id, first_name, last_name, email, phone, doctor_id, procedure_id, procedure_name,
-        requested_starts_at, duration_minutes, status, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'booked', ?)
-    `).run(patient.id, appointmentResult.lastInsertRowid, firstName, lastName, email, phone, doctorId, procedure.id, procedureName, startsAt, duration, notesResult.value);
-
-    res.status(201).json({ id: bookingResult.lastInsertRowid, appointmentId: appointmentResult.lastInsertRowid, patientId: patient.id, status: 'booked' });
+    processCalendarSyncQueue({ limit: 5 });
+    res.status(201).json(responsePayload);
   } catch (error) {
     console.error('Public booking create error:', error);
     res.status(500).json({ error: 'Termin nije zakazan.' });
@@ -2856,13 +3046,13 @@ function saveTreatmentPlanItems(planId, items = []) {
   });
 }
 
-app.get('/api/patients/:id/treatment-plans', authenticateToken, (req, res) => {
+app.get('/api/patients/:id/treatment-plans', authenticateToken, requirePermission('clinical:read'), (req, res) => {
   const patientId = positiveInteger(req.params.id);
   const plans = db.prepare('SELECT * FROM treatment_plans WHERE patient_id = ? ORDER BY created_at DESC').all(patientId);
   res.json(plans.map(serializeTreatmentPlan));
 });
 
-app.post('/api/patients/:id/treatment-plans', authenticateToken, (req, res) => {
+app.post('/api/patients/:id/treatment-plans', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
@@ -2887,7 +3077,7 @@ app.post('/api/patients/:id/treatment-plans', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/treatment-plans/:id', authenticateToken, (req, res) => {
+app.put('/api/treatment-plans/:id', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const planId = positiveInteger(req.params.id);
     const plan = db.prepare('SELECT * FROM treatment_plans WHERE id = ?').get(planId);
@@ -2912,7 +3102,7 @@ app.put('/api/treatment-plans/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/treatment-plans/:id/accept', authenticateToken, (req, res) => {
+app.post('/api/treatment-plans/:id/accept', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   const planId = positiveInteger(req.params.id);
   const plan = db.prepare('SELECT * FROM treatment_plans WHERE id = ?').get(planId);
   if (!plan) return res.status(404).json({ error: 'Treatment plan not found' });
@@ -2925,7 +3115,7 @@ app.post('/api/treatment-plans/:id/accept', authenticateToken, (req, res) => {
   res.json(serializeTreatmentPlan(db.prepare('SELECT * FROM treatment_plans WHERE id = ?').get(planId)));
 });
 
-app.delete('/api/treatment-plans/:id', authenticateToken, (req, res) => {
+app.delete('/api/treatment-plans/:id', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   const planId = positiveInteger(req.params.id);
   if (!rowExists('treatment_plans', planId)) return res.status(404).json({ error: 'Treatment plan not found' });
   db.prepare('DELETE FROM treatment_plans WHERE id = ?').run(planId);
@@ -2987,14 +3177,14 @@ function serializeConsent(row) {
   };
 }
 
-app.get('/api/patients/:id/clinical-chart', authenticateToken, (req, res) => {
+app.get('/api/patients/:id/clinical-chart', authenticateToken, requirePermission('clinical:read'), (req, res) => {
   const patientId = positiveInteger(req.params.id);
   if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
   const rows = db.prepare('SELECT * FROM clinical_chart_entries WHERE patient_id = ? ORDER BY tooth_number, phase, created_at DESC').all(patientId);
   res.json(rows.map(serializeClinicalChart));
 });
 
-app.post('/api/patients/:id/clinical-chart', authenticateToken, (req, res) => {
+app.post('/api/patients/:id/clinical-chart', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
@@ -3032,7 +3222,7 @@ app.post('/api/patients/:id/clinical-chart', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/clinical-chart/:id', authenticateToken, (req, res) => {
+app.put('/api/clinical-chart/:id', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const chartId = positiveInteger(req.params.id);
     const existing = db.prepare('SELECT * FROM clinical_chart_entries WHERE id = ?').get(chartId);
@@ -3074,7 +3264,7 @@ app.put('/api/clinical-chart/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.delete('/api/clinical-chart/:id', authenticateToken, (req, res) => {
+app.delete('/api/clinical-chart/:id', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   const chartId = positiveInteger(req.params.id);
   if (!rowExists('clinical_chart_entries', chartId)) return res.status(404).json({ error: 'Clinical chart entry not found' });
   db.prepare('DELETE FROM clinical_chart_entries WHERE id = ?').run(chartId);
@@ -3082,7 +3272,7 @@ app.delete('/api/clinical-chart/:id', authenticateToken, (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/clinical-note-templates', authenticateToken, (_req, res) => {
+app.get('/api/clinical-note-templates', authenticateToken, requirePermission('clinical:read'), (_req, res) => {
   const rows = db.prepare('SELECT * FROM clinical_note_templates WHERE is_active = 1 ORDER BY category, title').all();
   res.json(rows.map(row => ({
     id: row.id,
@@ -3111,14 +3301,14 @@ app.post('/api/director/clinical-note-templates', authenticateToken, requireDire
   }
 });
 
-app.get('/api/patients/:id/clinical-notes', authenticateToken, (req, res) => {
+app.get('/api/patients/:id/clinical-notes', authenticateToken, requirePermission('clinical:read'), (req, res) => {
   const patientId = positiveInteger(req.params.id);
   if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
   const rows = db.prepare('SELECT * FROM clinical_notes WHERE patient_id = ? ORDER BY created_at DESC, id DESC').all(patientId);
   res.json(rows.map(serializeClinicalNote));
 });
 
-app.post('/api/patients/:id/clinical-notes', authenticateToken, (req, res) => {
+app.post('/api/patients/:id/clinical-notes', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
@@ -3144,7 +3334,7 @@ app.post('/api/patients/:id/clinical-notes', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/clinical-notes/:id', authenticateToken, (req, res) => {
+app.put('/api/clinical-notes/:id', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const noteId = positiveInteger(req.params.id);
     const current = db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(noteId);
@@ -3170,7 +3360,7 @@ app.put('/api/clinical-notes/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.delete('/api/clinical-notes/:id', authenticateToken, (req, res) => {
+app.delete('/api/clinical-notes/:id', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const noteId = positiveInteger(req.params.id);
     if (!rowExists('clinical_notes', noteId)) return res.status(404).json({ error: 'Klinicka beleska nije pronadjena' });
@@ -3183,7 +3373,7 @@ app.delete('/api/clinical-notes/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/clinical-notes/:id/sign', authenticateToken, (req, res) => {
+app.post('/api/clinical-notes/:id/sign', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const noteId = positiveInteger(req.params.id);
     const note = db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(noteId);
@@ -3198,14 +3388,14 @@ app.post('/api/clinical-notes/:id/sign', authenticateToken, (req, res) => {
   }
 });
 
-app.get('/api/patients/:id/consents', authenticateToken, (req, res) => {
+app.get('/api/patients/:id/consents', authenticateToken, requirePermission('clinical:read'), (req, res) => {
   const patientId = positiveInteger(req.params.id);
   if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
   const rows = db.prepare('SELECT * FROM patient_consents WHERE patient_id = ? ORDER BY signed_at DESC, id DESC').all(patientId);
   res.json(rows.map(serializeConsent));
 });
 
-app.post('/api/patients/:id/consents', authenticateToken, (req, res) => {
+app.post('/api/patients/:id/consents', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
@@ -3232,7 +3422,7 @@ app.post('/api/patients/:id/consents', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/consents/:id', authenticateToken, (req, res) => {
+app.put('/api/consents/:id', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const consentId = positiveInteger(req.params.id);
     const current = db.prepare('SELECT * FROM patient_consents WHERE id = ?').get(consentId);
@@ -3260,7 +3450,7 @@ app.put('/api/consents/:id', authenticateToken, (req, res) => {
   }
 });
 
-app.delete('/api/consents/:id', authenticateToken, (req, res) => {
+app.delete('/api/consents/:id', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const consentId = positiveInteger(req.params.id);
     if (!rowExists('patient_consents', consentId)) return res.status(404).json({ error: 'Saglasnost nije pronadjena' });
@@ -3295,12 +3485,12 @@ function serializePerioChart(chart) {
   };
 }
 
-app.get('/api/patients/:id/perio-charts', authenticateToken, (req, res) => {
+app.get('/api/patients/:id/perio-charts', authenticateToken, requirePermission('clinical:read'), (req, res) => {
   const charts = db.prepare('SELECT * FROM perio_charts WHERE patient_id = ? ORDER BY chart_date DESC, id DESC').all(positiveInteger(req.params.id));
   res.json(charts.map(serializePerioChart));
 });
 
-app.post('/api/patients/:id/perio-charts', authenticateToken, (req, res) => {
+app.post('/api/patients/:id/perio-charts', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     const result = db.prepare('INSERT INTO perio_charts (patient_id, chart_date, notes, created_by) VALUES (?, ?, ?, ?)')
@@ -3328,7 +3518,7 @@ app.post('/api/patients/:id/perio-charts', authenticateToken, (req, res) => {
   }
 });
 
-app.delete('/api/perio-charts/:id', authenticateToken, (req, res) => {
+app.delete('/api/perio-charts/:id', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   const chartId = positiveInteger(req.params.id);
   if (!rowExists('perio_charts', chartId)) return res.status(404).json({ error: 'Perio chart not found' });
   db.prepare('DELETE FROM perio_charts WHERE id = ?').run(chartId);
@@ -3398,7 +3588,7 @@ function addLedgerEntry({ patientId, invoiceId = null, claimId = null, entryType
     invoiceId,
     claimId,
     entryType,
-    money(amount),
+    signedMoney(amount),
     normalizeCurrency(currency),
     cleanText(description, { max: 255, required: true }),
     todayIsoDate(),
@@ -3422,59 +3612,77 @@ function saveInvoiceItems(invoiceId, items = []) {
   recalculateInvoice(invoiceId);
 }
 
-app.get('/api/patients/:id/invoices', authenticateToken, (req, res) => {
+app.get('/api/patients/:id/invoices', authenticateToken, requirePermission('billing:read'), (req, res) => {
   const invoices = db.prepare('SELECT * FROM invoices WHERE patient_id = ? ORDER BY issue_date DESC, id DESC').all(positiveInteger(req.params.id));
   res.json(invoices.map(serializeInvoice));
 });
 
-app.post('/api/patients/:id/invoices', authenticateToken, (req, res) => {
+app.post('/api/patients/:id/invoices', authenticateToken, requirePermission('billing:write'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     const items = Array.isArray(req.body.items) ? req.body.items : [];
     if (items.length === 0) return res.status(400).json({ error: 'Dodajte bar jednu stavku racuna.' });
-    const result = db.prepare(`
-      INSERT INTO invoices (patient_id, visit_record_id, invoice_number, status, issue_date, due_date, currency, discount, tax, notes, created_by)
-      VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, ?, ?)
-    `).run(patientId, positiveInteger(req.body.visitRecordId || req.body.visit_record_id), cleanText(req.body.invoiceNumber || invoiceNumber(), { max: 80, required: true }), cleanText(req.body.issueDate || req.body.issue_date || todayIsoDate(), { max: 20, required: true }), cleanText(req.body.dueDate || req.body.due_date, { max: 20 }), normalizeCurrency(req.body.currency), money(req.body.discount), money(req.body.tax), cleanText(req.body.notes, { max: 2000 }), req.user.id);
-    saveInvoiceItems(result.lastInsertRowid, items);
-    recalculateInvoice(result.lastInsertRowid);
-    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(result.lastInsertRowid);
-    addLedgerEntry({
-      patientId,
-      invoiceId: result.lastInsertRowid,
-      entryType: 'charge',
-      amount: invoice.total,
-      currency: invoice.currency,
-      description: `Racun ${invoice.invoice_number}`,
-      source: 'invoice',
-      userId: req.user.id
-    });
-    auditLog({ userId: req.user.id, action: 'invoice_created', entityType: 'invoice', entityId: result.lastInsertRowid, req });
-    res.status(201).json(serializeInvoice(db.prepare('SELECT * FROM invoices WHERE id = ?').get(result.lastInsertRowid)));
+    if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
+    db.exec('BEGIN');
+    let invoiceId;
+    try {
+      const result = db.prepare(`
+        INSERT INTO invoices (patient_id, visit_record_id, invoice_number, status, issue_date, due_date, currency, discount, tax, notes, created_by)
+        VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, ?, ?)
+      `).run(patientId, positiveInteger(req.body.visitRecordId || req.body.visit_record_id), cleanText(req.body.invoiceNumber || invoiceNumber(), { max: 80, required: true }), cleanText(req.body.issueDate || req.body.issue_date || todayIsoDate(), { max: 20, required: true }), cleanText(req.body.dueDate || req.body.due_date, { max: 20 }), normalizeCurrency(req.body.currency), money(req.body.discount), money(req.body.tax), cleanText(req.body.notes, { max: 2000 }), req.user.id);
+      invoiceId = result.lastInsertRowid;
+      saveInvoiceItems(invoiceId, items);
+      recalculateInvoice(invoiceId);
+      const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+      addLedgerEntry({
+        patientId,
+        invoiceId,
+        entryType: 'charge',
+        amount: invoice.total,
+        currency: invoice.currency,
+        description: `Racun ${invoice.invoice_number}`,
+        source: 'invoice',
+        userId: req.user.id
+      });
+      auditLog({ userId: req.user.id, action: 'invoice_created', entityType: 'invoice', entityId: invoiceId, req });
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    res.status(201).json(serializeInvoice(db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId)));
   } catch (error) {
     console.error('Create invoice error:', error);
     res.status(500).json({ error: 'Racun nije sacuvan.' });
   }
 });
 
-app.post('/api/invoices/:id/payments', authenticateToken, (req, res) => {
+app.post('/api/invoices/:id/payments', authenticateToken, requirePermission('billing:write'), (req, res) => {
   try {
     const invoiceId = positiveInteger(req.params.id);
     if (!rowExists('invoices', invoiceId)) return res.status(404).json({ error: 'Invoice not found' });
-    db.prepare('INSERT INTO invoice_payments (invoice_id, amount, payment_method, payment_date, payment_type, notes) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(invoiceId, money(req.body.amount), cleanText(req.body.paymentMethod || req.body.payment_method, { max: 80 }), cleanText(req.body.paymentDate || req.body.payment_date || todayIsoDate(), { max: 20, required: true }), ['payment', 'advance', 'installment', 'refund'].includes(req.body.paymentType || req.body.payment_type) ? (req.body.paymentType || req.body.payment_type) : 'payment', cleanText(req.body.notes, { max: 1000 }));
-    recalculateInvoice(invoiceId);
-    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
-    addLedgerEntry({
-      patientId: invoice.patient_id,
-      invoiceId,
-      entryType: req.body.paymentType === 'refund' || req.body.payment_type === 'refund' ? 'refund' : 'patient_payment',
-      amount: req.body.paymentType === 'refund' || req.body.payment_type === 'refund' ? money(req.body.amount) : -money(req.body.amount),
-      currency: invoice.currency,
-      description: `Uplata za racun ${invoice.invoice_number}`,
-      source: 'invoice_payment',
-      userId: req.user.id
-    });
+    db.exec('BEGIN');
+    try {
+      const paymentType = ['payment', 'advance', 'installment', 'refund'].includes(req.body.paymentType || req.body.payment_type) ? (req.body.paymentType || req.body.payment_type) : 'payment';
+      db.prepare('INSERT INTO invoice_payments (invoice_id, amount, payment_method, payment_date, payment_type, notes) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(invoiceId, money(req.body.amount), cleanText(req.body.paymentMethod || req.body.payment_method, { max: 80 }), cleanText(req.body.paymentDate || req.body.payment_date || todayIsoDate(), { max: 20, required: true }), paymentType, cleanText(req.body.notes, { max: 1000 }));
+      recalculateInvoice(invoiceId);
+      const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+      addLedgerEntry({
+        patientId: invoice.patient_id,
+        invoiceId,
+        entryType: paymentType === 'refund' ? 'refund' : 'patient_payment',
+        amount: paymentType === 'refund' ? money(req.body.amount) : -money(req.body.amount),
+        currency: invoice.currency,
+        description: `${paymentType === 'refund' ? 'Povracaj' : 'Uplata'} za racun ${invoice.invoice_number}`,
+        source: 'invoice_payment',
+        userId: req.user.id
+      });
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
     res.status(201).json(serializeInvoice(db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId)));
   } catch (error) {
     console.error('Invoice payment error:', error);
@@ -3482,20 +3690,46 @@ app.post('/api/invoices/:id/payments', authenticateToken, (req, res) => {
   }
 });
 
-app.get('/api/invoices/:id/pdf', authenticateToken, (req, res) => {
+app.get('/api/invoices/:id/pdf', authenticateToken, requirePermission('billing:read'), (req, res) => {
   const invoice = db.prepare('SELECT i.*, p.first_name, p.last_name, p.email, p.phone FROM invoices i JOIN patients p ON p.id = i.patient_id WHERE i.id = ?').get(positiveInteger(req.params.id));
   if (!invoice) return res.status(404).send('Invoice not found');
   const data = serializeInvoice(invoice);
-  const rows = data.items.map(item => `<tr><td>${item.description}</td><td>${item.toothNumber || '-'}</td><td>${item.quantity}</td><td>${item.unitPrice.toFixed(2)}</td><td>${item.discount.toFixed(2)}</td></tr>`).join('');
-  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>${data.invoiceNumber}</title><style>body{font-family:Arial;padding:32px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:8px;text-align:left}</style></head><body><h1>Racun ${data.invoiceNumber}</h1><p>Pacijent: ${invoice.first_name} ${invoice.last_name}</p><p>Datum: ${data.issueDate}</p><table><thead><tr><th>Stavka</th><th>Zub</th><th>Kolicina</th><th>Cena</th><th>Popust</th></tr></thead><tbody>${rows}</tbody></table><h2>Ukupno: ${data.total.toFixed(2)} ${data.currency}</h2><p>Placeno: ${data.amountPaid.toFixed(2)} ${data.currency}</p><script>window.print()</script></body></html>`);
+  const rows = data.items.map(item => `<tr><td>${escapeHtml(item.description)}</td><td>${escapeHtml(item.toothNumber || '-')}</td><td>${escapeHtml(item.quantity)}</td><td>${escapeHtml(item.unitPrice.toFixed(2))}</td><td>${escapeHtml(item.discount.toFixed(2))}</td></tr>`).join('');
+  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(data.invoiceNumber)}</title><style>body{font-family:Arial;padding:32px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:8px;text-align:left}</style></head><body><h1>Racun ${escapeHtml(data.invoiceNumber)}</h1><p>Pacijent: ${escapeHtml(invoice.first_name)} ${escapeHtml(invoice.last_name)}</p><p>Datum: ${escapeHtml(data.issueDate)}</p><table><thead><tr><th>Stavka</th><th>Zub</th><th>Kolicina</th><th>Cena</th><th>Popust</th></tr></thead><tbody>${rows}</tbody></table><h2>Ukupno: ${escapeHtml(data.total.toFixed(2))} ${escapeHtml(data.currency)}</h2><p>Placeno: ${escapeHtml(data.amountPaid.toFixed(2))} ${escapeHtml(data.currency)}</p><script>window.print()</script></body></html>`);
 });
 
-app.delete('/api/invoices/:id', authenticateToken, (req, res) => {
-  const invoiceId = positiveInteger(req.params.id);
-  if (!rowExists('invoices', invoiceId)) return res.status(404).json({ error: 'Invoice not found' });
-  db.prepare('DELETE FROM invoices WHERE id = ?').run(invoiceId);
-  auditLog({ userId: req.user.id, action: 'invoice_deleted', entityType: 'invoice', entityId: invoiceId, req });
-  res.json({ success: true });
+app.delete('/api/invoices/:id', authenticateToken, requirePermission('billing:write'), (req, res) => {
+  try {
+    const invoiceId = positiveInteger(req.params.id);
+    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    db.exec('BEGIN');
+    try {
+      const ledgerBalance = db.prepare('SELECT COALESCE(SUM(amount), 0) as amount FROM patient_ledger_entries WHERE invoice_id = ?').get(invoiceId).amount || 0;
+      if (Number(ledgerBalance) !== 0) {
+        addLedgerEntry({
+          patientId: invoice.patient_id,
+          invoiceId,
+          entryType: Number(ledgerBalance) > 0 ? 'adjustment' : 'charge',
+          amount: -Number(ledgerBalance),
+          currency: invoice.currency,
+          description: `Storno racuna ${invoice.invoice_number}`,
+          source: 'invoice_delete',
+          userId: req.user.id
+        });
+      }
+      db.prepare('DELETE FROM invoices WHERE id = ?').run(invoiceId);
+      auditLog({ userId: req.user.id, action: 'invoice_deleted', entityType: 'invoice', entityId: invoiceId, req });
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Delete invoice error:', error);
+    res.status(500).json({ error: 'Racun nije obrisan.' });
+  }
 });
 
 function serializeClaim(row) {
@@ -3546,12 +3780,12 @@ function serializeClaim(row) {
   };
 }
 
-app.get('/api/patients/:id/insurance-claims', authenticateToken, (req, res) => {
+app.get('/api/patients/:id/insurance-claims', authenticateToken, requirePermission('billing:read'), (req, res) => {
   const rows = db.prepare('SELECT * FROM insurance_claims WHERE patient_id = ? ORDER BY created_at DESC').all(positiveInteger(req.params.id));
   res.json(rows.map(serializeClaim));
 });
 
-app.post('/api/patients/:id/insurance-claims', authenticateToken, (req, res) => {
+app.post('/api/patients/:id/insurance-claims', authenticateToken, requirePermission('billing:write'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Pacijent nije pronadjen.' });
@@ -3588,7 +3822,7 @@ app.post('/api/patients/:id/insurance-claims', authenticateToken, (req, res) => 
   }
 });
 
-app.post('/api/insurance-claims/:id/check-eligibility', authenticateToken, (req, res) => {
+app.post('/api/insurance-claims/:id/check-eligibility', authenticateToken, requirePermission('billing:write'), (req, res) => {
   try {
     const claimId = positiveInteger(req.params.id);
     const claim = db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(claimId);
@@ -3611,7 +3845,7 @@ app.post('/api/insurance-claims/:id/check-eligibility', authenticateToken, (req,
   }
 });
 
-app.post('/api/insurance-claims/:id/attachments', authenticateToken, (req, res) => {
+app.post('/api/insurance-claims/:id/attachments', authenticateToken, requirePermission('billing:write'), (req, res) => {
   try {
     const claimId = positiveInteger(req.params.id);
     const documentId = positiveInteger(req.body.documentId || req.body.document_id);
@@ -3642,7 +3876,7 @@ app.post('/api/insurance-claims/:id/attachments', authenticateToken, (req, res) 
   }
 });
 
-app.post('/api/insurance-claims/:id/submit', authenticateToken, (req, res) => {
+app.post('/api/insurance-claims/:id/submit', authenticateToken, requirePermission('billing:write'), (req, res) => {
   try {
     const claimId = positiveInteger(req.params.id);
     const claim = db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(claimId);
@@ -3669,7 +3903,7 @@ app.post('/api/insurance-claims/:id/submit', authenticateToken, (req, res) => {
   }
 });
 
-app.post('/api/insurance-claims/:id/era', authenticateToken, (req, res) => {
+app.post('/api/insurance-claims/:id/era', authenticateToken, requirePermission('billing:write'), (req, res) => {
   try {
     const claimId = positiveInteger(req.params.id);
     const claim = db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(claimId);
@@ -3715,7 +3949,7 @@ app.post('/api/insurance-claims/:id/era', authenticateToken, (req, res) => {
   }
 });
 
-app.get('/api/patients/:id/ledger', authenticateToken, (req, res) => {
+app.get('/api/patients/:id/ledger', authenticateToken, requirePermission('billing:read'), (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
@@ -3747,7 +3981,7 @@ app.get('/api/patients/:id/ledger', authenticateToken, (req, res) => {
   }
 });
 
-app.delete('/api/insurance-claims/:id', authenticateToken, (req, res) => {
+app.delete('/api/insurance-claims/:id', authenticateToken, requirePermission('billing:write'), (req, res) => {
   const claimId = positiveInteger(req.params.id);
   if (!rowExists('insurance_claims', claimId)) return res.status(404).json({ error: 'Insurance claim not found' });
   db.prepare('DELETE FROM insurance_claims WHERE id = ?').run(claimId);
@@ -3802,6 +4036,9 @@ app.get('/api/director/backups/:id/download', authenticateToken, requireDirector
 });
 
 app.post('/api/director/backups/:id/restore', authenticateToken, requireDirector, async (req, res) => {
+  if (restoreInProgress) {
+    return res.status(409).json({ error: 'Restore is already in progress.' });
+  }
   try {
     const confirmation = cleanText(req.body.confirmation, { max: 80 });
     if (confirmation !== 'VRATI BACKUP') {
@@ -3814,11 +4051,14 @@ app.post('/api/director/backups/:id/restore', authenticateToken, requireDirector
     } catch {
       return res.status(404).json({ error: 'Backup not found' });
     }
+    restoreInProgress = true;
     await restoreEncryptedBackup(backup, req.user.id, req);
     res.json({ success: true, message: 'Backup je vracen. Osvezite aplikaciju pre nastavka rada.' });
   } catch (error) {
     console.error('Restore backup error:', error);
     res.status(500).json({ error: 'Restore failed. Pre-restore backup was attempted before restore.' });
+  } finally {
+    restoreInProgress = false;
   }
 });
 
@@ -3906,6 +4146,10 @@ app.put('/api/director/security/users/:id/permissions', authenticateToken, requi
     const permissions = Array.isArray(req.body.permissions)
       ? req.body.permissions.map(item => cleanText(item, { max: 80 })).filter(Boolean)
       : DEFAULT_PERMISSIONS[user.role] || [];
+    const invalid = invalidPermissions(permissions);
+    if (invalid.length) {
+      return res.status(400).json({ error: `Invalid permissions: ${invalid.join(', ')}` });
+    }
     db.prepare('UPDATE users SET permissions_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .run(JSON.stringify([...new Set(permissions)]), userId);
     auditLog({ userId: req.user.id, action: 'permissions_updated', entityType: 'user', entityId: userId, req, metadata: { permissions } });
@@ -3918,22 +4162,39 @@ app.put('/api/director/security/users/:id/permissions', authenticateToken, requi
 
 app.get('/api/director/legal-export', authenticateToken, requireDirector, (req, res) => {
   try {
-    auditLog({ userId: req.user.id, action: 'legal_export_generated', entityType: 'legal_export', req });
+    const limit = Math.min(5000, Math.max(1, Number(req.query.limit || 1000)));
+    const tables = {
+      patients: 'patients',
+      records: 'visit_records',
+      documents: 'patient_documents',
+      invoices: 'invoices',
+      insuranceClaims: 'insurance_claims',
+      clinicalChart: 'clinical_chart_entries',
+      clinicalNotes: 'clinical_notes',
+      consents: 'patient_consents'
+    };
+    const counts = Object.fromEntries(Object.entries(tables).map(([key, table]) => [key, legalExportCount(table)]));
+    auditLog({ userId: req.user.id, action: 'legal_export_generated', entityType: 'legal_export', req, metadata: { limit } });
     res.json({
       generatedAt: new Date().toISOString(),
       generatedBy: req.user.email,
+      meta: {
+        limit,
+        counts,
+        truncated: Object.fromEntries(Object.entries(counts).map(([key, count]) => [key, count > limit]))
+      },
       retentionPolicy: {
         patientRecords: 'Cuvati prema vazecim lokalnim zdravstvenim i poreskim propisima.',
         backups: 'Encrypted backup, periodican test restore i ogranicen direktor pristup.'
       },
-      patients: db.prepare('SELECT * FROM patients ORDER BY id').all(),
-      records: db.prepare('SELECT * FROM visit_records ORDER BY id').all(),
-      documents: db.prepare('SELECT * FROM patient_documents ORDER BY id').all(),
-      invoices: db.prepare('SELECT * FROM invoices ORDER BY id').all(),
-      insuranceClaims: db.prepare('SELECT * FROM insurance_claims ORDER BY id').all(),
-      clinicalChart: db.prepare('SELECT * FROM clinical_chart_entries ORDER BY id').all().map(row => ({ ...row, surfaces: safeJsonParse(row.surfaces, []) })),
-      clinicalNotes: db.prepare('SELECT * FROM clinical_notes ORDER BY id').all(),
-      consents: db.prepare('SELECT * FROM patient_consents ORDER BY id').all()
+      patients: legalExportRows(tables.patients, limit),
+      records: legalExportRows(tables.records, limit),
+      documents: legalExportRows(tables.documents, limit),
+      invoices: legalExportRows(tables.invoices, limit),
+      insuranceClaims: legalExportRows(tables.insuranceClaims, limit),
+      clinicalChart: legalExportRows(tables.clinicalChart, limit).map(row => ({ ...row, surfaces: safeJsonParse(row.surfaces, []) })),
+      clinicalNotes: legalExportRows(tables.clinicalNotes, limit),
+      consents: legalExportRows(tables.consents, limit)
     });
   } catch (error) {
     console.error('Legal export error:', error);
@@ -4289,7 +4550,7 @@ app.get('/api/director/reports/procedures', authenticateToken, requireDirector, 
 
 // ============ DOCTORS ENDPOINTS ============
 
-app.get('/api/doctors', authenticateToken, (_req, res) => {
+app.get('/api/doctors', authenticateToken, requirePermission('calendar:read'), (_req, res) => {
   try {
     const doctors = db.prepare('SELECT id, name, specialization, email, phone FROM doctors ORDER BY name').all();
     res.json(doctors);
@@ -4363,10 +4624,15 @@ app.get('/api/director/exchange-rate', authenticateToken, requireDirector, async
       return res.json({ base, currency, rate: 1, date: new Date().toISOString().slice(0, 10), source: 'local' });
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Number(process.env.EXCHANGE_RATE_TIMEOUT_MS || 5000));
     const url = `https://api.frankfurter.dev/v2/rate/${encodeURIComponent(base)}/${encodeURIComponent(currency)}`;
-    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+    clearTimeout(timeout);
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.rate) {
+      const fallback = localExchangeRate(base, currency);
+      if (fallback) return res.json(fallback);
       return res.status(502).json({ error: data.message || 'Exchange rate provider unavailable' });
     }
 
@@ -4379,9 +4645,34 @@ app.get('/api/director/exchange-rate', authenticateToken, requireDirector, async
     });
   } catch (error) {
     console.error('Exchange rate error:', error);
+    const fallback = localExchangeRate(
+      cleanText(req.query.base || 'EUR', { max: 10, required: true }).toUpperCase(),
+      cleanText(req.query.currency, { max: 10, required: true }).toUpperCase()
+    );
+    if (fallback) return res.json(fallback);
     res.status(502).json({ error: 'Exchange rate provider unavailable' });
   }
 });
+
+function localExchangeRate(base, currency) {
+  if (!currency) return null;
+  if (currency === base) {
+    return { base, currency, rate: 1, date: new Date().toISOString().slice(0, 10), source: 'local' };
+  }
+  const row = db.prepare("SELECT metadata FROM codebook_items WHERE type = 'currency' AND value = ? AND is_active = 1 LIMIT 1").get(currency);
+  const metadata = safeJsonParse(row?.metadata, null);
+  const rate = Number(metadata?.exchangeRate || 0);
+  if (metadata?.rateBase === base && rate > 0) {
+    return {
+      base,
+      currency,
+      rate,
+      date: metadata.rateDate || new Date().toISOString().slice(0, 10),
+      source: metadata.rateSource || 'local-codebook'
+    };
+  }
+  return null;
+}
 
 app.get('/api/codebooks', authenticateToken, (req, res) => {
   try {
@@ -4578,7 +4869,6 @@ function shutdown() {
     }
     process.exit(0);
   }, 1000);
-  forceExit.unref?.();
   server.closeIdleConnections?.();
   server.closeAllConnections?.();
   server.close(() => {

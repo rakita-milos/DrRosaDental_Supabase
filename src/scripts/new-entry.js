@@ -14,8 +14,9 @@ async function requireAccess() {
   if (logoutBtn) {
     logoutBtn.addEventListener("click", (event) => {
       event.preventDefault();
-      window.DrRosaApi.clearSession();
-      window.location.href = "login.html";
+      window.DrRosaApi.logout().finally(() => {
+        window.location.href = "login.html";
+      });
     });
   }
 

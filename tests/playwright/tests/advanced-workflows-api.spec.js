@@ -16,6 +16,7 @@ const {
 } = require("../utils/api");
 
 const TEST_PREFIX = "ADVAPI";
+const ONE_PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 
 test.beforeEach(async ({ request, baseURL }) => {
   await cleanupRegressionData(request, baseURL, [TEST_PREFIX]);
@@ -193,7 +194,7 @@ test("api: treatment plan, perio, invoice and insurance workflows", async ({ req
       title: "ADVAPI X-ray",
       originalFilename: "advapi-xray.png",
       mimeType: "image/png",
-      fileBase64: Buffer.from("png-test").toString("base64"),
+      fileBase64: ONE_PIXEL_PNG,
       imagingModality: "intraoral_xray",
       toothNumber: "16",
       claimAttachmentReady: true

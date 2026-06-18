@@ -66,4 +66,4 @@ async function authenticate(page, role = "staff") {
   }, { token, user });
 }
 
-module.exports = { authenticate, credentialsFor, tokenFor };
+module.exports = { authenticate, credentialsFor, tokenFor, signTestToken };

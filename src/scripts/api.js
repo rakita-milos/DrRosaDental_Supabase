@@ -22,8 +22,14 @@
   }
 
   function setSession(data) {
-    localStorage.setItem("drrosa-token", data.token);
-    // Refresh token stored as httpOnly cookie by the server; do not persist it in localStorage.
+    // Real login/refresh tokens are stored as httpOnly cookies by the server.
+    // Preserve explicit legacy/test tokens only when no cookie refresh metadata is present.
+    if (data.token && !data.refreshExpiresAt) {
+      localStorage.setItem("drrosa-token", data.token);
+    } else {
+      localStorage.removeItem("drrosa-token");
+    }
+    localStorage.removeItem("drrosa-refresh-token");
     localStorage.setItem("drrosa-session", JSON.stringify({
       ...(data.user || data),
       loginTime: new Date().toISOString(),
@@ -124,6 +130,7 @@
     const response = await fetch(`${API_BASE}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ email, password, role, twoFactorCode })
     });
     const data = await response.json().catch(() => ({}));
@@ -136,9 +143,7 @@
 
   async function logout() {
     try {
-      if (getToken()) {
-        await request("/auth/logout", { method: "POST" }, false);
-      }
+      await request("/auth/logout", { method: "POST" }, false);
     } finally {
       clearSession();
     }

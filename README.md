@@ -46,7 +46,7 @@ DrRosaWebApp/
   README.md
   DIRECTOR_PANEL_GUIDE.md
   BACKEND_SETUP.md
-  database_schema.sql
+  database_schema.sql  (legacy reference; active schema is backend/database.sql)
   sql/
   backend/
     server.js
@@ -111,7 +111,11 @@ Required runtime settings include:
 
 ```text
 SQLITE_DB_PATH
-SQLITE_BACKUP_DIR
+BACKUP_DIR
+UPLOAD_DIR
+SCANNER_IMPORT_DIR
+BACKUP_ENCRYPTION_KEY
+STAFF_DEFAULT_PERMISSIONS
 PORT
 NODE_ENV
 JWT_SECRET
@@ -120,6 +124,8 @@ CORS_ORIGIN
 ```
 
 The initial director and staff login values are also configured through backend environment variables and are used only when the users table is empty.
+
+For production, `NODE_ENV=production` enforces explicit `CORS_ORIGIN`, `UPLOAD_DIR`, `SCANNER_IMPORT_DIR`, `BACKUP_ENCRYPTION_KEY` and `STAFF_DEFAULT_PERMISSIONS`. Production `CORS_ORIGIN` must point to the real HTTPS frontend origin, not localhost.
 
 ### 3. Start the app
 
@@ -171,12 +177,10 @@ Get-Process | Where-Object { $_.ProcessName -eq 'node' } | Select-Object Id,Proc
 1. User submits login data on `login.html`.
 2. Frontend calls `POST /api/auth/login`.
 3. Backend validates the user in SQLite.
-4. Backend returns a JWT and user object.
-5. Frontend stores:
-   - `localStorage['drrosa-token']`
-   - `localStorage['drrosa-session']`
+4. Server sets HttpOnly SameSite cookies for browser clients.
+5. Frontend stores only non-secret session display metadata in `localStorage['drrosa-session']`.
 6. Protected pages call `POST /api/auth/verify`.
-7. Director-only pages additionally require `role === "director"`.
+7. Director-only pages additionally require the database-backed `director` role.
 
 ## Data Persistence
 
@@ -267,8 +271,8 @@ npm run report
 
 ### Test notes
 
-- `playwright.config.js` checks `http://localhost:3000/api/health`.
-- If the backend is not already running, Playwright starts `backend/server.js`.
+- `playwright.config.js` uses isolated default base URL `http://localhost:3010`.
+- `npm test` in `tests/playwright` starts `backend/server.js` through `scripts/run-with-server.js` with isolated SQLite, backup, upload and scanner directories, then stops that backend after the run.
 - Test login values are read from the backend environment file.
 - Tests use Page Object Model classes from `tests/playwright/pages`.
 - For a different host/port, run tests with `PLAYWRIGHT_BASE_URL`, for example `PLAYWRIGHT_BASE_URL=https://your-server.example npm test`.
@@ -296,6 +300,8 @@ npm audit
 # Git status
 git status --short
 ```
+
+`npm run backup` creates an encrypted `.sqlite.enc` backup. `BACKUP_DIR` controls the backup directory; `SQLITE_BACKUP_DIR` is supported as a legacy fallback.
 
 ## Security Test Summary
 
@@ -333,10 +339,11 @@ Recent local checks cover:
 
 - Rotate `JWT_SECRET` and all initial login credentials before production use.
 - Use HTTPS.
-- Consider moving JWT storage from `localStorage` to HttpOnly Secure SameSite cookies.
+- Keep JWT storage in HttpOnly Secure SameSite cookies; do not reintroduce browser localStorage token persistence.
 - Remove inline styles where possible and tighten CSP by removing `style-src 'unsafe-inline'`.
 - Add user-management UI for staff accounts.
 - Add automated database backup scheduling.
+- Set `BACKUP_ENCRYPTION_KEY` separately from `JWT_SECRET`; production startup fails if it is missing or reused.
 
 ## Support
 

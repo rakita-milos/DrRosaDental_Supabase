@@ -84,6 +84,8 @@ npm install
 npm test
 ```
 
+By default the suite starts its own backend on `http://localhost:3010` with isolated SQLite, backup, upload and scanner directories.
+
 Samo smoke testovi:
 
 ```bash
@@ -116,10 +118,16 @@ Za vidljiv browser:
 npm run test:headed
 ```
 
-Config automatski pokrece backend iz `backend/server.js` ako lokalni health check vec nije aktivan. Login vrednosti cita iz backend environment konfiguracije.
+`npm test` koristi `scripts/run-with-server.js`, koji pokrece izolovani backend iz `backend/server.js`, ceka `/api/health`, zatim pokrece Playwright kroz `playwright.ci.config.js` i na kraju gasi samo taj backend proces. Login vrednosti cita iz backend environment konfiguracije.
 
 Za drugi host ili server koristi promenljivu:
 
 ```bash
 PLAYWRIGHT_BASE_URL=https://your-server.example npm test
+```
+
+Ako backend vec pokreces samostalno, mozes direktno koristiti CI konfiguraciju:
+
+```bash
+npx playwright test -c playwright.ci.config.js --reporter=list
 ```

@@ -1,5 +1,5 @@
 -- LEGACY / NOT ACTIVE
--- The active backend uses PostgreSQL schema in backend/database.sql.
+-- The active backend uses the SQLite schema in backend/database.sql.
 -- Keep this file only as historical SQLite reference.
 
 -- Users table for authentication

@@ -14,8 +14,9 @@ async function requireAccess() {
   if (logoutBtn) {
     logoutBtn.addEventListener("click", (event) => {
       event.preventDefault();
-      window.DrRosaApi.clearSession();
-      window.location.href = "login.html";
+      window.DrRosaApi.logout().finally(() => {
+        window.location.href = "login.html";
+      });
     });
   }
 
@@ -567,7 +568,8 @@ function initializeImagingViewerControls() {
 async function fetchDocumentBlob(documentId, download = false) {
   const token = localStorage.getItem("drrosa-token");
   const response = await fetch(`/api/documents/${documentId}/${download ? "download" : "view"}`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: "include"
   });
   if (!response.ok) throw new Error("Dokument nije dostupan.");
   return response.blob();
@@ -1386,7 +1388,8 @@ async function initializeAdvancedWorkflows(patientId) {
     }
     if (pdf) {
       const response = await fetch(`/api/invoices/${pdf.dataset.invoiceId}/pdf`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("drrosa-token")}` }
+        headers: localStorage.getItem("drrosa-token") ? { Authorization: `Bearer ${localStorage.getItem("drrosa-token")}` } : {},
+        credentials: "include"
       });
       const html = await response.text();
       const win = window.open("", "_blank");

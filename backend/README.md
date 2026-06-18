@@ -15,15 +15,24 @@ JWT_SECRET
 CORS_ORIGIN
 SQLITE_DB_PATH
 SQLITE_BACKUP_DIR
+BACKUP_DIR
+UPLOAD_DIR
+SCANNER_IMPORT_DIR
+BACKUP_ENCRYPTION_KEY
+STAFF_DEFAULT_PERMISSIONS
 ```
 
-Optional runtime settings include upload and backup directories, backup encryption key, Google Calendar OAuth values and initial director/staff login values.
+Optional runtime settings include Google Calendar OAuth values and initial director/staff login values.
 
 Notes:
 - `JWT_SECRET` is required. The server validates it at startup.
 - Initial login values are used only when the `users` table is empty.
-- `CORS_ORIGIN` is an allow-list. Use comma-separated origins if needed.
+- `CORS_ORIGIN` is an allow-list. Use comma-separated origins if needed. In production it must be explicit and must not use localhost origins.
 - Relative SQLite paths are resolved from the `backend` directory, so the project can move between computers and servers.
+- `BACKUP_DIR` is used for encrypted application backups. `SQLITE_BACKUP_DIR` is supported as a legacy fallback.
+- `BACKUP_ENCRYPTION_KEY` must be set separately from `JWT_SECRET` in production; startup fails if it is missing or reused.
+- `UPLOAD_DIR`, `SCANNER_IMPORT_DIR` and `STAFF_DEFAULT_PERMISSIONS` are required in production so live deploys do not inherit development defaults.
+- `STAFF_DEFAULT_PERMISSIONS` is a comma-separated allow-list, for example `patients:read,patients:write,records:read,records:write,calendar:read,calendar:write,documents:read,documents:write`.
 
 ## Commands
 
@@ -36,7 +45,7 @@ npm.cmd run backup
 
 ## Auth
 
-Clients authenticate with `POST /api/auth/login`. The API returns a JWT. Send it as:
+Clients authenticate with `POST /api/auth/login`. The server sets HttpOnly SameSite cookies for browser clients. Non-production responses also include explicit tokens for automated tests and local tooling. If a token is provided explicitly, send it as:
 
 ```text
 Authorization: Bearer <token>
@@ -71,6 +80,9 @@ Authorization: Bearer <token>
 - SQL queries use prepared statements.
 - Health checks do not expose the SQLite file path.
 - Backup files are encrypted.
+- The `npm run backup` command also writes encrypted `.sqlite.enc` files.
+- Backup restore enters a short maintenance window and other API requests return `503` while the active SQLite file is being replaced.
+- Legal export is paginated by a `limit` query parameter with a production safety cap; the response includes `meta.counts` and `meta.truncated`.
 
 ## Delete Rules
 
