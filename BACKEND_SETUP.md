@@ -11,6 +11,8 @@ NODE_ENV=production
 PORT=3000
 JWT_SECRET=promeni-ovo-u-jedinstven-tajni-kljuc-od-minimum-32-karaktera
 CORS_ORIGIN=https://adresa-vaseg-frontenda.example
+TRUST_PROXY=loopback
+REQUIRE_PRODUCTION_READY=true
 SQLITE_DB_PATH=E:\DrRosaData\drosa.sqlite
 BACKUP_DIR=E:\DrRosaData\backups
 UPLOAD_DIR=E:\DrRosaData\uploads
@@ -25,6 +27,8 @@ Pravila:
 - `JWT_SECRET` mora biti jedinstven i dug najmanje 32 karaktera.
 - `INITIAL_DIRECTOR_PASSWORD` i `INITIAL_STAFF_PASSWORD` moraju biti dugi najmanje 12 karaktera i koriste se samo kada je baza prazna.
 - `CORS_ORIGIN` mora biti tacna adresa frontenda. Za vise adresa koristi zarez.
+- `TRUST_PROXY` mora biti eksplicitna odluka za deploy iza HTTPS reverse proxy-ja. Za jedan lokalni reverse proxy koristi `loopback`; bez proxy-ja koristi `false`.
+- `REQUIRE_PRODUCTION_READY=true` ukljucuje production guard provere i ako neko greskom ne postavi `NODE_ENV=production`.
 - `BACKUP_DIR` je direktorijum za enkriptovane backup fajlove. `SQLITE_BACKUP_DIR` je podrzan kao legacy fallback.
 - `BACKUP_ENCRYPTION_KEY` mora biti odvojen od `JWT_SECRET` u produkciji; backend nece startovati ako nedostaje ili je isti.
 - `UPLOAD_DIR`, `SCANNER_IMPORT_DIR` i `STAFF_DEFAULT_PERMISSIONS` su obavezni u produkciji; backend nece startovati ako nedostaju.
@@ -102,6 +106,7 @@ Preporuka: runtime `.log` fajlove brisati posle 30 dana. Audit/security podatke 
 ## 8. HTTPS, servis i rollback
 
 - Aplikaciju pokreni iza HTTPS reverse proxy-ja ili load balancera koji terminira TLS za javni domen iz `CORS_ORIGIN`.
+- Ako koristis reverse proxy, `TRUST_PROXY` mora odgovarati topologiji proxy-ja da rate limiting, sesije i audit log beleze stvarni client IP.
 - Backend proces pokreni kroz servisni menadzer koji restartuje proces posle pada, na primer Windows Service/NSSM/PM2/systemd u zavisnosti od servera.
 - Pre deploy-a napravi enkriptovan backup baze komandom `npm.cmd run backup` i proveri da backup fajl postoji u `BACKUP_DIR`.
 - Rollback aplikacije: zaustavi servis, vrati prethodni git tag ili prethodni release folder, pokreni `npm.cmd ci --omit=dev` u `backend` ako se dependency set promenio, zatim startuj servis.

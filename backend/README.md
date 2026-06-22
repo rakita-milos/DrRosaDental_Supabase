@@ -13,6 +13,7 @@ NODE_ENV
 PORT
 JWT_SECRET
 CORS_ORIGIN
+TRUST_PROXY
 SQLITE_DB_PATH
 SQLITE_BACKUP_DIR
 BACKUP_DIR
@@ -28,6 +29,8 @@ Notes:
 - `JWT_SECRET` is required. The server validates it at startup.
 - Initial login values are used only when the `users` table is empty.
 - `CORS_ORIGIN` is an allow-list. Use comma-separated origins if needed. In production it must be explicit and must not use localhost origins.
+- `TRUST_PROXY` must be set explicitly for production. Use `loopback` for a local HTTPS reverse proxy, a hop count such as `1` for a trusted upstream proxy, or `false` only when Express is directly exposed.
+- `REQUIRE_PRODUCTION_READY=true` can be used as an extra deployment guard; it enables the production-required startup checks even before `NODE_ENV=production` is set.
 - Relative SQLite paths are resolved from the `backend` directory, so the project can move between computers and servers.
 - `BACKUP_DIR` is used for encrypted application backups. `SQLITE_BACKUP_DIR` is supported as a legacy fallback.
 - `BACKUP_ENCRYPTION_KEY` must be set separately from `JWT_SECRET` in production; startup fails if it is missing or reused.
@@ -42,6 +45,8 @@ npm.cmd install
 npm.cmd start
 npm.cmd run backup
 ```
+
+The backend requires Node.js 24.x because it uses the built-in `node:sqlite` module.
 
 ## Auth
 

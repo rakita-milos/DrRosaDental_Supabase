@@ -121,11 +121,13 @@ NODE_ENV
 JWT_SECRET
 API_URL
 CORS_ORIGIN
+TRUST_PROXY
 ```
 
 The initial director and staff login values are also configured through backend environment variables and are used only when the users table is empty.
 
 For production, `NODE_ENV=production` enforces explicit `CORS_ORIGIN`, `UPLOAD_DIR`, `SCANNER_IMPORT_DIR`, `BACKUP_ENCRYPTION_KEY` and `STAFF_DEFAULT_PERMISSIONS`. Production `CORS_ORIGIN` must point to the real HTTPS frontend origin, not localhost.
+Set `TRUST_PROXY` explicitly for live deployments (`loopback` for a local reverse proxy, a hop count such as `1` for a trusted upstream proxy, or `false` only without a proxy). `REQUIRE_PRODUCTION_READY=true` can be used as an extra guard so production checks run even if `NODE_ENV` is misconfigured.
 
 ### 3. Start the app
 
@@ -345,6 +347,8 @@ Recent local checks cover:
 - bcrypt
 - Helmet
 - Playwright
+
+Backend runtime requires Node.js 24.x because it uses the built-in `node:sqlite` module.
 
 ## Production Hardening Notes
 

@@ -51,6 +51,13 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS rate_limit_hits (
+  key TEXT PRIMARY KEY,
+  count INTEGER NOT NULL DEFAULT 0,
+  reset_at INTEGER NOT NULL,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS backup_files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   filename TEXT NOT NULL UNIQUE,
@@ -504,6 +511,7 @@ CREATE TABLE IF NOT EXISTS patient_ledger_entries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(first_name, last_name);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits(reset_at);
 CREATE INDEX IF NOT EXISTS idx_visit_records_patient ON visit_records(patient_id);
 CREATE INDEX IF NOT EXISTS idx_visit_records_doctor ON visit_records(doctor_id);
 CREATE INDEX IF NOT EXISTS idx_visit_records_date ON visit_records(visit_date);

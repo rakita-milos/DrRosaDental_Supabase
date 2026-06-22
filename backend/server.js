@@ -29,12 +29,42 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
 const isProduction = process.env.NODE_ENV === 'production';
 
+function flagEnabled(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function isLocalOrigin(value) {
+  try {
+    const origin = new URL(value);
+    return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(origin.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function configuredOrigins() {
+  return [
+    ...(process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || '').split(','),
+    process.env.API_URL || ''
+  ].map(origin => origin.trim()).filter(Boolean);
+}
+
+function hasPublicRuntimeOrigin() {
+  return configuredOrigins().some(origin => !isLocalOrigin(origin));
+}
+
+const requiresProductionReadiness = isProduction || flagEnabled(process.env.REQUIRE_PRODUCTION_READY);
+
+if (!isProduction && hasPublicRuntimeOrigin()) {
+  throw new Error('Public API_URL/CORS_ORIGIN requires NODE_ENV=production before startup.');
+}
+
 if (!JWT_SECRET || JWT_SECRET.length < 32 || JWT_SECRET === 'your-secret-key-change-in-production') {
   throw new Error('Set JWT_SECRET in backend/.env to a unique value with at least 32 characters.');
 }
 
 function requireProductionEnv(name) {
-  if (isProduction && !String(process.env[name] || '').trim()) {
+  if (requiresProductionReadiness && !String(process.env[name] || '').trim()) {
     throw new Error(`Set ${name} before production startup.`);
   }
 }
@@ -43,6 +73,7 @@ requireProductionEnv('CORS_ORIGIN');
 requireProductionEnv('UPLOAD_DIR');
 requireProductionEnv('SCANNER_IMPORT_DIR');
 requireProductionEnv('STAFF_DEFAULT_PERMISSIONS');
+requireProductionEnv('TRUST_PROXY');
 
 const dbPath = path.resolve(__dirname, process.env.SQLITE_DB_PATH || './data/drosa.sqlite');
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -62,7 +93,17 @@ function openDatabase() {
   return database;
 }
 
+function configuredTrustProxy() {
+  const raw = String(process.env.TRUST_PROXY || '').trim();
+  if (!raw) return false;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  if (['true', '1', 'yes', 'on'].includes(raw.toLowerCase())) return true;
+  if (['false', '0', 'no', 'off'].includes(raw.toLowerCase())) return false;
+  return raw;
+}
+
 app.disable('x-powered-by');
+app.set('trust proxy', configuredTrustProxy());
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -97,7 +138,7 @@ app.use((req, res, next) => {
 
 function allowedCorsOrigins() {
   const configured = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || (isProduction ? '' : 'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500');
-  if (isProduction && /(^|,)\s*https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|,|$)/i.test(configured)) {
+  if (requiresProductionReadiness && /(^|,)\s*https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|,|$)/i.test(configured)) {
     throw new Error('Production CORS_ORIGIN must not include localhost origins.');
   }
   return configured
@@ -107,23 +148,40 @@ function allowedCorsOrigins() {
 }
 
 function createRateLimiter({ windowMs, max, message }) {
-  const hits = new Map();
+  let cleanupAfter = 0;
 
   return (req, res, next) => {
     const key = `${req.ip}:${req.path}`;
     const now = Date.now();
-    const entry = hits.get(key) || { count: 0, resetAt: now + windowMs };
+    const resetAt = now + windowMs;
 
-    if (entry.resetAt <= now) {
-      entry.count = 0;
-      entry.resetAt = now + windowMs;
-    }
+    try {
+      cleanupAfter += 1;
+      if (cleanupAfter >= 100) {
+        cleanupAfter = 0;
+        db.prepare('DELETE FROM rate_limit_hits WHERE reset_at <= ?').run(now);
+      }
 
-    entry.count += 1;
-    hits.set(key, entry);
+      const current = db.prepare('SELECT count, reset_at FROM rate_limit_hits WHERE key = ?').get(key);
+      let count;
+      if (!current || Number(current.reset_at) <= now) {
+        count = 1;
+        db.prepare(`
+          INSERT INTO rate_limit_hits (key, count, reset_at, updated_at)
+          VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(key) DO UPDATE SET count = excluded.count, reset_at = excluded.reset_at, updated_at = CURRENT_TIMESTAMP
+        `).run(key, count, resetAt);
+      } else {
+        count = Number(current.count || 0) + 1;
+        db.prepare('UPDATE rate_limit_hits SET count = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?').run(count, key);
+      }
 
-    if (entry.count > max) {
-      return res.status(429).json({ error: message });
+      if (count > max) {
+        return res.status(429).json({ error: message });
+      }
+    } catch (error) {
+      console.error('Rate limiter error:', error);
+      return res.status(503).json({ error: 'Rate limiter unavailable. Try again later.' });
     }
 
     next();
@@ -156,7 +214,7 @@ const BACKUP_DIR = path.resolve(__dirname, process.env.BACKUP_DIR || process.env
 const BACKUP_KEY_SOURCE = process.env.BACKUP_ENCRYPTION_KEY || JWT_SECRET;
 const AUTO_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-if (isProduction && (!process.env.BACKUP_ENCRYPTION_KEY || process.env.BACKUP_ENCRYPTION_KEY === JWT_SECRET)) {
+if (requiresProductionReadiness && (!process.env.BACKUP_ENCRYPTION_KEY || process.env.BACKUP_ENCRYPTION_KEY === JWT_SECRET)) {
   throw new Error('Set BACKUP_ENCRYPTION_KEY to a unique value separate from JWT_SECRET before production startup.');
 }
 
@@ -526,6 +584,15 @@ function ensureSecurityTables() {
       metadata TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS rate_limit_hits (
+      key TEXT PRIMARY KEY,
+      count INTEGER NOT NULL DEFAULT 0,
+      reset_at INTEGER NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits(reset_at);
 
     CREATE TABLE IF NOT EXISTS backup_files (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

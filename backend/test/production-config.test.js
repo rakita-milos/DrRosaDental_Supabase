@@ -17,6 +17,7 @@ function runServerImport(extraEnv = {}, removeEnv = []) {
     UPLOAD_DIR: path.join(mkdtempSync(path.join(tmpdir(), 'drrosa-upload-')), 'uploads'),
     SCANNER_IMPORT_DIR: path.join(mkdtempSync(path.join(tmpdir(), 'drrosa-scan-')), 'scanner'),
     CORS_ORIGIN: 'https://drrosa.example.com',
+    TRUST_PROXY: 'loopback',
     JWT_SECRET: 'production-config-test-jwt-secret-32-chars',
     BACKUP_ENCRYPTION_KEY: 'production-config-test-backup-secret-32-chars',
     STAFF_DEFAULT_PERMISSIONS: 'patients:read,records:read'
@@ -47,4 +48,16 @@ test('production startup rejects unknown staff permissions', () => {
   const result = runServerImport({ STAFF_DEFAULT_PERMISSIONS: 'patients:read,invalid:permission' });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /invalid:permission/);
+});
+
+test('production startup rejects missing trust proxy decision', () => {
+  const result = runServerImport({}, ['TRUST_PROXY']);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /TRUST_PROXY/);
+});
+
+test('public origins must not run in development mode', () => {
+  const result = runServerImport({ NODE_ENV: 'development', CORS_ORIGIN: 'https://drrosa.example.com' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /NODE_ENV=production/);
 });

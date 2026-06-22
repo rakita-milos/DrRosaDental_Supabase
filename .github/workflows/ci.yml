@@ -28,6 +28,7 @@ jobs:
           SCANNER_IMPORT_DIR=../tests/playwright/.scanner-inbox
           API_URL=http://localhost:3000
           CORS_ORIGIN=http://localhost:3000,http://127.0.0.1:3000
+          TRUST_PROXY=loopback
           JWT_SECRET=ci-jwt-secret-dr-rosa-2026-05-25-minimum-32-characters
           BACKUP_ENCRYPTION_KEY=ci-backup-key-dr-rosa-2026-05-25-minimum-32-characters
           STAFF_DEFAULT_PERMISSIONS=patients:read,patients:write,records:read,records:write,calendar:read,calendar:write,documents:read,documents:write,clinical:read,clinical:write,billing:read,billing:write

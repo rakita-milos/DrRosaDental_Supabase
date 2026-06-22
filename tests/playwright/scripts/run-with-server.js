@@ -22,6 +22,7 @@ const serverEnv = {
   UPLOAD_DIR: process.env.UPLOAD_DIR || "../tests/playwright/.uploads",
   SCANNER_IMPORT_DIR: process.env.SCANNER_IMPORT_DIR || "../tests/playwright/.scanner-inbox",
   CORS_ORIGIN: process.env.CORS_ORIGIN || `${baseURL},${parsedBaseUrl.origin}`,
+  TRUST_PROXY: process.env.TRUST_PROXY || "loopback",
   JWT_SECRET: process.env.JWT_SECRET || backendEnv.JWT_SECRET,
   INITIAL_DIRECTOR_PASSWORD: process.env.INITIAL_DIRECTOR_PASSWORD || backendEnv.INITIAL_DIRECTOR_PASSWORD,
   INITIAL_STAFF_PASSWORD: process.env.INITIAL_STAFF_PASSWORD || backendEnv.INITIAL_STAFF_PASSWORD,

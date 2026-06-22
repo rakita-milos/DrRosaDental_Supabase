@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Dr Rosa Dental Clinic Backend API",
   "main": "server.js",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
