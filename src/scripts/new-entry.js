@@ -718,7 +718,7 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  const hasBackendSession = Boolean(localStorage.getItem("drrosa-token"));
+  const hasBackendSession = Boolean(window.DrRosaApi.getSession?.());
   let patient = findPatientByName(patientNameValue);
   const doctor = findDoctorByName(inputs.doctor.value);
 

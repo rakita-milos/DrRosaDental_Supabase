@@ -142,6 +142,19 @@ Open:
 http://localhost:3000/src/pages/login.html
 ```
 
+### Production container smoke
+
+Use `docker-compose.example.yml` as the deployment template. Create a real
+`backend/.env.production` from `backend/.env.example`, rotate all secrets and
+credentials, then run:
+
+```bash
+docker compose -f docker-compose.example.yml up --build
+```
+
+The container healthcheck calls `/api/health`. Keep SQLite data, uploads,
+scanner inbox and encrypted backups on persistent volumes.
+
 ### Optional development server
 
 ```bash
@@ -359,6 +372,7 @@ Backend runtime requires Node.js 24.x because it uses the built-in `node:sqlite`
 - Add user-management UI for staff accounts.
 - Add automated database backup scheduling.
 - Set `BACKUP_ENCRYPTION_KEY` separately from `JWT_SECRET`; production startup fails if it is missing or reused.
+- Verify the `schema_migrations` table after deploy and keep the pre-deploy encrypted backup for rollback.
 
 ## Support
 
@@ -368,4 +382,4 @@ For director panel documentation, see [DIRECTOR_PANEL_GUIDE.md](DIRECTOR_PANEL_G
 
 **Version:** 2.3  
 **Last Updated:** May 2026  
-**Status:** Demo with backend integration, SQLite persistence, calendar, documents, backup/security, advanced workflow support, export support and Playwright tests; production hardening still required.
+**Status:** Demo with backend integration, SQLite persistence, calendar, documents, backup/security, advanced workflow support, export support and Playwright tests; production deployment template and migration ledger are present, but live deployment still requires real secrets, HTTPS reverse proxy configuration, monitored backups and a tested rollback drill.

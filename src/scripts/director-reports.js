@@ -177,7 +177,7 @@ function initializeExportActions() {
 }
 
 async function getReport(type) {
-  if (!localStorage.getItem("drrosa-token")) return null;
+  if (!window.DrRosaApi.getSession?.()) return null;
   try {
     return await window.DrRosaApi.getDirectorReport(type);
   } catch (error) {
@@ -1416,9 +1416,7 @@ function initializeBackupSecurity() {
 }
 
 async function downloadBackup(backupId, filename) {
-  const token = localStorage.getItem("drrosa-token");
   const response = await fetch(`/api/director/backups/${backupId}/download`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     credentials: "include"
   });
   if (!response.ok) throw new Error("Backup nije preuzet.");

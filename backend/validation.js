@@ -67,6 +67,62 @@ const patientDocumentSchema = Joi.object({
   claimAttachmentReady: Joi.boolean().optional().default(false)
 });
 
+const treatmentSchema = Joi.object({
+  tooth: Joi.string().max(20).optional().allow('', null),
+  toothNumber: Joi.string().max(20).optional().allow('', null),
+  type: Joi.string().max(255).optional().allow('', null),
+  treatmentType: Joi.string().max(255).optional().allow('', null),
+  status: Joi.string().max(80).optional().allow('', null),
+  note: Joi.string().max(1000).optional().allow('', null),
+  notes: Joi.string().max(1000).optional().allow('', null),
+  price: Joi.number().min(0).optional().allow(null),
+  discount: Joi.number().min(0).optional().allow(null)
+});
+
+const recordCreateSchema = Joi.object({
+  patient_id: Joi.number().integer().positive().required(),
+  doctor_id: Joi.number().integer().positive().required(),
+  visit_date: Joi.string().max(20).required(),
+  procedure: Joi.string().max(255).required(),
+  status: Joi.string().max(80).optional().allow('', null),
+  notes: Joi.string().max(2000).optional().allow('', null),
+  amount: Joi.number().min(0).optional().allow(null),
+  currency: Joi.string().max(10).optional().allow('', null),
+  payment_status: Joi.string().max(80).optional().allow('', null),
+  shift: Joi.string().max(80).optional().allow('', null),
+  total_discount: Joi.number().min(0).optional().allow(null),
+  treatments: Joi.alternatives().try(
+    Joi.array().items(treatmentSchema),
+    Joi.object().pattern(Joi.string().max(20), Joi.alternatives().try(treatmentSchema, Joi.array().items(treatmentSchema)))
+  ).optional().allow(null)
+});
+
+const publicBookingSchema = Joi.object({
+  firstName: Joi.string().max(80).optional(),
+  first_name: Joi.string().max(80).optional(),
+  lastName: Joi.string().max(80).optional(),
+  last_name: Joi.string().max(80).optional(),
+  email: Joi.string().email().optional().allow('', null),
+  phone: Joi.string().max(50).required(),
+  notes: Joi.string().max(1000).optional().allow('', null),
+  doctorId: Joi.number().integer().positive().optional(),
+  doctor_id: Joi.number().integer().positive().optional(),
+  chairId: Joi.number().integer().positive().optional(),
+  chair_id: Joi.number().integer().positive().optional(),
+  procedureId: Joi.number().integer().positive().optional(),
+  procedure_id: Joi.number().integer().positive().optional(),
+  procedureName: Joi.string().max(255).optional().allow('', null),
+  procedure_name: Joi.string().max(255).optional().allow('', null),
+  startsAt: Joi.string().max(40).optional(),
+  starts_at: Joi.string().max(40).optional(),
+  durationMinutes: Joi.number().integer().min(15).max(180).optional(),
+  duration_minutes: Joi.number().integer().min(15).max(180).optional()
+}).or('firstName', 'first_name')
+  .or('lastName', 'last_name')
+  .or('doctorId', 'doctor_id')
+  .or('procedureId', 'procedure_id', 'procedureName', 'procedure_name')
+  .or('startsAt', 'starts_at');
+
 const importScanSchema = Joi.object({
   visitRecordId: Joi.number().integer().positive().optional().allow(null),
   documentType: Joi.string().max(40).optional().allow('', null),
@@ -87,5 +143,7 @@ module.exports = {
   patientCreateSchema,
   patientUpdateSchema,
   patientDocumentSchema,
+  recordCreateSchema,
+  publicBookingSchema,
   importScanSchema
 };

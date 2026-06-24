@@ -1,35 +1,13 @@
 (function () {
   const API_BASE = window.DRROSA_API_BASE || "/api";
 
-  const defaultRecords = [
-    { patient: "Ana Kovac", lastVisit: "2026-04-28", procedure: "Kontrola i ciscenje", status: "Zakazano", note: "Follow-up za 2 tjedna", doctor: "Dr Rosa", visits: 1, paymentStatus: "Placeno", amountDue: 0 },
-    { patient: "Marko Petrovic", lastVisit: "2026-04-18", procedure: "Plomba", status: "Zavrseno", note: "Nema naplata", doctor: "Dr Rosa", visits: 2, paymentStatus: "Placeno", amountDue: 0 },
-    { patient: "Ivana Babic", lastVisit: "2026-04-22", procedure: "Izbeljivanje", status: "U tijeku", note: "Na 3 posjete", doctor: "Dr Rosa", visits: 3, paymentStatus: "Delimicno", amountDue: 150 },
-    { patient: "Luka Horvat", lastVisit: "2026-04-30", procedure: "Most", status: "Zakazano", note: "Potrebna dodatna anamneza", doctor: "Dr Rosa", visits: 1, paymentStatus: "Placeno", amountDue: 0 },
-    { patient: "Petar Juric", lastVisit: "2026-04-25", procedure: "Endodontija", status: "U tijeku", note: "Drugi termin zahtjevan", doctor: "Dr Novak", visits: 2, paymentStatus: "Dugovanje", amountDue: 200 }
-  ];
-
-  function getToken() {
-    return localStorage.getItem("drrosa-token");
-  }
-
-  function getRefreshToken() {
-    return localStorage.getItem("drrosa-refresh-token");
-  }
-
   function getSession() {
     return JSON.parse(localStorage.getItem("drrosa-session") || "null");
   }
 
   function setSession(data) {
-    // Real login/refresh tokens are stored as httpOnly cookies by the server.
-    // Preserve explicit legacy/test tokens only when no cookie refresh metadata is present.
-    if (data.token && !data.refreshExpiresAt) {
-      localStorage.setItem("drrosa-token", data.token);
-    } else {
-      localStorage.removeItem("drrosa-token");
-    }
     localStorage.removeItem("drrosa-refresh-token");
+    localStorage.removeItem("drrosa-token");
     localStorage.setItem("drrosa-session", JSON.stringify({
       ...(data.user || data),
       loginTime: new Date().toISOString(),
@@ -64,11 +42,6 @@
       "Content-Type": "application/json",
       ...(options.headers || {})
     };
-
-    const token = getToken();
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
 
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
@@ -117,15 +90,6 @@
     };
   }
 
-  function getLocalRecords() {
-    const saved = JSON.parse(localStorage.getItem("drrosa-records") || "[]");
-    return saved.length > 0 ? saved : defaultRecords;
-  }
-
-  function getLocalPatients() {
-    return JSON.parse(localStorage.getItem("drrosa-patients") || "[]");
-  }
-
   async function login(email, password, role, twoFactorCode) {
     const response = await fetch(`${API_BASE}/auth/login`, {
       method: "POST",
@@ -163,7 +127,7 @@
     try {
       const data = await request("/auth/verify", { method: "POST" });
       if (requiredRole && data.user.role !== requiredRole) return null;
-      setSession({ token: getToken(), user: data.user });
+      setSession({ user: data.user });
       return data.user;
     } catch (_error) {
       clearSession();
@@ -181,6 +145,18 @@
       emergencyContact: patient.emergency_contact,
       fullName: fullName(patient)
     }));
+  }
+
+  async function getPatient(patientId) {
+    const patient = await request(`/patients/${patientId}`);
+    return {
+      ...patient,
+      firstName: patient.first_name,
+      lastName: patient.last_name,
+      birthDate: patient.date_of_birth,
+      emergencyContact: patient.emergency_contact,
+      fullName: fullName(patient)
+    };
   }
 
   async function createPatient(patient) {
@@ -715,6 +691,7 @@
     clearSession,
     getSession,
     getPatients,
+    getPatient,
     createPatient,
     updatePatient,
     deletePatient,
@@ -801,8 +778,7 @@
     setupTwoFactor,
     verifyTwoFactor,
     disableTwoFactor,
-    normalizeRecord,
-    getLocalRecords
+    normalizeRecord
   };
 
   function escapeHtml(value) {

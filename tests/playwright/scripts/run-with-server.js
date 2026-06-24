@@ -26,7 +26,8 @@ const serverEnv = {
   JWT_SECRET: process.env.JWT_SECRET || backendEnv.JWT_SECRET,
   INITIAL_DIRECTOR_PASSWORD: process.env.INITIAL_DIRECTOR_PASSWORD || backendEnv.INITIAL_DIRECTOR_PASSWORD,
   INITIAL_STAFF_PASSWORD: process.env.INITIAL_STAFF_PASSWORD || backendEnv.INITIAL_STAFF_PASSWORD,
-  BACKUP_ENCRYPTION_KEY: process.env.BACKUP_ENCRYPTION_KEY || "playwright-backup-key-dr-rosa-minimum-32-characters"
+  BACKUP_ENCRYPTION_KEY: process.env.BACKUP_ENCRYPTION_KEY || "playwright-backup-key-dr-rosa-minimum-32-characters",
+  LOGIN_RATE_LIMIT_MAX: process.env.LOGIN_RATE_LIMIT_MAX || "1000"
 };
 
 async function waitForHealth(timeoutMs = 20_000) {

@@ -136,7 +136,7 @@
   }
 
   async function loadFromApi() {
-    if (!window.DrRosaApi?.getCodebooks || !localStorage.getItem("drrosa-token")) return;
+    if (!window.DrRosaApi?.getCodebooks || !window.DrRosaApi.getSession?.()) return;
     try {
       const items = await window.DrRosaApi.getCodebooks();
       const activeItems = items.filter(item => item.isActive !== false);

@@ -169,8 +169,10 @@ function renderRecords(records) {
   const patientMap = {};
 
   records.forEach((record) => {
-    if (!patientMap[record.patient]) {
-      patientMap[record.patient] = {
+    const patientKey = record.patientId ? `id:${record.patientId}` : `name:${record.patient}`;
+    if (!patientMap[patientKey]) {
+      patientMap[patientKey] = {
+        patientId: record.patientId,
         patient: record.patient,
         lastVisit: record.lastVisit,
         visits: 0,
@@ -180,16 +182,16 @@ function renderRecords(records) {
         shifts: new Map()
       };
     }
-    patientMap[record.patient].visits += 1;
-    patientMap[record.patient].currencies.add(record.currency || "EUR");
+    patientMap[patientKey].visits += 1;
+    patientMap[patientKey].currencies.add(record.currency || "EUR");
     const shift = record.shift || "Prva smena";
-    patientMap[record.patient].shifts.set(shift, (patientMap[record.patient].shifts.get(shift) || 0) + 1);
+    patientMap[patientKey].shifts.set(shift, (patientMap[patientKey].shifts.get(shift) || 0) + 1);
     if (isDebt(record)) {
-      patientMap[record.patient].hasDebt = true;
-      addCurrencyAmount(patientMap[record.patient].totalDebt, record.currency || "EUR", record.amountDue || 0);
+      patientMap[patientKey].hasDebt = true;
+      addCurrencyAmount(patientMap[patientKey].totalDebt, record.currency || "EUR", record.amountDue || 0);
     }
-    if (new Date(record.lastVisit) > new Date(patientMap[record.patient].lastVisit)) {
-      patientMap[record.patient].lastVisit = record.lastVisit;
+    if (new Date(record.lastVisit) > new Date(patientMap[patientKey].lastVisit)) {
+      patientMap[patientKey].lastVisit = record.lastVisit;
     }
   });
 
@@ -227,7 +229,9 @@ function renderRecords(records) {
     );
     const actionCell = document.createElement("td");
     const link = document.createElement("a");
-    link.href = `patient-dashboard.html?patient=${encodeURIComponent(patient.patient)}`;
+    link.href = patient.patientId
+      ? `patient-dashboard.html?patientId=${encodeURIComponent(patient.patientId)}`
+      : `patient-dashboard.html?patient=${encodeURIComponent(patient.patient)}`;
     link.className = "secondary-btn";
     link.textContent = "Otvori";
     actionCell.appendChild(link);

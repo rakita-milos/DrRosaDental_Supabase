@@ -78,9 +78,9 @@ form.addEventListener("submit", async (event) => {
 
   try {
     if (patientId) {
-      await window.DrRosaApi.updatePatient(patientId, patient);
+      const savedPatient = await window.DrRosaApi.updatePatient(patientId, patient);
       alert("Pacijent azuriran!");
-      window.location.href = `patient-dashboard.html?patient=${encodeURIComponent(patientFullName(patient))}`;
+      window.location.href = `patient-dashboard.html?patientId=${encodeURIComponent(savedPatient.id || patientId)}`;
       return;
     }
     await window.DrRosaApi.createPatient(patient);

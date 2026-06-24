@@ -124,7 +124,8 @@ function formatDebtTotals(records) {
   return entries.length ? entries.map(([currency, amount]) => formatMoney(amount, currency)).join(" / ") : "0.00";
 }
 
-const patientName = getQueryParam("patient");
+const queryPatientId = getQueryParam("patientId") || getQueryParam("id");
+const legacyPatientName = getQueryParam("patient");
 const title = document.getElementById("patient-name-title");
 const summaryCards = document.getElementById("patient-summary-cards");
 const patientInfoSection = document.getElementById("patient-info-section");
@@ -566,9 +567,7 @@ function initializeImagingViewerControls() {
 }
 
 async function fetchDocumentBlob(documentId, download = false) {
-  const token = localStorage.getItem("drrosa-token");
   const response = await fetch(`/api/documents/${documentId}/${download ? "download" : "view"}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     credentials: "include"
   });
   if (!response.ok) throw new Error("Dokument nije dostupan.");
@@ -1388,7 +1387,6 @@ async function initializeAdvancedWorkflows(patientId) {
     }
     if (pdf) {
       const response = await fetch(`/api/invoices/${pdf.dataset.invoiceId}/pdf`, {
-        headers: localStorage.getItem("drrosa-token") ? { Authorization: `Bearer ${localStorage.getItem("drrosa-token")}` } : {},
         credentials: "include"
       });
       const html = await response.text();
@@ -1574,28 +1572,47 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
 (async function init() {
   if (!await requireAccess()) return;
 
-  if (!patientName) {
+  if (!queryPatientId && !legacyPatientName) {
     title.textContent = "Pacijent nije odabran";
     summaryCards.innerHTML = `<div class="hero-stats-card"><p class="eyebrow">Greska</p><span>Odaberite pacijenta iz evidencije.</span></div>`;
     return;
   }
 
-  title.textContent = patientName;
-  document.getElementById("new-entry-for-patient").href = `new-entry.html?patient=${encodeURIComponent(patientName)}`;
-
   let records = [];
   let patients = [];
+  let patientDetails = null;
   try {
-    [records, patients] = await Promise.all([
-      window.DrRosaApi.getRecords(),
-      window.DrRosaApi.getPatients()
-    ]);
+    if (queryPatientId) {
+      [records, patientDetails] = await Promise.all([
+        window.DrRosaApi.getRecords(),
+        window.DrRosaApi.getPatient(queryPatientId)
+      ]);
+    } else {
+      [records, patients] = await Promise.all([
+        window.DrRosaApi.getRecords(),
+        window.DrRosaApi.getPatients()
+      ]);
+      patientDetails = patients.find(patient => patientFullName(patient) === legacyPatientName);
+    }
   } catch (error) {
     console.error("Patient load error:", error);
   }
 
-  const patientRecords = records.filter(record => record.patient === patientName);
-  const patientDetails = patients.find(patient => patientFullName(patient) === patientName);
+  const selectedPatientId = patientDetails?.id || queryPatientId;
+  const selectedPatientName = patientDetails ? patientFullName(patientDetails) : legacyPatientName;
+
+  if (!selectedPatientName) {
+    title.textContent = "Pacijent nije pronadjen";
+    summaryCards.innerHTML = `<div class="hero-stats-card"><p class="eyebrow">Greska</p><span>Pacijent nije pronadjen.</span></div>`;
+    return;
+  }
+
+  title.textContent = selectedPatientName;
+  document.getElementById("new-entry-for-patient").href = `new-entry.html?patient=${encodeURIComponent(selectedPatientName)}`;
+
+  const patientRecords = selectedPatientId
+    ? records.filter(record => String(record.patientId) === String(selectedPatientId))
+    : records.filter(record => record.patient === selectedPatientName);
 
   const totalVisits = patientRecords.length;
   const dueRecords = patientRecords.filter(isDebt);

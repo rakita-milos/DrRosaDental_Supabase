@@ -5,7 +5,9 @@ const {
   changePasswordSchema,
   patientCreateSchema,
   patientDocumentSchema,
-  importScanSchema
+  importScanSchema,
+  recordCreateSchema,
+  publicBookingSchema
 } = require('../validation');
 
 test('login schema validates valid credentials', () => {
@@ -55,4 +57,29 @@ test('import scan schema accepts optional metadata', () => {
     documentType: 'rtg'
   });
   assert.equal(error, undefined);
+});
+
+test('record create schema validates required visit payload', () => {
+  const { error, value } = recordCreateSchema.validate({
+    patient_id: 1,
+    doctor_id: 1,
+    visit_date: '2026-06-22',
+    procedure: 'Kontrola',
+    treatments: [{ toothNumber: '11', type: 'Kontrola', price: 10 }]
+  });
+  assert.equal(error, undefined);
+  assert.equal(value.patient_id, 1);
+});
+
+test('public booking schema accepts camelCase booking payload', () => {
+  const { error, value } = publicBookingSchema.validate({
+    firstName: 'Mina',
+    lastName: 'Jovanovic',
+    phone: '060123456',
+    doctorId: 1,
+    procedureId: 1,
+    startsAt: '2026-06-22T10:00:00.000Z'
+  });
+  assert.equal(error, undefined);
+  assert.equal(value.firstName, 'Mina');
 });

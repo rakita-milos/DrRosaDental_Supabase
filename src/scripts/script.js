@@ -61,7 +61,9 @@ function renderRecords(records) {
 
   records.slice(0, 10).forEach((record) => {
     const statusClass = `status-${String(record.status || "").toLowerCase().replace(/\s+/g, "-")}`;
-    const patientLink = `patient-dashboard.html?patient=${encodeURIComponent(record.patient)}`;
+    const patientLink = record.patientId
+      ? `patient-dashboard.html?patientId=${encodeURIComponent(record.patientId)}`
+      : `patient-dashboard.html?patient=${encodeURIComponent(record.patient)}`;
     const row = document.createElement("tr");
     row.append(
       window.DrRosaSecurity.cell(record.patient),

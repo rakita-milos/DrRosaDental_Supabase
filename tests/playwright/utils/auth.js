@@ -47,23 +47,23 @@ function tokenFor(role = "staff") {
 }
 
 async function authenticate(page, role = "staff") {
-  const isDirector = role === "director";
-  const user = {
-    id: isDirector ? 1 : 2,
-    email: isDirector ? "director@drosa.com" : "staff@drosa.com",
-    name: isDirector ? "Dr Rosa Basic" : "Ana - Medicinska sestra",
-    role
-  };
-  const token = tokenFor(role);
   await page.evaluate(() => localStorage.clear()).catch(() => {});
   await page.goto("/src/pages/login.html");
-  await page.evaluate(({ token, user }) => {
-    localStorage.setItem("drrosa-token", token);
+  const credentials = credentialsFor(role);
+  const response = await page.request.post("/api/auth/login", {
+    data: credentials
+  });
+  if (!response.ok()) {
+    throw new Error(`Login setup failed for ${role}: ${response.status()}`);
+  }
+  const session = await response.json();
+  await page.evaluate(({ session }) => {
     localStorage.setItem("drrosa-session", JSON.stringify({
-      ...user,
-      loginTime: new Date().toISOString()
+      ...session.user,
+      loginTime: new Date().toISOString(),
+      refreshExpiresAt: session.refreshExpiresAt || null
     }));
-  }, { token, user });
+  }, { session });
 }
 
 module.exports = { authenticate, credentialsFor, tokenFor, signTestToken };

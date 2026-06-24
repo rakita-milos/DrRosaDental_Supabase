@@ -32,6 +32,7 @@ jobs:
           JWT_SECRET=ci-jwt-secret-dr-rosa-2026-05-25-minimum-32-characters
           BACKUP_ENCRYPTION_KEY=ci-backup-key-dr-rosa-2026-05-25-minimum-32-characters
           STAFF_DEFAULT_PERMISSIONS=patients:read,patients:write,records:read,records:write,calendar:read,calendar:write,documents:read,documents:write,clinical:read,clinical:write,billing:read,billing:write
+          LOGIN_RATE_LIMIT_MAX=1000
           INITIAL_DIRECTOR_PASSWORD=DirectorCi2026!
           INITIAL_STAFF_PASSWORD=StaffCi2026!
           EOF

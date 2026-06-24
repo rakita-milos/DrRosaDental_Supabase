@@ -21,6 +21,8 @@ const {
   patientCreateSchema,
   patientUpdateSchema,
   patientDocumentSchema,
+  recordCreateSchema,
+  publicBookingSchema,
   importScanSchema
 } = require('./validation');
 
@@ -263,6 +265,8 @@ async function seedDatabase() {
 }
 
 function applyMigrations() {
+  ensureMigrationLedger();
+  runMigration('2026-06-22-runtime-schema-guards', () => {
   ensureSecurityTables();
   ensureCalendarTables();
   ensureGoogleCalendarOAuthColumns();
@@ -283,6 +287,23 @@ function applyMigrations() {
   ensureColumn('codebook_items', 'metadata', "TEXT");
   ensureDefaultShiftMetadata();
   ensureDefaultCurrencyMetadata();
+  });
+}
+
+function ensureMigrationLedger() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+function runMigration(version, migrate) {
+  const existing = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(version);
+  if (existing) return;
+  migrate();
+  db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(version);
 }
 
 function ensureClinicalWorkflowTables() {
@@ -2614,7 +2635,7 @@ function insertRecordTransaction(record) {
   }
 }
 
-app.post('/api/records', authenticateToken, requirePermission('records:write'), (req, res) => {
+app.post('/api/records', authenticateToken, requirePermission('records:write'), validateBody(recordCreateSchema), (req, res) => {
   try {
     const patient_id = positiveInteger(req.body.patient_id);
     const doctor_id = positiveInteger(req.body.doctor_id);
@@ -2977,7 +2998,7 @@ app.get('/api/public/booking/availability', publicBookingReadLimiter, (req, res)
   }
 });
 
-app.post('/api/public/booking', publicBookingWriteLimiter, (req, res) => {
+app.post('/api/public/booking', publicBookingWriteLimiter, validateBody(publicBookingSchema), (req, res) => {
   try {
     const namePattern = /^[\p{L}][\p{L}\p{N}\s.'-]{0,79}$/u;
     const firstNameResult = validatedText(req.body.firstName || req.body.first_name, { field: 'Ime', max: 80, required: true, pattern: namePattern });
@@ -4691,6 +4712,11 @@ app.get('/api/director/exchange-rate', authenticateToken, requireDirector, async
       return res.json({ base, currency, rate: 1, date: new Date().toISOString().slice(0, 10), source: 'local' });
     }
 
+    const localFallback = localExchangeRate(base, currency);
+    if (localFallback && flagEnabled(process.env.EXCHANGE_RATE_LOCAL_FIRST || 'true')) {
+      return res.json(localFallback);
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), Number(process.env.EXCHANGE_RATE_TIMEOUT_MS || 5000));
     const url = `https://api.frankfurter.dev/v2/rate/${encodeURIComponent(base)}/${encodeURIComponent(currency)}`;
@@ -4698,7 +4724,7 @@ app.get('/api/director/exchange-rate', authenticateToken, requireDirector, async
     clearTimeout(timeout);
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.rate) {
-      const fallback = localExchangeRate(base, currency);
+      const fallback = localFallback || localExchangeRate(base, currency);
       if (fallback) return res.json(fallback);
       return res.status(502).json({ error: data.message || 'Exchange rate provider unavailable' });
     }
@@ -4711,7 +4737,7 @@ app.get('/api/director/exchange-rate', authenticateToken, requireDirector, async
       source: 'Frankfurter'
     });
   } catch (error) {
-    console.error('Exchange rate error:', error);
+    console.warn('Exchange rate provider unavailable:', error.message);
     const fallback = localExchangeRate(
       cleanText(req.query.base || 'EUR', { max: 10, required: true }).toUpperCase(),
       cleanText(req.query.currency, { max: 10, required: true }).toUpperCase()
@@ -4734,6 +4760,15 @@ function localExchangeRate(base, currency) {
       base,
       currency,
       rate,
+      date: metadata.rateDate || new Date().toISOString().slice(0, 10),
+      source: metadata.rateSource || 'local-codebook'
+    };
+  }
+  if (metadata?.rateCurrency === base && rate > 0) {
+    return {
+      base,
+      currency,
+      rate: 1 / rate,
       date: metadata.rateDate || new Date().toISOString().slice(0, 10),
       source: metadata.rateSource || 'local-codebook'
     };

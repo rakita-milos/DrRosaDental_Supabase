@@ -58,6 +58,7 @@ class CalendarPage {
 
   async expectRequiredValidation() {
     await this.openNewAppointment();
+    await this.date.fill("");
     await this.save.click();
     const valid = await this.page.locator("#appointment-form").evaluate(form => form.checkValidity());
     expect(valid).toBe(false);
