@@ -186,7 +186,15 @@ CREATE TABLE IF NOT EXISTS google_calendar_settings (
   sync_direction TEXT NOT NULL DEFAULT 'app_to_google' CHECK (sync_direction IN ('app_to_google', 'two_way')),
   default_reminder_minutes INTEGER NOT NULL DEFAULT 1440,
   last_sync_at TEXT,
+  events_sync_token TEXT,
+  last_google_pull_at TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 

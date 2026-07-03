@@ -50,6 +50,40 @@ function renderDueSummary(records) {
   if (debtorsCountEl) debtorsCountEl.textContent = uniqueDebtors;
 }
 
+function setCount(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = String(Number(value || 0));
+}
+
+function upcomingAppointments(appointments) {
+  const now = Date.now();
+  return appointments.filter(appointment => {
+    const startsAt = new Date(appointment.startsAt || appointment.starts_at).getTime();
+    const status = String(appointment.status || "").toLowerCase();
+    return Number.isFinite(startsAt) && startsAt >= now && !["cancelled", "completed", "no_show"].includes(status);
+  });
+}
+
+function procedureCount(records) {
+  return records.reduce((total, record) => {
+    const treatments = record.treatments || {};
+    const treatmentCount = Object.values(treatments).reduce((sum, items) => sum + (Array.isArray(items) ? items.length : 0), 0);
+    return total + (treatmentCount || (record.procedure ? 1 : 0));
+  }, 0);
+}
+
+function renderDashboardStats({ patients, appointments, records }) {
+  const patientCount = patients.length;
+  const appointmentCount = upcomingAppointments(appointments).length;
+  const procedures = procedureCount(records);
+
+  setCount("hero-patients-count", patientCount);
+  setCount("patients-count", patientCount);
+  setCount("hero-appointments-count", appointmentCount);
+  setCount("appointments-count", appointmentCount);
+  setCount("procedures-count", procedures);
+}
+
 function renderRecords(records) {
   const tableBody = document.getElementById("record-table-body");
   tableBody.innerHTML = "";
@@ -88,11 +122,17 @@ function renderRecords(records) {
 (async function initDashboard() {
   if (!await requireAccess()) return;
   try {
-    const records = await window.DrRosaApi.getRecords();
+    const [patients, records, appointments] = await Promise.all([
+      window.DrRosaApi.getPatients(),
+      window.DrRosaApi.getRecords(),
+      window.DrRosaApi.getAppointments()
+    ]);
     const todaysRecords = records.filter(record => isToday(record.lastVisit));
+    renderDashboardStats({ patients, appointments, records });
     renderDueSummary(records);
     renderRecords(todaysRecords);
   } catch (error) {
+    renderDashboardStats({ patients: [], appointments: [], records: [] });
     renderRecords([]);
     console.error("Dashboard load error:", error);
   }

@@ -2361,6 +2361,16 @@ td:nth-child(5) {
   height: 18px;
 }
 
+.booking-toggle-row {
+  margin: 8px 0 10px;
+}
+
+.muted-text {
+  margin: 0 0 12px;
+  color: #5d7588;
+  font-weight: 700;
+}
+
 .form-alert {
   min-height: 22px;
   margin: 0;
@@ -2610,6 +2620,17 @@ td:nth-child(5) {
 }
 
 @media (max-width: 640px) {
+  main,
+  .hero-card,
+  .cards-grid,
+  .list-section,
+  .stat-card,
+  .stat-card-link {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+
   .topbar,
   .section-header {
     flex-direction: column;
@@ -2626,6 +2647,27 @@ td:nth-child(5) {
 
   .cards-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-hero {
+    padding: 22px;
+  }
+
+  .dashboard-hero > div {
+    min-width: 0;
+  }
+
+  .dashboard-hero h2 {
+    font-size: 2rem;
+    overflow-wrap: anywhere;
+  }
+
+  .dashboard-hero p {
+    overflow-wrap: anywhere;
+  }
+
+  .dashboard-hero .hero-stats {
+    min-width: 0;
   }
 
   .all-records-summary {

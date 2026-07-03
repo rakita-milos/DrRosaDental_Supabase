@@ -97,6 +97,7 @@ async function showReport(reportId) {
   if (reportId === "doctors-report") await loadDoctorsReport();
   if (reportId === "procedures-report") await loadProceduresReport();
   if (reportId === "excel-report") loadExcelReport();
+  if (reportId === "public-booking-report") await loadPublicBookingSettings();
   if (reportId === "admin-codebooks-report") await loadCodebooksAdmin();
   if (reportId === "google-calendar-report") await loadGoogleCalendarSettings();
   if (reportId === "backup-security-report") await loadBackupSecurity();
@@ -112,6 +113,7 @@ function initializeReports() {
     { id: "doctors-report", tone: "teal", icon: "DR", title: "Doktori", description: "Produktivnost i opterecenje tima" },
     { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosjecna naplata" },
     { id: "excel-report", tone: "blue", icon: "TAB", title: "Izvještaji po tabovima", description: "PAZARI, hirurgija, protetika, ortodoncija, troškovi i ukupno" },
+    { id: "public-booking-report", tone: "green", icon: "ONL", title: "Online zakazivanje", description: "Ukljuci ili iskljuci javnu formu za termine" },
     { id: "google-calendar-report", tone: "green", icon: "GCal", title: "Google Calendar", description: "Nalog ordinacije, kalendar i sync status" },
     { id: "backup-security-report", tone: "orange", icon: "SEC", title: "Backup i sigurnost", description: "Backup baze, restore, sesije, 2FA i audit log" }
   ];
@@ -1071,6 +1073,60 @@ function showGoogleMessage(message, isError = false) {
   element.className = `form-alert ${isError ? "alert-error" : "alert-success"}`;
 }
 
+function showPublicBookingMessage(text, isError = false) {
+  const element = document.getElementById("public-booking-settings-message");
+  if (!element) return;
+  element.textContent = text || "";
+  element.className = `form-alert ${isError ? "alert-error" : "alert-success"}`;
+}
+
+async function loadPublicBookingSettings() {
+  const checkbox = document.getElementById("public-booking-enabled");
+  if (!checkbox) return;
+  try {
+    const settings = await window.DrRosaApi.getPublicBookingSettings();
+    checkbox.checked = Boolean(settings.enabled);
+    showPublicBookingMessage(settings.enabled ? "Online zakazivanje je ukljuceno." : "Online zakazivanje je iskljuceno.");
+  } catch (error) {
+    showPublicBookingMessage(error.message || "Podesavanja nisu ucitana.", true);
+  }
+}
+
+function initializePublicBookingSettings() {
+  const checkbox = document.getElementById("public-booking-enabled");
+  if (!checkbox) return;
+  checkbox.addEventListener("change", async () => {
+    checkbox.disabled = true;
+    try {
+      const settings = await window.DrRosaApi.updatePublicBookingSettings({ enabled: checkbox.checked });
+      checkbox.checked = Boolean(settings.enabled);
+      window.DrRosaApi.updatePublicBookingNavigation?.(settings.enabled);
+      showPublicBookingMessage(settings.enabled ? "Online zakazivanje je ukljuceno." : "Online zakazivanje je iskljuceno.");
+    } catch (error) {
+      checkbox.checked = !checkbox.checked;
+      showPublicBookingMessage(error.message || "Podesavanje nije sacuvano.", true);
+    } finally {
+      checkbox.disabled = false;
+    }
+  });
+}
+
+function normalizeGoogleAuthCode(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const match = raw.match(/(?:^|[?&])code=([^&#\s]+)/i);
+  if (match?.[1]) {
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1];
+    }
+  }
+
+  return raw;
+}
+
 function renderGoogleSummary(settings) {
   const summary = document.getElementById("google-sync-summary");
   if (!summary) return;
@@ -1081,6 +1137,7 @@ function renderGoogleSummary(settings) {
     <div class="sync-pill"><strong>OAuth</strong><span>${settings.oauthConnected ? "Povezan" : "Nije povezan"}</span></div>
     <div class="sync-pill"><strong>Queue</strong><span>${Number(settings.pendingSyncItems || 0)} otvoreno</span></div>
     <div class="sync-pill"><strong>Zadnji sync</strong><span>${settings.lastSyncAt ? formatDate(settings.lastSyncAt) : "-"}</span></div>
+    <div class="sync-pill"><strong>Google pull</strong><span>${settings.lastGooglePullAt ? formatDate(settings.lastGooglePullAt) : "Nije pokrenut"}</span></div>
   `;
 }
 
@@ -1091,6 +1148,7 @@ async function loadGoogleCalendarSettings() {
     document.getElementById("google-calendar-id").value = settings.calendarId || "";
     document.getElementById("google-calendar-name").value = settings.calendarName || "";
     document.getElementById("google-client-id").value = settings.clientId || "";
+    document.getElementById("google-client-secret").value = settings.clientSecret || "";
     document.getElementById("google-redirect-uri").value = settings.redirectUri || `${window.location.origin}${window.location.pathname}`;
     document.getElementById("google-sync-enabled").checked = Boolean(settings.syncEnabled);
     document.getElementById("google-sync-direction").value = settings.syncDirection || "app_to_google";
@@ -1135,16 +1193,28 @@ function initializeGoogleCalendarSettings() {
     }
   });
 
+  document.getElementById("google-pull-changes")?.addEventListener("click", async () => {
+    try {
+      const result = await window.DrRosaApi.pullGoogleCalendarChanges();
+      showGoogleMessage(
+        `Google pull zavrsen. Procitano: ${result.fetched || 0}, azurirano: ${result.updated || 0}, otkazano: ${result.cancelled || 0}, preskoceno: ${Number(result.skippedExternal || 0) + Number(result.skippedMissingLocal || 0) + Number(result.skippedUnsupportedTime || 0) + Number(result.skippedConflicts || 0)}.`
+      );
+      await loadGoogleCalendarSettings();
+    } catch (error) {
+      showGoogleMessage(error.message || "Google izmene nisu povucene.", true);
+    }
+  });
+
   document.getElementById("google-connect-oauth")?.addEventListener("click", async () => {
     try {
-      const code = document.getElementById("google-oauth-code").value.trim();
+      const rawCode = document.getElementById("google-oauth-code").value;
+      const code = normalizeGoogleAuthCode(rawCode);
       if (!code) {
         showGoogleMessage("Unesite OAuth kod.", true);
         return;
       }
       await window.DrRosaApi.exchangeGoogleCalendarCode(code);
-      document.getElementById("google-oauth-code").value = "";
-      showGoogleMessage("Google OAuth je povezan.");
+      showGoogleMessage("Google OAuth je povezan. Token je sačuvan.");
       await loadGoogleCalendarSettings();
     } catch (error) {
       showGoogleMessage(error.message || "OAuth povezivanje nije uspelo.", true);
@@ -1438,6 +1508,7 @@ async function downloadBackup(backupId, filename) {
   initializeReportNavigation();
   initializeExportActions();
   initializeCodebookAdmin();
+  initializePublicBookingSettings();
   initializeGoogleCalendarSettings();
   initializeBackupSecurity();
   try {

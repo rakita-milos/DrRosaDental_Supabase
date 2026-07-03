@@ -235,6 +235,31 @@
         <div class="cards-grid" id="codebook-grid"></div>
       </section>
 
+      <section class="list-section report-content" id="public-booking-report">
+        <button class="secondary-btn back-to-reports" type="button">Nazad na izvjestaje</button>
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Online zakazivanje</p>
+            <h2>Kontrola javnog zakazivanja</h2>
+          </div>
+        </div>
+
+        <section class="list-section system-panel">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Status</p>
+              <h2>Javna forma za termine</h2>
+            </div>
+          </div>
+          <label class="checkbox-row booking-toggle-row">
+            <input id="public-booking-enabled" type="checkbox" />
+            Online zakazivanje je ukljuceno
+          </label>
+          <p class="muted-text">Kada je iskljuceno, pacijenti ne mogu da vide slobodne termine niti da posalju zahtev.</p>
+          <p id="public-booking-settings-message" class="form-alert" role="status"></p>
+        </section>
+      </section>
+
       <section class="list-section report-content" id="admin-codebook-editor">
         <button class="secondary-btn back-to-codebooks" type="button">← Nazad na šifarnike</button>
         <div class="section-header">
@@ -559,13 +584,13 @@
             </label>
             <label class="full-width">
               OAuth kod
-              <input id="google-oauth-code" type="text" placeholder="Kod dobijen iz Google OAuth ekrana" />
+              <input id="google-oauth-code" type="text" placeholder="Samo kod, ne ceo URL sa callback-om" />
             </label>
             <label>
               Smer sinhronizacije
               <select id="google-sync-direction">
                 <option value="app_to_google">Aplikacija ka Google Calendaru</option>
-                <option value="two_way">Dvosmerno pripremljeno</option>
+                <option value="two_way">Dvosmerno</option>
               </select>
             </label>
             <label>
@@ -585,6 +610,7 @@
             <button class="primary-btn" type="submit">Sacuvaj podesavanja</button>
             <button class="secondary-btn" id="google-connect-oauth" type="button">Povezi OAuth kod</button>
             <button class="secondary-btn" id="google-test-sync" type="button">Testiraj sync</button>
+            <button class="secondary-btn" id="google-pull-changes" type="button">Povuci izmene iz Google-a</button>
           </div>
           <p id="google-calendar-message" class="form-alert" role="status"></p>
           <div class="google-sync-summary" id="google-sync-summary"></div>

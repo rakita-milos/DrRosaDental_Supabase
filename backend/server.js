@@ -288,6 +288,14 @@ function applyMigrations() {
   ensureDefaultShiftMetadata();
   ensureDefaultCurrencyMetadata();
   });
+  runMigration('2026-06-30-public-booking-settings', () => {
+    ensureAppSettingsTable();
+    seedAppSetting('public_booking_enabled', '1');
+  });
+  runMigration('2026-06-30-google-calendar-two-way-pull', () => {
+    ensureColumn('google_calendar_settings', 'events_sync_token', 'TEXT');
+    ensureColumn('google_calendar_settings', 'last_google_pull_at', 'TEXT');
+  });
 }
 
 function ensureMigrationLedger() {
@@ -304,6 +312,45 @@ function runMigration(version, migrate) {
   if (existing) return;
   migrate();
   db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(version);
+}
+
+function ensureAppSettingsTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+function seedAppSetting(key, value) {
+  db.prepare(`
+    INSERT INTO app_settings (key, value)
+    VALUES (?, ?)
+    ON CONFLICT(key) DO NOTHING
+  `).run(key, value);
+}
+
+function appSetting(key, fallback = '') {
+  return db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key)?.value ?? fallback;
+}
+
+function setAppSetting(key, value) {
+  db.prepare(`
+    INSERT INTO app_settings (key, value, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+  `).run(key, value);
+}
+
+function isPublicBookingEnabled() {
+  return appSetting('public_booking_enabled', '1') === '1';
+}
+
+function requirePublicBookingEnabled(_req, res, next) {
+  if (isPublicBookingEnabled()) return next();
+  return res.status(503).json({ error: 'Online zakazivanje trenutno nije dostupno.' });
 }
 
 function ensureClinicalWorkflowTables() {
@@ -755,6 +802,8 @@ function ensureCalendarTables() {
       sync_direction TEXT NOT NULL DEFAULT 'app_to_google' CHECK (sync_direction IN ('app_to_google', 'two_way')),
       default_reminder_minutes INTEGER NOT NULL DEFAULT 1440,
       last_sync_at TEXT,
+      events_sync_token TEXT,
+      last_google_pull_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
@@ -1433,6 +1482,22 @@ function cleanText(value, { max = 255, required = false } = {}) {
   return required ? cleaned : cleaned || null;
 }
 
+function normalizeGoogleAuthCode(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+
+  const match = raw.match(/(?:^|[?&])code=([^&#\s]+)/i);
+  if (match?.[1]) {
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1];
+    }
+  }
+
+  return raw;
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -1598,6 +1663,12 @@ function googleCalendarEventPayload(appointment, settings) {
     description: appointment.notes || '',
     start: { dateTime: appointment.starts_at },
     end: { dateTime: appointment.ends_at },
+    extendedProperties: {
+      private: {
+        drrosaAppointmentId: String(appointment.appointment_id || appointment.id || ''),
+        drrosaSource: 'drrosa'
+      }
+    },
     reminders: {
       useDefault: false,
       overrides: Number(settings.default_reminder_minutes || 0) > 0
@@ -1613,13 +1684,16 @@ function publicGoogleSettings(settings) {
     calendarId: settings.calendar_id,
     calendarName: settings.calendar_name,
     clientId: settings.client_id,
+    clientSecret: settings.client_secret,
     redirectUri: settings.redirect_uri,
     oauthConnected: Boolean(settings.oauth_refresh_token || settings.oauth_access_token),
     oauthTokenExpiresAt: settings.oauth_token_expires_at,
     syncEnabled: Boolean(settings.sync_enabled),
     syncDirection: settings.sync_direction,
     defaultReminderMinutes: Number(settings.default_reminder_minutes || 1440),
-    lastSyncAt: settings.last_sync_at
+    lastSyncAt: settings.last_sync_at,
+    lastGooglePullAt: settings.last_google_pull_at,
+    googlePullConfigured: Boolean(settings.events_sync_token)
   };
 }
 
@@ -1666,7 +1740,12 @@ async function callGoogleCalendar(settings, method, path, payload) {
   });
   if (response.status === 204) return {};
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error?.message || 'Google Calendar API request failed');
+  if (!response.ok) {
+    const error = new Error(data.error?.message || 'Google Calendar API request failed');
+    error.status = response.status;
+    error.googleError = data.error || data;
+    throw error;
+  }
   return data;
 }
 
@@ -1751,6 +1830,167 @@ async function processCalendarSyncQueue({ limit = 10 } = {}) {
   }
 
   return processed;
+}
+
+function googleEventAppointmentId(event) {
+  const raw = event?.extendedProperties?.private?.drrosaAppointmentId;
+  const id = positiveInteger(raw);
+  if (id) return id;
+  const googleEventId = cleanText(event?.id, { max: 255 });
+  if (googleEventId) {
+    const existing = db.prepare('SELECT id FROM appointments WHERE google_event_id = ?').get(googleEventId);
+    if (existing?.id) return existing.id;
+  }
+  return null;
+}
+
+function googleEventTimes(event) {
+  const startsAt = normalizeIsoDateTime(event?.start?.dateTime);
+  const endsAt = normalizeIsoDateTime(event?.end?.dateTime);
+  if (!startsAt || !endsAt || appointmentDurationMinutes(startsAt, endsAt) <= 0) return null;
+  return { startsAt, endsAt };
+}
+
+function googleEventProcedureName(event, fallback) {
+  const summary = cleanText(event?.summary, { max: 255 });
+  if (!summary) return fallback;
+  const [procedure] = summary.split(' - ');
+  return cleanText(procedure, { max: 255 }) || fallback;
+}
+
+function updateAppointmentFromGoogleEvent(event) {
+  const appointmentId = googleEventAppointmentId(event);
+  if (!appointmentId) return { action: 'skipped_external' };
+
+  const current = appointmentById(appointmentId);
+  if (!current) return { action: 'skipped_missing_local', appointmentId };
+
+  if (event.status === 'cancelled') {
+    if (current.status !== 'cancelled') {
+      db.prepare(`
+        UPDATE appointments
+        SET status = 'cancelled', google_sync_status = 'synced', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(current.id);
+      db.prepare('INSERT INTO appointment_status_history (appointment_id, old_status, new_status, changed_by) VALUES (?, ?, ?, NULL)')
+        .run(current.id, current.status, 'cancelled');
+      return { action: 'cancelled', appointmentId };
+    }
+    return { action: 'unchanged', appointmentId };
+  }
+
+  const times = googleEventTimes(event);
+  if (!times) return { action: 'skipped_unsupported_time', appointmentId };
+
+  const conflict = appointmentConflict({
+    appointmentId: current.id,
+    doctorId: current.doctor_id,
+    chairId: current.chair_id,
+    startsAt: times.startsAt,
+    endsAt: times.endsAt
+  });
+  if (conflict) return { action: 'skipped_conflict', appointmentId, conflictId: conflict.id };
+
+  const procedureName = googleEventProcedureName(event, current.procedure_name);
+  const notes = cleanText(event.description, { max: 2000 });
+  const status = normalizeAppointmentStatus(current.status);
+  const changed = current.starts_at !== times.startsAt
+    || current.ends_at !== times.endsAt
+    || current.procedure_name !== procedureName
+    || (current.notes || null) !== notes
+    || current.google_event_id !== event.id;
+
+  if (!changed) return { action: 'unchanged', appointmentId };
+
+  db.prepare(`
+    UPDATE appointments
+    SET starts_at = ?, ends_at = ?, duration_minutes = ?, procedure_name = ?, notes = ?,
+        google_event_id = ?, google_sync_status = 'synced', status = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    times.startsAt,
+    times.endsAt,
+    appointmentDurationMinutes(times.startsAt, times.endsAt),
+    procedureName,
+    notes,
+    event.id,
+    status,
+    current.id
+  );
+  return { action: 'updated', appointmentId };
+}
+
+async function pullGoogleCalendarChanges({ limit = 250, reset = false } = {}) {
+  const settings = db.prepare('SELECT * FROM google_calendar_settings WHERE id = 1').get();
+  if (!settings?.sync_enabled) throw new Error('Google Calendar sync is disabled.');
+  if (settings.sync_direction !== 'two_way') throw new Error('Two-way sync is not enabled.');
+  if (!settings.connected_email || !settings.calendar_id) throw new Error('Google Calendar account or calendar is not configured.');
+
+  const calendarId = encodeURIComponent(settings.calendar_id);
+  const stats = {
+    fetched: 0,
+    updated: 0,
+    cancelled: 0,
+    unchanged: 0,
+    skippedExternal: 0,
+    skippedMissingLocal: 0,
+    skippedUnsupportedTime: 0,
+    skippedConflicts: 0,
+    fullSync: reset || !settings.events_sync_token
+  };
+  let nextSyncToken = null;
+  let pageToken = null;
+  let usedReset = reset;
+
+  do {
+    const query = new URLSearchParams({ maxResults: String(limit) });
+    if (!usedReset && settings.events_sync_token) {
+      query.set('syncToken', settings.events_sync_token);
+    } else {
+      query.set('singleEvents', 'true');
+      query.set('showDeleted', 'true');
+      query.set('timeMin', new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString());
+    }
+    if (pageToken) query.set('pageToken', pageToken);
+
+    let data;
+    try {
+      data = await callGoogleCalendar(settings, 'GET', `/calendars/${calendarId}/events?${query.toString()}`);
+    } catch (error) {
+      if (error.status === 410 && !usedReset) {
+        db.prepare('UPDATE google_calendar_settings SET events_sync_token = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = 1').run();
+        return pullGoogleCalendarChanges({ limit, reset: true });
+      }
+      throw error;
+    }
+
+    for (const event of data.items || []) {
+      stats.fetched += 1;
+      const result = updateAppointmentFromGoogleEvent(event);
+      if (result.action === 'updated') stats.updated += 1;
+      if (result.action === 'cancelled') stats.cancelled += 1;
+      if (result.action === 'unchanged') stats.unchanged += 1;
+      if (result.action === 'skipped_external') stats.skippedExternal += 1;
+      if (result.action === 'skipped_missing_local') stats.skippedMissingLocal += 1;
+      if (result.action === 'skipped_unsupported_time') stats.skippedUnsupportedTime += 1;
+      if (result.action === 'skipped_conflict') stats.skippedConflicts += 1;
+    }
+
+    pageToken = data.nextPageToken || null;
+    nextSyncToken = data.nextSyncToken || nextSyncToken;
+  } while (pageToken);
+
+  if (nextSyncToken) {
+    db.prepare(`
+      UPDATE google_calendar_settings
+      SET events_sync_token = ?, last_google_pull_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = 1
+    `).run(nextSyncToken);
+  } else {
+    db.prepare('UPDATE google_calendar_settings SET last_google_pull_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = 1').run();
+  }
+
+  return stats;
 }
 
 const DOCUMENT_TYPES = new Set(['rtg', 'ortopan', 'photo', 'finding', 'lab', 'consent', 'invoice', 'other']);
@@ -2956,7 +3196,16 @@ app.post('/api/appointments/:id/create-visit', authenticateToken, requirePermiss
 
 // ============ PUBLIC BOOKING ENDPOINTS ============
 
-app.get('/api/public/booking/options', publicBookingReadLimiter, (_req, res) => {
+app.get('/api/public/booking/status', publicBookingReadLimiter, (_req, res) => {
+  try {
+    res.json({ enabled: isPublicBookingEnabled() });
+  } catch (error) {
+    console.error('Public booking status error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/public/booking/options', publicBookingReadLimiter, requirePublicBookingEnabled, (_req, res) => {
   try {
     res.json({
       doctors: db.prepare('SELECT id, name, specialization FROM doctors ORDER BY name').all(),
@@ -2968,7 +3217,7 @@ app.get('/api/public/booking/options', publicBookingReadLimiter, (_req, res) => 
   }
 });
 
-app.get('/api/public/booking/availability', publicBookingReadLimiter, (req, res) => {
+app.get('/api/public/booking/availability', publicBookingReadLimiter, requirePublicBookingEnabled, (req, res) => {
   try {
     const dateText = cleanText(req.query.date, { max: 20, required: true });
     const doctorId = positiveInteger(req.query.doctor_id);
@@ -2998,7 +3247,7 @@ app.get('/api/public/booking/availability', publicBookingReadLimiter, (req, res)
   }
 });
 
-app.post('/api/public/booking', publicBookingWriteLimiter, validateBody(publicBookingSchema), (req, res) => {
+app.post('/api/public/booking', publicBookingWriteLimiter, requirePublicBookingEnabled, validateBody(publicBookingSchema), (req, res) => {
   try {
     const namePattern = /^[\p{L}][\p{L}\p{N}\s.'-]{0,79}$/u;
     const firstNameResult = validatedText(req.body.firstName || req.body.first_name, { field: 'Ime', max: 80, required: true, pattern: namePattern });
@@ -4434,6 +4683,43 @@ app.post('/api/director/calendar-sync/retry', authenticateToken, requireDirector
   }
 });
 
+app.post('/api/director/calendar-sync/pull-google', authenticateToken, requireDirector, async (req, res) => {
+  try {
+    const stats = await pullGoogleCalendarChanges({ reset: req.body?.reset === true });
+    auditLog({ userId: req.user.id, action: 'google_calendar_pulled', entityType: 'google_calendar', entityId: 1, req, metadata: stats });
+    res.json(stats);
+  } catch (error) {
+    console.error('Pull Google Calendar changes error:', error);
+    res.status(500).json({ error: error.message || 'Google Calendar pull failed' });
+  }
+});
+
+app.get('/api/director/public-booking/settings', authenticateToken, requireDirector, (_req, res) => {
+  try {
+    res.json({
+      enabled: isPublicBookingEnabled(),
+      updatedAt: db.prepare('SELECT updated_at FROM app_settings WHERE key = ?').get('public_booking_enabled')?.updated_at || null
+    });
+  } catch (error) {
+    console.error('Get public booking settings error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/director/public-booking/settings', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const enabled = req.body.enabled === true || req.body.enabled === 1 || req.body.enabled === '1';
+    setAppSetting('public_booking_enabled', enabled ? '1' : '0');
+    res.json({
+      enabled,
+      updatedAt: db.prepare('SELECT updated_at FROM app_settings WHERE key = ?').get('public_booking_enabled')?.updated_at || null
+    });
+  } catch (error) {
+    console.error('Update public booking settings error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/director/google-calendar/settings', authenticateToken, requireDirector, (_req, res) => {
   try {
     const settings = db.prepare('SELECT * FROM google_calendar_settings WHERE id = 1').get();
@@ -4450,6 +4736,7 @@ app.get('/api/director/google-calendar/settings', authenticateToken, requireDire
 
 app.put('/api/director/google-calendar/settings', authenticateToken, requireDirector, (req, res) => {
   try {
+    const current = db.prepare('SELECT * FROM google_calendar_settings WHERE id = 1').get();
     const connectedEmail = cleanText(req.body.connectedEmail ?? req.body.connected_email, { max: 255 });
     const calendarId = cleanText(req.body.calendarId ?? req.body.calendar_id, { max: 255 });
     const calendarName = cleanText(req.body.calendarName ?? req.body.calendar_name, { max: 255 });
@@ -4464,6 +4751,8 @@ app.put('/api/director/google-calendar/settings', authenticateToken, requireDire
       return res.status(400).json({ error: 'Connected email and calendar are required when sync is enabled' });
     }
 
+    const resetGooglePullToken = current?.calendar_id !== calendarId || current?.sync_direction !== syncDirection;
+
     db.prepare(`
       UPDATE google_calendar_settings
       SET connected_email = ?, calendar_id = ?, calendar_name = ?,
@@ -4471,9 +4760,11 @@ app.put('/api/director/google-calendar/settings', authenticateToken, requireDire
           client_secret = COALESCE(?, client_secret),
           redirect_uri = COALESCE(?, redirect_uri),
           sync_enabled = ?,
-          sync_direction = ?, default_reminder_minutes = ?, updated_at = CURRENT_TIMESTAMP
+          sync_direction = ?, default_reminder_minutes = ?,
+          events_sync_token = CASE WHEN ? THEN NULL ELSE events_sync_token END,
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = 1
-    `).run(connectedEmail, calendarId, calendarName, clientId, clientSecret, redirectUri, syncEnabled, syncDirection, defaultReminderMinutes);
+    `).run(connectedEmail, calendarId, calendarName, clientId, clientSecret, redirectUri, syncEnabled, syncDirection, defaultReminderMinutes, resetGooglePullToken ? 1 : 0);
     res.json(publicGoogleSettings(db.prepare('SELECT * FROM google_calendar_settings WHERE id = 1').get()));
   } catch (error) {
     console.error('Update Google Calendar settings error:', error);
@@ -4483,11 +4774,17 @@ app.put('/api/director/google-calendar/settings', authenticateToken, requireDire
 
 app.post('/api/director/google-calendar/oauth/exchange', authenticateToken, requireDirector, async (req, res) => {
   try {
-    const code = cleanText(req.body.code, { max: 2000, required: true });
+    const rawCode = req.body?.code;
+    const code = normalizeGoogleAuthCode(rawCode);
+    if (!code) {
+      return res.status(400).json({ error: 'OAuth code is required. Paste only the authorization code, not the whole callback URL.' });
+    }
+
     const settings = db.prepare('SELECT * FROM google_calendar_settings WHERE id = 1').get();
     if (!settings.client_id || !settings.client_secret || !settings.redirect_uri) {
       return res.status(400).json({ error: 'Google OAuth client ID, secret and redirect URI are required.' });
     }
+
     const response = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -4501,7 +4798,8 @@ app.post('/api/director/google-calendar/oauth/exchange', authenticateToken, requ
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.access_token) {
-      return res.status(502).json({ error: data.error_description || 'Google OAuth exchange failed' });
+      const detail = data.error_description || data.error || 'Google OAuth exchange failed';
+      return res.status(400).json({ error: detail });
     }
     const expiresAt = new Date(Date.now() + Number(data.expires_in || 3600) * 1000).toISOString();
     db.prepare(`

@@ -300,6 +300,13 @@
     return request("/director/calendar-sync/retry", { method: "POST" });
   }
 
+  async function pullGoogleCalendarChanges({ reset = false } = {}) {
+    return request("/director/calendar-sync/pull-google", {
+      method: "POST",
+      body: JSON.stringify({ reset })
+    });
+  }
+
   async function testGoogleCalendarSync() {
     return request("/director/google-calendar/test-sync", { method: "POST" });
   }
@@ -311,10 +318,44 @@
     });
   }
 
+  async function getPublicBookingSettings() {
+    return request("/director/public-booking/settings");
+  }
+
+  async function updatePublicBookingSettings(settings) {
+    return request("/director/public-booking/settings", {
+      method: "PUT",
+      body: JSON.stringify(settings)
+    });
+  }
+
+  async function getPublicBookingStatus() {
+    const response = await fetch(`${API_BASE}/public/booking/status`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Booking status unavailable");
+    return data;
+  }
+
+  function updatePublicBookingNavigation(enabled) {
+    document.querySelectorAll('.topbar-actions a[href$="public-booking.html"]').forEach(link => {
+      link.hidden = !enabled;
+    });
+  }
+
+  async function initializePublicBookingNavigation() {
+    try {
+      const status = await getPublicBookingStatus();
+      updatePublicBookingNavigation(Boolean(status.enabled));
+    } catch (error) {
+      console.warn("Public booking status unavailable:", error);
+    }
+  }
+
   async function getPublicBookingOptions() {
     const response = await fetch(`${API_BASE}/public/booking/options`);
-    if (!response.ok) throw new Error("Booking options unavailable");
-    return response.json();
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Booking options unavailable");
+    return data;
   }
 
   async function getPublicAvailability(params = {}) {
@@ -723,8 +764,13 @@
     getGoogleCalendarSettings,
     updateGoogleCalendarSettings,
     retryCalendarSync,
+    pullGoogleCalendarChanges,
     testGoogleCalendarSync,
     exchangeGoogleCalendarCode,
+    getPublicBookingSettings,
+    updatePublicBookingSettings,
+    getPublicBookingStatus,
+    updatePublicBookingNavigation,
     getPublicBookingOptions,
     getPublicAvailability,
     createPublicBooking,
@@ -780,6 +826,12 @@
     disableTwoFactor,
     normalizeRecord
   };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializePublicBookingNavigation);
+  } else {
+    initializePublicBookingNavigation();
+  }
 
   function escapeHtml(value) {
     return String(value ?? "")
