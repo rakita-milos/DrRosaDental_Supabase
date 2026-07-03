@@ -255,7 +255,6 @@ CREATE TABLE IF NOT EXISTS visit_records (
   procedure TEXT NOT NULL,
   status TEXT NOT NULL,
   shift TEXT NOT NULL DEFAULT 'Prva smena',
-  total_discount REAL NOT NULL DEFAULT 0,
   notes TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -270,6 +269,8 @@ CREATE TABLE IF NOT EXISTS treatments (
   notes TEXT,
   price REAL NOT NULL DEFAULT 0,
   discount REAL NOT NULL DEFAULT 0,
+  discount_type TEXT NOT NULL DEFAULT 'amount' CHECK (discount_type IN ('amount', 'percent')),
+  discount_value REAL NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -278,6 +279,7 @@ CREATE TABLE IF NOT EXISTS payments (
   visit_record_id INTEGER NOT NULL REFERENCES visit_records(id) ON DELETE CASCADE,
   patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE RESTRICT,
   amount REAL NOT NULL DEFAULT 0,
+  amount_paid REAL NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'EUR',
   payment_status TEXT NOT NULL,
   payment_method TEXT,

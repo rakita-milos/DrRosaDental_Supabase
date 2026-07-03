@@ -31,6 +31,44 @@
     </header>
 
     <main>
+      <section class="form-card entry-basics-card">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Osnovni podaci</p>
+            <h2>Podaci o poseti</h2>
+          </div>
+        </div>
+
+        <div class="form-alert" aria-live="polite"></div>
+
+        <div class="input-grid entry-basics-grid">
+            <label class="patient-autocomplete-field">
+              Ime i prezime
+              <input type="text" id="patient-name" name="patient" form="new-entry-form" placeholder="Ana Kovač" autocomplete="off" required />
+              <div id="existing-patients" class="patient-autocomplete-list" role="listbox"></div>
+            </label>
+            <label>
+              Datum posete
+              <input type="date" id="last-visit" name="lastVisit" form="new-entry-form" required />
+            </label>
+            <label>
+              Doktor
+              <select id="doctor" name="doctor" form="new-entry-form" required>
+                <option value="Dr Rosa">Dr Rosa</option>
+                <option value="Dr Novak">Dr Novak</option>
+                <option value="Dr Horvat">Dr Horvat</option>
+              </select>
+            </label>
+            <label>
+              Smena
+              <select id="shift" name="shift" form="new-entry-form" required>
+                <option value="Prva smena">Prva smena</option>
+                <option value="Druga smena">Druga smena</option>
+              </select>
+            </label>
+        </div>
+      </section>
+
       <section class="teeth-section">
         <div class="section-header">
           <div>
@@ -105,6 +143,7 @@
             <button id="close-panel" class="close-btn">×</button>
           </div>
           <div class="panel-content">
+            <div class="treatment-panel-row">
             <div class="form-group">
               <label for="treatment-activity">Osnovna delatnost</label>
               <select id="treatment-activity">
@@ -112,20 +151,29 @@
               </select>
             </div>
             <div class="form-group">
-              <label for="treatment-type">Šta je odrađeno</label>
+              <label for="treatment-type">Postupak</label>
               <select id="treatment-type" disabled>
-                <option value="">Odaberi tretman</option>
+                <option value="">Prvo odaberi delatnost</option>
               </select>
             </div>
+            </div>
+            <div class="treatment-panel-row treatment-money-row">
             <div class="treatment-price-preview" aria-live="polite">
               <span>Cena po zubu</span>
               <strong id="treatment-price">0.00 EUR</strong>
               <span>Ukupno za selekciju</span>
               <strong id="treatment-total-price">0.00 EUR</strong>
             </div>
-            <div class="form-group">
-              <label for="treatment-discount">Popust po zubu</label>
-              <input id="treatment-discount" type="number" min="0" step="0.01" placeholder="0.00" />
+            <div class="form-group treatment-discount-group">
+              <label for="treatment-discount">Popust po usluzi</label>
+              <div class="discount-input-row">
+                <input id="treatment-discount" type="number" min="0" step="0.01" placeholder="0.00" />
+                <select id="treatment-discount-type" aria-label="Tip popusta">
+                  <option value="amount">EUR</option>
+                  <option value="percent">%</option>
+                </select>
+              </div>
+            </div>
             </div>
             <div class="form-group">
               <label for="treatment-note">Detalji rada</label>
@@ -138,13 +186,9 @@
         </div>
 
         <div id="teeth-summary" class="teeth-summary"></div>
-        <div id="total-discount-panel" class="total-discount-panel" style="display: none;">
-          <label for="total-discount">Popust na ukupnu sumu</label>
-          <input id="total-discount" type="number" min="0" step="0.01" placeholder="0.00" />
-        </div>
       </section>
 
-      <main class="form-page">
+      <div class="form-page">
       <section class="form-card">
         <div class="section-header">
           <div>
@@ -153,19 +197,9 @@
           </div>
         </div>
 
-        <div class="form-alert" aria-live="polite"></div>
 
         <form id="new-entry-form">
           <div class="input-grid">
-            <label class="patient-autocomplete-field">
-              Ime i prezime
-              <input type="text" id="patient-name" name="patient" placeholder="Ana Kovač" autocomplete="off" required />
-              <div id="existing-patients" class="patient-autocomplete-list" role="listbox"></div>
-            </label>
-            <label>
-              Zadnji posjet
-              <input type="date" id="last-visit" name="lastVisit" required />
-            </label>
             <label>
               Osnovna delatnost
               <select id="procedure-activity" name="procedureActivity">
@@ -176,14 +210,6 @@
               Postupak
               <select id="procedure" name="procedure" disabled>
                 <option value="">Odaberi postupak</option>
-              </select>
-            </label>
-            <label>
-              Doktor
-              <select id="doctor" name="doctor" required>
-                <option value="Dr Rosa">Dr Rosa</option>
-                <option value="Dr Novak">Dr Novak</option>
-                <option value="Dr Horvat">Dr Horvat</option>
               </select>
             </label>
             <label>
@@ -209,13 +235,6 @@
                 <option value="EUR">EUR</option>
                 <option value="RSD">RSD</option>
                 <option value="USD">USD</option>
-              </select>
-            </label>
-            <label>
-              Smena
-              <select id="shift" name="shift" required>
-                <option value="Prva smena">Prva smena</option>
-                <option value="Druga smena">Druga smena</option>
               </select>
             </label>
             <label>
@@ -271,10 +290,12 @@
         </div>
 
       </aside>
+      </div>
     </main>
   </div>
 
   <script src="../scripts/api.js"></script>
+  <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/procedure-catalog.js"></script>
   <script src="../scripts/new-entry.js"></script>
 </body>

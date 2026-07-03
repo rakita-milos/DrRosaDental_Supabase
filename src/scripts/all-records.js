@@ -68,7 +68,9 @@ function addCurrencyAmount(target, currency, amount) {
 
 function formatCurrencyAmounts(amounts) {
   const entries = Object.entries(amounts).filter(([, amount]) => amount > 0);
-  return entries.length ? entries.map(([currency, amount]) => `${amount.toFixed(2)} ${currency}`).join(" / ") : "0.00";
+  return entries.length
+    ? entries.map(([currency, amount]) => window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(amount, currency) : `${amount.toFixed(2)} ${currency}`).join(" / ")
+    : "0.00";
 }
 
 function option(value, label = value) {

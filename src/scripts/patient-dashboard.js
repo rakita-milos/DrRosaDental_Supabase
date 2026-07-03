@@ -42,7 +42,9 @@ function isDebt(record) {
 }
 
 function formatMoney(amount, currency = "EUR") {
-  return `${Number(amount || 0).toFixed(2)} ${currency}`;
+  return window.DrRosaCurrencyUtils
+    ? window.DrRosaCurrencyUtils.formatMoney(amount, currency)
+    : `${Number(amount || 0).toFixed(2)} ${currency}`;
 }
 
 function setSelectValue(select, value) {
@@ -64,6 +66,40 @@ function treatmentListForValue(treatments) {
   return Array.isArray(treatments) ? treatments : [treatments];
 }
 
+function normalizeDiscountType(type) {
+  return type === "percent" ? "percent" : "amount";
+}
+
+function normalizeDiscountValue(value, type) {
+  const amount = Math.max(0, Number(value || 0));
+  return normalizeDiscountType(type) === "percent" ? Math.min(100, amount) : amount;
+}
+
+function treatmentDiscountAmount(treatment) {
+  const price = Number(treatment?.price || 0);
+  const type = normalizeDiscountType(treatment?.discountType || treatment?.discount_type);
+  const value = normalizeDiscountValue(treatment?.discountValue ?? treatment?.discount_value ?? treatment?.discount ?? 0, type);
+  const discount = type === "percent" ? price * value / 100 : value;
+  return Math.min(price, Math.max(0, discount));
+}
+
+function treatmentDiscountLabel(treatment, currency = "EUR") {
+  const discount = treatmentDiscountAmount(treatment);
+  if (discount <= 0) return "";
+  const type = normalizeDiscountType(treatment?.discountType || treatment?.discount_type);
+  const value = normalizeDiscountValue(treatment?.discountValue ?? treatment?.discount_value ?? treatment?.discount ?? 0, type);
+  return type === "percent"
+    ? `${value.toFixed(2).replace(/\.00$/, "")}% (${formatMoney(discount, currency)})`
+    : formatMoney(discount, currency);
+}
+
+function discountSummaryFromGroups(groups, currency = "EUR") {
+  const labels = Array.from(groups.values()).map(item => item.type === "percent"
+    ? `${item.value.toFixed(2).replace(/\.00$/, "")}% (${formatMoney(item.discount, currency)})`
+    : formatMoney(item.discount, currency));
+  return labels.join(", ");
+}
+
 function recordTreatmentEntries(record) {
   if (!record.treatments) return [];
   return Object.values(record.treatments)
@@ -74,12 +110,12 @@ function recordTreatmentEntries(record) {
 function recordVisitCost(record) {
   const treatments = recordTreatmentEntries(record);
   const treatmentsTotal = treatments.reduce((sum, treatment) => {
-    return sum + Math.max(0, Number(treatment.price || 0) - Number(treatment.discount || 0));
+    return sum + Math.max(0, Number(treatment.price || 0) - treatmentDiscountAmount(treatment));
   }, 0);
   if (treatmentsTotal > 0) {
-    return Math.max(0, treatmentsTotal - Number(record.totalDiscount || 0));
+    return Math.max(0, treatmentsTotal);
   }
-  return Number(record.amountDue || 0);
+  return Math.max(0, Number(record.amountPaid || 0) + Number(record.amountDue || 0));
 }
 
 function groupTreatmentEntries(entries) {
@@ -96,20 +132,31 @@ function groupTreatmentEntries(entries) {
         teeth: [],
         notes: [],
         gross: 0,
-        discount: 0
+        discount: 0,
+        discountGroups: new Map()
       });
     }
     const group = groups.get(key);
     group.teeth.push(item.tooth);
     if (item.note && item.note !== "-") group.notes.push(item.note);
     group.gross += Number(item.price || 0);
-    group.discount += Number(item.discount || 0);
+    group.discount += treatmentDiscountAmount(item);
+    const itemDiscount = treatmentDiscountAmount(item);
+    if (itemDiscount > 0) {
+      const discountType = normalizeDiscountType(item.discountType || item.discount_type);
+      const discountValue = normalizeDiscountValue(item.discountValue ?? item.discount_value ?? item.discount ?? 0, discountType);
+      const discountKey = `${discountType}:${discountValue}`;
+      const currentDiscount = group.discountGroups.get(discountKey) || { type: discountType, value: discountValue, discount: 0 };
+      currentDiscount.discount += itemDiscount;
+      group.discountGroups.set(discountKey, currentDiscount);
+    }
   });
 
   return Array.from(groups.values()).map(group => ({
     ...group,
     teeth: Array.from(new Set(group.teeth)).sort((a, b) => Number(a) - Number(b)),
     notes: Array.from(new Set(group.notes)),
+    discountLabel: discountSummaryFromGroups(group.discountGroups, group.currency),
     total: Math.max(0, group.gross - group.discount)
   }));
 }
@@ -256,6 +303,7 @@ function userFacingError(error, fallback) {
 }
 
 function rateToRsd(currency) {
+  if (window.DrRosaCurrencyUtils) return window.DrRosaCurrencyUtils.rateToRsd(currency);
   const code = String(currency || "EUR").toUpperCase();
   if (code === "RSD") return 1;
   const item = currencyItems.find(entry => String(entry.value || "").toUpperCase() === code);
@@ -1075,6 +1123,7 @@ async function initializeClinicalWorkflows(patientId) {
     { value: "RSD", label: "RSD", metadata: { exchangeRate: 1, rateBase: "RSD", rateCurrency: "RSD" } },
     { value: "USD", label: "USD", metadata: { exchangeRate: 108, rateBase: "USD", rateCurrency: "RSD" } }
   ];
+  window.DrRosaCurrencyUtils?.setCurrencies(currencyItems);
   const currencySelect = document.getElementById("clinical-currency");
   const currentCurrency = currencySelect.value;
   currencySelect.innerHTML = currencyItems.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label || item.value)}</option>`).join("");
@@ -1673,7 +1722,7 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
       <td>${escapeHtml(record.shift || "-")}</td>
       <td>${formatMoney(recordVisitCost(record), record.currency)}</td>
       <td>${formatMoney(record.amountDue, record.currency)}</td>
-      <td>${escapeHtml(record.note || "-")}${Number(record.totalDiscount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust na ukupno: ${formatMoney(record.totalDiscount, record.currency)}</div>` : ""}</td>
+      <td>${escapeHtml(record.note || "-")}</td>
       <td>
         <a class="secondary-btn" href="${recordDetailsUrl(record)}">Uredi</a>
         <button class="danger-btn delete-record-btn" type="button" data-record-id="${escapeHtml(record.id)}">Obrisi</button>
@@ -1719,7 +1768,7 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
         <div>
           <strong>Zubi ${escapeHtml(item.teeth.join(", "))}</strong> - ${escapeHtml(item.type)}
           <div style="margin-top: 6px; font-weight: 700;">Ukupno: ${formatMoney(item.total, item.currency)}</div>
-          ${Number(item.discount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${formatMoney(item.discount, item.currency)}</div>` : ""}
+          ${Number(item.discount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${escapeHtml(item.discountLabel || formatMoney(item.discount, item.currency))}</div>` : ""}
           <div style="margin-top: 6px;">${escapeHtml(item.notes.join("; ") || "-")}</div>
           <div style="margin-top: 6px; font-size: 0.9rem; color: #5b6c7d;">${formatDate(item.date)} | ${escapeHtml(item.procedure)}</div>
         </div>

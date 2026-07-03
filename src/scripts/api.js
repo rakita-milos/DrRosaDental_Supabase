@@ -83,9 +83,9 @@
       visits: Number(row.visits || 1),
       paymentStatus: row.payment_status || row.paymentStatus || "Placeno",
       amountDue: Number(row.amount_due ?? row.amountDue ?? 0),
+      amountPaid: Number(row.amount_paid ?? row.amountPaid ?? 0),
       currency: row.currency || row.paymentCurrency || "EUR",
       shift: row.shift || "Prva smena",
-      totalDiscount: Number(row.total_discount ?? row.totalDiscount ?? 0),
       treatments: row.treatments || {}
     };
   }
@@ -582,10 +582,10 @@
         status: record.status,
         notes: record.note,
         amount: record.amountDue,
+        amount_paid: record.amountPaid,
         currency: record.currency,
         payment_status: record.paymentStatus,
         shift: record.shift,
-        total_discount: record.totalDiscount,
         treatments: record.treatments
       })
     });
@@ -595,10 +595,15 @@
     return request(`/records/${recordId}`, {
       method: "PUT",
       body: JSON.stringify({
+        visit_date: record.lastVisit,
         procedure: record.procedure,
         status: record.status,
         notes: record.note,
-        shift: record.shift
+        shift: record.shift,
+        amount: record.amountDue,
+        amount_paid: record.amountPaid,
+        currency: record.currency,
+        payment_status: record.paymentStatus
       })
     });
   }

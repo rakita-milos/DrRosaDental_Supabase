@@ -72,7 +72,9 @@ function addCurrencyAmount(target, currency, amount) {
 
 function formatCurrencyAmounts(amounts) {
   const entries = Object.entries(amounts).filter(([, amount]) => amount > 0);
-  return entries.length ? entries.map(([currency, amount]) => `${amount.toFixed(2)} ${currency}`).join(" / ") : "0.00";
+  return entries.length
+    ? entries.map(([currency, amount]) => window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(amount, currency) : `${amount.toFixed(2)} ${currency}`).join(" / ")
+    : "0.00";
 }
 
 function showReports() {
@@ -202,7 +204,7 @@ async function loadFinancialReport() {
       patientPayments[record.patient] = { visits: 0, amount: {}, paid: {}, debt: {}, amountTotal: 0, paidTotal: 0 };
     }
     const amount = Number(record.amountDue || 0);
-    const price = amount > 0 ? amount : 50;
+    const price = recordTotal(record);
     const currency = record.currency || "EUR";
     patientPayments[record.patient].visits += 1;
     patientPayments[record.patient].amountTotal += price;
@@ -376,6 +378,23 @@ function treatmentListForValue(treatments) {
   return Array.isArray(treatments) ? treatments : [treatments];
 }
 
+function normalizeDiscountType(type) {
+  return type === "percent" ? "percent" : "amount";
+}
+
+function normalizeDiscountValue(value, type) {
+  const amount = Math.max(0, Number(value || 0));
+  return normalizeDiscountType(type) === "percent" ? Math.min(100, amount) : amount;
+}
+
+function treatmentDiscountAmount(treatment) {
+  const price = Number(treatment?.price || 0);
+  const type = normalizeDiscountType(treatment?.discountType || treatment?.discount_type);
+  const value = normalizeDiscountValue(treatment?.discountValue ?? treatment?.discount_value ?? treatment?.discount ?? 0, type);
+  const discount = type === "percent" ? price * value / 100 : value;
+  return Math.min(price, Math.max(0, discount));
+}
+
 function recordTreatmentEntries(record) {
   const entries = [];
   if (record.treatments) {
@@ -385,7 +404,7 @@ function recordTreatmentEntries(record) {
           tooth,
           type: treatment.type || record.procedure,
           activity: treatment.activity || procedureCatalog.findActivityForProcedure(treatment.type || record.procedure),
-          amount: Math.max(0, Number(treatment.price || 0) - Number(treatment.discount || 0))
+          amount: Math.max(0, Number(treatment.price || 0) - treatmentDiscountAmount(treatment))
         });
       });
     });
@@ -396,16 +415,20 @@ function recordTreatmentEntries(record) {
       tooth: "",
       type: record.procedure,
       activity: procedureCatalog.findActivityForProcedure(record.procedure),
-      amount: Number(record.amountDue || 0)
+      amount: recordPaymentTotal(record)
     });
   }
 
   return entries;
 }
 
+function recordPaymentTotal(record) {
+  return Math.max(0, Number(record.amountPaid || 0) + Number(record.amountDue || 0));
+}
+
 function recordTotal(record) {
   const treatmentsTotal = recordTreatmentEntries(record).reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  return Math.max(0, treatmentsTotal - Number(record.totalDiscount || 0));
+  return Math.max(0, treatmentsTotal);
 }
 
 function matchesCategory(text, category) {
@@ -982,6 +1005,7 @@ function renderCodebooksAdmin() {
 async function loadCodebooksAdmin() {
   try {
     codebookItems = await window.DrRosaApi.getAdminCodebooks();
+    window.DrRosaCurrencyUtils?.setCurrencies(codebookItems.filter(item => item.type === "currency"));
     renderCodebookGrid();
   } catch (error) {
     showCodebookMessage(error.message || "Sifarnici nisu ucitani.", true);

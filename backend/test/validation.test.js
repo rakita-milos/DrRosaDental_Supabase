@@ -71,6 +71,26 @@ test('record create schema validates required visit payload', () => {
   assert.equal(value.patient_id, 1);
 });
 
+test('record create schema accepts treatment percentage discounts', () => {
+  const { error, value } = recordCreateSchema.validate({
+    patient_id: 1,
+    doctor_id: 1,
+    visit_date: '2026-07-03',
+    procedure: 'Plomba',
+    treatments: {
+      16: [{
+        type: 'Plomba',
+        price: 100,
+        discount: 10,
+        discountType: 'percent',
+        discountValue: 10
+      }]
+    }
+  });
+  assert.equal(error, undefined);
+  assert.equal(value.treatments['16'][0].discountType, 'percent');
+});
+
 test('public booking schema accepts camelCase booking payload', () => {
   const { error, value } = publicBookingSchema.validate({
     firstName: 'Mina',

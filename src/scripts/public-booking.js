@@ -60,11 +60,12 @@
   }
 
   function renderOptions() {
+    const formatMoney = window.DrRosaCurrencyUtils?.formatMoney || ((amount, currency) => `${Number(amount || 0).toFixed(2)} ${currency}`);
     document.getElementById("booking-doctor").innerHTML = state.doctors
       .map(doctor => `<option value="${doctor.id}">${escapeHtml(doctor.name)}</option>`)
       .join("");
     document.getElementById("booking-procedure").innerHTML = state.procedures
-      .map(item => `<option value="${item.id}" data-name="${escapeHtml(item.label || item.value)}">${escapeHtml(item.label || item.value)}${Number(item.price || 0) > 0 ? ` - ${Number(item.price).toFixed(2)} EUR` : ""}</option>`)
+      .map(item => `<option value="${item.id}" data-name="${escapeHtml(item.label || item.value)}">${escapeHtml(item.label || item.value)}${Number(item.price || 0) > 0 ? ` - ${formatMoney(item.price, "EUR")}` : ""}</option>`)
       .join("");
   }
 

@@ -12,6 +12,7 @@
     currentDate: new Date(),
     viewMode: "week",
     appointments: [],
+    records: [],
     patients: [],
     doctors: [],
     chairs: [],
@@ -137,6 +138,26 @@
     return items.map(item => `<option value="${item[value]}">${window.DrRosaSecurity.escapeHtml(item[label])}</option>`).join("");
   }
 
+  function formatMoney(amount, currency = "EUR") {
+    return window.DrRosaCurrencyUtils
+      ? window.DrRosaCurrencyUtils.formatMoney(amount, currency)
+      : `${Number(amount || 0).toFixed(2)} ${currency}`;
+  }
+
+  function recordForAppointment(appointment) {
+    if (!appointment?.visitRecordId) return null;
+    return state.records.find(record => String(record.id) === String(appointment.visitRecordId)) || null;
+  }
+
+  function paymentLine(appointment) {
+    const record = recordForAppointment(appointment);
+    if (!record) return "";
+    const currency = record.currency || "EUR";
+    const paid = Number(record.amountPaid || 0);
+    const due = Number(record.amountDue || 0);
+    return `<small class="appointment-payment">Plaćeno: ${formatMoney(paid, currency)}${due > 0 ? ` / Dug: ${formatMoney(due, currency)}` : ""}</small>`;
+  }
+
   function fillSelects() {
     document.getElementById("doctor-filter").innerHTML = `<option value="">Svi doktori</option>${optionList(state.doctors)}`;
     document.getElementById("appointment-doctor").innerHTML = optionList(state.doctors);
@@ -255,6 +276,7 @@
       <button class="week-appointment appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}">
         <span>${pad(starts.getHours())}:${pad(starts.getMinutes())}-${pad(ends.getHours())}:${pad(ends.getMinutes())}</span>
         <strong>${window.DrRosaSecurity.escapeHtml(shortPatientName(appointment.patientName))}</strong>
+        ${paymentLine(appointment)}
       </button>
     `;
   }
@@ -277,6 +299,7 @@
         <strong>${window.DrRosaSecurity.escapeHtml(appointment.patientName)}</strong>
         <span>${window.DrRosaSecurity.escapeHtml(appointment.procedureName)}</span>
         <small>${window.DrRosaSecurity.escapeHtml(appointment.doctorName)} / ${window.DrRosaSecurity.escapeHtml(appointment.chairName)}</small>
+        ${paymentLine(appointment)}
         <em>${STATUS_LABELS[appointment.status] || appointment.status}</em>
       </button>
     `;
@@ -297,6 +320,7 @@
         <strong>${window.DrRosaSecurity.escapeHtml(appointment.patientName)}</strong>
         <span>${window.DrRosaSecurity.escapeHtml(appointment.procedureName)}</span>
         <small>${window.DrRosaSecurity.escapeHtml(appointment.doctorName)} / ${window.DrRosaSecurity.escapeHtml(appointment.chairName)}</small>
+        ${paymentLine(appointment)}
         <em>${STATUS_LABELS[appointment.status] || appointment.status}</em>
       </button>
     `;
@@ -392,20 +416,27 @@
       doctor_id: doctorId,
       status
     });
+    if (window.DrRosaApi.getRecords) {
+      state.records = await window.DrRosaApi.getRecords().catch(() => state.records);
+    }
     renderCalendar();
   }
 
   async function loadInitialData() {
-    const [patients, doctors, chairs, procedures] = await Promise.all([
+    const [patients, doctors, chairs, procedures, records, currencies] = await Promise.all([
       window.DrRosaApi.getPatients(),
       window.DrRosaApi.getDoctors(),
       window.DrRosaApi.getChairs(),
-      window.DrRosaApi.getCodebooks("procedure")
+      window.DrRosaApi.getCodebooks("procedure"),
+      window.DrRosaApi.getRecords ? window.DrRosaApi.getRecords().catch(() => []) : [],
+      window.DrRosaApi.getCodebooks ? window.DrRosaApi.getCodebooks("currency").catch(() => []) : []
     ]);
     state.patients = patients;
     state.doctors = doctors;
     state.chairs = chairs;
     state.procedures = procedures;
+    state.records = records;
+    window.DrRosaCurrencyUtils?.setCurrencies(currencies);
     fillSelects();
     closePanel();
     await loadAppointments();

@@ -274,8 +274,8 @@ function applyMigrations() {
   ensureAdvancedWorkflowTables();
   ensureClinicalWorkflowTables();
   ensureColumn('visit_records', 'shift', "TEXT NOT NULL DEFAULT 'Prva smena'");
-  ensureColumn('visit_records', 'total_discount', "REAL NOT NULL DEFAULT 0");
   ensureColumn('payments', 'currency', "TEXT NOT NULL DEFAULT 'EUR'");
+  ensureColumn('payments', 'amount_paid', "REAL NOT NULL DEFAULT 0");
   ensureColumn('treatments', 'price', "REAL NOT NULL DEFAULT 0");
   ensureColumn('treatments', 'discount', "REAL NOT NULL DEFAULT 0");
   ensureColumn('clinical_chart_entries', 'price', "REAL NOT NULL DEFAULT 0");
@@ -295,6 +295,13 @@ function applyMigrations() {
   runMigration('2026-06-30-google-calendar-two-way-pull', () => {
     ensureColumn('google_calendar_settings', 'events_sync_token', 'TEXT');
     ensureColumn('google_calendar_settings', 'last_google_pull_at', 'TEXT');
+  });
+  runMigration('2026-07-03-treatment-discount-types', () => {
+    ensureColumn('treatments', 'discount_type', "TEXT NOT NULL DEFAULT 'amount'");
+    ensureColumn('treatments', 'discount_value', "REAL NOT NULL DEFAULT 0");
+  });
+  runMigration('2026-07-03-payment-amount-paid', () => {
+    ensureColumn('payments', 'amount_paid', "REAL NOT NULL DEFAULT 0");
   });
 }
 
@@ -2770,13 +2777,13 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), (_
         vr.procedure,
         vr.status,
         vr.shift,
-        vr.total_discount,
         p.id as patient_id,
         p.first_name,
         p.last_name,
         d.id as doctor_id,
         d.name as doctor_name,
         COALESCE(pay.amount, 0) as amount_due,
+        COALESCE(pay.amount_paid, 0) as amount_paid,
         COALESCE(pay.currency, 'EUR') as currency,
         pay.payment_status,
         vr.notes
@@ -2788,24 +2795,29 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), (_
     `).all();
 
     const getTreatments = db.prepare(`
-      SELECT tooth_number, treatment_type, status, notes, price, discount
+      SELECT tooth_number, treatment_type, status, notes, price, discount, discount_type, discount_value
       FROM treatments
       WHERE visit_record_id = ?
     `);
 
     res.json(records.map(record => {
       const treatments = {};
+      let treatmentTotal = 0;
       getTreatments.all(record.id).forEach(treatment => {
         if (!treatments[treatment.tooth_number]) treatments[treatment.tooth_number] = [];
+        treatmentTotal += Math.max(0, Number(treatment.price || 0) - Number(treatment.discount || 0));
         treatments[treatment.tooth_number].push({
           type: treatment.treatment_type,
           status: treatment.status,
           note: treatment.notes,
           price: Number(treatment.price || 0),
-          discount: Number(treatment.discount || 0)
+          discount: Number(treatment.discount || 0),
+          discountType: treatment.discount_type || 'amount',
+          discountValue: Number(treatment.discount_value ?? treatment.discount ?? 0)
         });
       });
-      return { ...record, treatments };
+      const inferredPaid = Math.max(0, treatmentTotal - Number(record.amount_due || 0));
+      return { ...record, amount_paid: Number(record.amount_paid || inferredPaid || 0), treatments };
     }));
   } catch (error) {
     console.error('Get records error:', error);
@@ -2819,8 +2831,8 @@ function insertRecordTransaction(record) {
   const patientId = positiveInteger(record.patient_id);
   const doctorId = positiveInteger(record.doctor_id);
   const visitResult = db.prepare(`
-    INSERT INTO visit_records (patient_id, doctor_id, visit_date, procedure, status, shift, total_discount, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO visit_records (patient_id, doctor_id, visit_date, procedure, status, shift, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     patientId,
     doctorId,
@@ -2828,40 +2840,51 @@ function insertRecordTransaction(record) {
     cleanText(record.procedure, { max: 255, required: true }),
     normalizeStatus(record.status),
     normalizeShift(record.shift),
-    Math.max(0, Number(record.total_discount || 0)),
     cleanText(record.notes, { max: 2000 })
   );
 
   const visitId = visitResult.lastInsertRowid;
 
   db.prepare(`
-    INSERT INTO payments (visit_record_id, patient_id, amount, currency, payment_status)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO payments (visit_record_id, patient_id, amount, amount_paid, currency, payment_status)
+    VALUES (?, ?, ?, ?, ?, ?)
   `).run(
     visitId,
     patientId,
     Math.max(0, Number(record.amount || 0)),
+    Math.max(0, Number(record.amount_paid ?? record.amountPaid ?? 0)),
     normalizeCurrency(record.currency),
     normalizePaymentStatus(record.payment_status)
   );
 
   if (record.treatments && typeof record.treatments === 'object') {
     const insertTreatment = db.prepare(`
-      INSERT INTO treatments (visit_record_id, tooth_number, treatment_type, status, notes, price, discount)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO treatments (visit_record_id, tooth_number, treatment_type, status, notes, price, discount, discount_type, discount_value)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     Object.entries(record.treatments).forEach(([toothNumber, treatments]) => {
       const treatmentList = Array.isArray(treatments) ? treatments : [treatments];
       treatmentList.forEach(treatment => {
+        const price = Math.max(0, Number(treatment.price || 0));
+        const discountType = treatment.discountType === 'percent' || treatment.discount_type === 'percent' ? 'percent' : 'amount';
+        const rawDiscountValue = Number(treatment.discountValue ?? treatment.discount_value ?? treatment.discount ?? 0);
+        const discountValue = discountType === 'percent'
+          ? Math.min(100, Math.max(0, rawDiscountValue))
+          : Math.max(0, rawDiscountValue);
+        const discount = discountType === 'percent'
+          ? Math.min(price, price * discountValue / 100)
+          : Math.min(price, discountValue);
         insertTreatment.run(
           visitId,
           cleanText(toothNumber, { max: 10 }),
           cleanText(treatment.type, { max: 255, required: true }),
           normalizeStatus(treatment.status || 'Planirano'),
           cleanText(treatment.note, { max: 1000 }),
-          Math.max(0, Number(treatment.price || 0)),
-          Math.max(0, Number(treatment.discount || 0))
+          price,
+          discount,
+          discountType,
+          discountValue
         );
       });
     });
@@ -2915,6 +2938,26 @@ app.put('/api/records/:id', authenticateToken, requirePermission('records:write'
       SET procedure = ?, status = ?, shift = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(procedure, normalizeStatus(data.status), normalizeShift(data.shift), cleanText(data.notes, { max: 2000 }), req.params.id);
+
+    if (
+      req.body.amount !== undefined
+      || req.body.amount_paid !== undefined
+      || req.body.amountPaid !== undefined
+      || req.body.currency !== undefined
+      || req.body.payment_status !== undefined
+    ) {
+      db.prepare(`
+        UPDATE payments
+        SET amount = ?, amount_paid = ?, currency = ?, payment_status = ?
+        WHERE visit_record_id = ?
+      `).run(
+        Math.max(0, Number(req.body.amount ?? 0)),
+        Math.max(0, Number(req.body.amount_paid ?? req.body.amountPaid ?? 0)),
+        normalizeCurrency(req.body.currency),
+        normalizePaymentStatus(req.body.payment_status),
+        req.params.id
+      );
+    }
 
     res.json({ id: Number(req.params.id), message: 'Record updated successfully' });
   } catch (error) {
