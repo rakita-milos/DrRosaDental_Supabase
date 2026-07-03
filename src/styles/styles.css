@@ -2243,6 +2243,27 @@ td:nth-child(5) {
   margin: 0 0 12px;
 }
 
+.treatment-history-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.treatment-history-header h4 {
+  margin: 0;
+}
+
+.treatment-history-toggle {
+  min-height: 36px;
+  padding: 8px 14px;
+}
+
+.treatment-history-content {
+  margin-top: 12px;
+}
+
 .treatment-total-card {
   display: grid;
   grid-template-columns: auto 1fr;

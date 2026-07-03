@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Director Panel | Dr Rosa</title>
+  <title>Direktor panel | Dr Rosa</title>
   <link rel="stylesheet" href="../styles/styles.css" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <a class="logo-link" href="index.html" aria-label="Pocetna strana">
+        <a class="logo-link" href="index.html" aria-label="Početna strana">
           <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
         </a>
         <div>
@@ -18,12 +18,12 @@
         </div>
       </div>
       <nav class="topbar-actions" aria-label="Glavna navigacija">
-        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="index.html" class="nav-link">Kontrolna tabla</a>
         <a href="calendar.html" class="nav-link">Kalendar</a>
         <a href="new-entry.html" class="nav-link">Novi unos</a>
         <a href="new-patient.html" class="nav-link">Novi pacijent</a>
         <a href="all-records.html" class="nav-link">Evidencija</a>
-        <a href="public-booking.html" class="nav-link">Online zakazivanje</a>
+        <a href="public-booking.html" class="nav-link">Onlajn zakazivanje</a>
         <a href="director-panel.html" class="nav-link" aria-current="page">Direktor panel</a>
         <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
@@ -33,14 +33,14 @@
       <section class="hero-card">
         <div>
           <p class="eyebrow">Direktor</p>
-          <h2>Analitika i izvještaji</h2>
-          <p>Upravljajte financijama, pacijentima i doktorima unutar istog dizajna kao ostatak aplikacije.</p>
+          <h2>Analitika i izveštaji</h2>
+          <p>Upravljajte finansijama, pacijentima i doktorima unutar istog dizajna kao ostatak aplikacije.</p>
         </div>
       </section>
 
       <section class="cards-grid" id="reports-grid">
         <article class="stat-card gradient-blue" data-report-id="financial-report" style="cursor:pointer;">
-          <h3>Finansijski Izvještaj</h3>
+          <h3>Finansijski Izveštaj</h3>
           <p>Analiza prihoda, naplate i dugovanja.</p>
         </article>
         <article class="stat-card gradient-green" data-report-id="patients-report" style="cursor:pointer;">
@@ -53,16 +53,16 @@
         </article>
         <article class="stat-card gradient-orange" data-report-id="procedures-report" style="cursor:pointer;">
           <h3>Postupci</h3>
-          <p>Raspodjela usluga i prosječna naplata.</p>
+          <p>Raspodela usluga i prosečna naplata.</p>
         </article>
       </section>
 
       <section class="list-section report-content" id="financial-report">
-        <button class="secondary-btn back-to-reports" type="button">← Nazad na izvještaje</button>
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izveštaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Finansije</p>
-            <h2>Finansijski Izvještaj</h2>
+            <h2>Finansijski Izveštaj</h2>
           </div>
         </div>
 
@@ -108,11 +108,11 @@
       </section>
 
       <section class="list-section report-content" id="patients-report">
-        <button class="secondary-btn back-to-reports" type="button">← Nazad na izvještaje</button>
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izveštaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Pacijenti</p>
-            <h2>Izvještaj o Pacijentima</h2>
+            <h2>Izveštaj o Pacijentima</h2>
           </div>
         </div>
 
@@ -136,8 +136,8 @@
             <thead>
               <tr>
                 <th>Pacijent</th>
-                <th>Broj Posjeta</th>
-                <th>Zadnja Posjeta</th>
+                <th>Broj poseta</th>
+                <th>Poslednja poseta</th>
                 <th>Status</th>
                 <th>Dugovanje</th>
               </tr>
@@ -148,11 +148,11 @@
       </section>
 
       <section class="list-section report-content" id="doctors-report">
-        <button class="secondary-btn back-to-reports" type="button">← Nazad na izvještaje</button>
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izveštaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Doktori</p>
-            <h2>Izvještaj o Doktorima</h2>
+            <h2>Izveštaj o Doktorima</h2>
           </div>
         </div>
 
@@ -172,11 +172,11 @@
       </section>
 
       <section class="list-section report-content" id="procedures-report">
-        <button class="secondary-btn back-to-reports" type="button">← Nazad na izvještaje</button>
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izveštaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Postupci</p>
-            <h2>Izvještaj o Postupcima</h2>
+            <h2>Izveštaj o Postupcima</h2>
           </div>
         </div>
 
@@ -188,7 +188,7 @@
                 <th>Delatnost</th>
                 <th>Broj Izvršenih</th>
                 <th>Procenat</th>
-                <th>Prosječna Naplata</th>
+                <th>Prosečna Naplata</th>
               </tr>
             </thead>
             <tbody id="procedures-table"></tbody>
@@ -197,7 +197,7 @@
       </section>
 
       <section class="list-section report-content" id="excel-report">
-        <button class="secondary-btn back-to-reports" type="button">← Nazad na izvještaje</button>
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izveštaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Izveštaji</p>
@@ -224,7 +224,7 @@
       </section>
 
       <section class="list-section report-content" id="admin-codebooks-report">
-        <button class="secondary-btn back-to-reports" type="button">← Nazad na izvještaje</button>
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izveštaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Admin</p>
@@ -236,10 +236,10 @@
       </section>
 
       <section class="list-section report-content" id="public-booking-report">
-        <button class="secondary-btn back-to-reports" type="button">Nazad na izvjestaje</button>
+        <button class="secondary-btn back-to-reports" type="button">Nazad na izveštaje</button>
         <div class="section-header">
           <div>
-            <p class="eyebrow">Online zakazivanje</p>
+            <p class="eyebrow">Onlajn zakazivanje</p>
             <h2>Kontrola javnog zakazivanja</h2>
           </div>
         </div>
@@ -253,9 +253,9 @@
           </div>
           <label class="checkbox-row booking-toggle-row">
             <input id="public-booking-enabled" type="checkbox" />
-            Online zakazivanje je ukljuceno
+            Onlajn zakazivanje je uključeno
           </label>
-          <p class="muted-text">Kada je iskljuceno, pacijenti ne mogu da vide slobodne termine niti da posalju zahtev.</p>
+          <p class="muted-text">Kada je isključeno, pacijenti ne mogu da vide slobodne termine niti da pošalju zahtev.</p>
           <p id="public-booking-settings-message" class="form-alert" role="status"></p>
         </section>
       </section>
@@ -361,21 +361,21 @@
       </section>
 
       <section class="list-section report-content" id="backup-security-report">
-        <button class="secondary-btn back-to-reports" type="button">Nazad na izvjestaje</button>
+        <button class="secondary-btn back-to-reports" type="button">Nazad na izveštaje</button>
         <div class="section-header">
           <div>
             <p class="eyebrow">Sistem</p>
-            <h2>Backup i sigurnost</h2>
+            <h2>Rezervne kopije i bezbednost</h2>
           </div>
         </div>
 
         <div class="cards-grid system-status-grid">
           <article class="stat-card">
-            <h3>Poslednji backup</h3>
+            <h3>Poslednja rezervna kopija</h3>
             <p class="stat-number" id="backup-last-status">-</p>
           </article>
           <article class="stat-card">
-            <h3>Backup fajlovi</h3>
+            <h3>Fajlovi rezervnih kopija</h3>
             <p class="stat-number" id="backup-count-status">0</p>
           </article>
           <article class="stat-card">
@@ -390,10 +390,10 @@
           <section class="list-section system-panel">
             <div class="section-header">
               <div>
-                <p class="eyebrow">Backup</p>
-                <h2>Backup baze</h2>
+                <p class="eyebrow">Rezervna kopija</p>
+                <h2>Rezervna kopija baze</h2>
               </div>
-              <button class="primary-btn" id="create-backup-btn" type="button">Napravi backup sada</button>
+              <button class="primary-btn" id="create-backup-btn" type="button">Napravi rezervnu kopiju sada</button>
             </div>
             <p id="backup-message" class="form-alert" role="status"></p>
             <div class="table-wrap">
@@ -402,7 +402,7 @@
                   <tr>
                     <th>Datum</th>
                     <th>Tip</th>
-                    <th>Velicina</th>
+                    <th>Veličina</th>
                     <th>Status</th>
                     <th>Akcije</th>
                   </tr>
@@ -426,8 +426,8 @@
                   <tr>
                     <th>Nalog</th>
                     <th>Uloga</th>
-                    <th>Permisije</th>
-                    <th>Pokusaji</th>
+                    <th>Dozvole</th>
+                    <th>Pokušaji</th>
                     <th>2FA</th>
                     <th>Akcije</th>
                   </tr>
@@ -452,7 +452,7 @@
                   <tr>
                     <th>Nalog</th>
                     <th>IP</th>
-                    <th>Istice</th>
+                    <th>Ističe</th>
                     <th>Akcije</th>
                   </tr>
                 </thead>
@@ -464,17 +464,17 @@
           <section class="list-section system-panel">
             <div class="section-header">
               <div>
-                <p class="eyebrow">Legal</p>
-                <h2>Export i restore provera</h2>
+                <p class="eyebrow">Pravno</p>
+                <h2>Izvoz i provera vraćanja</h2>
               </div>
-              <button class="secondary-btn" id="legal-export-btn" type="button">Legal export JSON</button>
+              <button class="secondary-btn" id="legal-export-btn" type="button">Pravni izvoz JSON</button>
             </div>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>Datum</th>
-                    <th>Backup</th>
+                    <th>Rezervna kopija</th>
                     <th>Status</th>
                     <th>Poruka</th>
                   </tr>
@@ -509,7 +509,7 @@
             <div class="two-factor-box">
               <div class="form-actions">
                 <button class="secondary-btn" id="setup-2fa-btn" type="button">Pripremi 2FA</button>
-                <button class="secondary-btn danger-btn" id="disable-2fa-btn" type="button">Iskljuci 2FA</button>
+                <button class="secondary-btn danger-btn" id="disable-2fa-btn" type="button">Isključi 2FA</button>
               </div>
               <div id="two-factor-setup" class="two-factor-setup" hidden>
                 <p id="two-factor-secret"></p>
@@ -525,7 +525,7 @@
           <section class="list-section system-panel">
             <div class="section-header">
               <div>
-                <p class="eyebrow">Audit</p>
+                <p class="eyebrow">Revizija</p>
                 <h2>Poslednje sigurnosne aktivnosti</h2>
               </div>
             </div>
@@ -604,12 +604,12 @@
           </div>
           <label class="checkbox-row">
             <input id="google-sync-enabled" type="checkbox" />
-            Ukljuci automatsku sinhronizaciju termina
+            Uključi automatsku sinhronizaciju termina
           </label>
           <div class="form-actions">
-            <button class="primary-btn" type="submit">Sacuvaj podesavanja</button>
+            <button class="primary-btn" type="submit">Sačuvaj podešavanja</button>
             <button class="secondary-btn" id="google-connect-oauth" type="button">Povezi OAuth kod</button>
-            <button class="secondary-btn" id="google-test-sync" type="button">Testiraj sync</button>
+            <button class="secondary-btn" id="google-test-sync" type="button">Testiraj sinhronizaciju</button>
             <button class="secondary-btn" id="google-pull-changes" type="button">Povuci izmene iz Google-a</button>
           </div>
           <p id="google-calendar-message" class="form-alert" role="status"></p>

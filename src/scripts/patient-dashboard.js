@@ -38,7 +38,7 @@ function patientFullName(patient) {
 
 function isDebt(record) {
   const payment = String(record.paymentStatus || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  return Number(record.amountDue || 0) > 0 && ["dugovanje", "delimicno"].includes(payment);
+  return Number(record.amountDue || 0) > 0 && ["dugovanje", "delimično"].includes(payment);
 }
 
 function formatMoney(amount, currency = "EUR") {
@@ -83,23 +83,6 @@ function treatmentDiscountAmount(treatment) {
   return Math.min(price, Math.max(0, discount));
 }
 
-function treatmentDiscountLabel(treatment, currency = "EUR") {
-  const discount = treatmentDiscountAmount(treatment);
-  if (discount <= 0) return "";
-  const type = normalizeDiscountType(treatment?.discountType || treatment?.discount_type);
-  const value = normalizeDiscountValue(treatment?.discountValue ?? treatment?.discount_value ?? treatment?.discount ?? 0, type);
-  return type === "percent"
-    ? `${value.toFixed(2).replace(/\.00$/, "")}% (${formatMoney(discount, currency)})`
-    : formatMoney(discount, currency);
-}
-
-function discountSummaryFromGroups(groups, currency = "EUR") {
-  const labels = Array.from(groups.values()).map(item => item.type === "percent"
-    ? `${item.value.toFixed(2).replace(/\.00$/, "")}% (${formatMoney(item.discount, currency)})`
-    : formatMoney(item.discount, currency));
-  return labels.join(", ");
-}
-
 function recordTreatmentEntries(record) {
   if (!record.treatments) return [];
   return Object.values(record.treatments)
@@ -116,49 +99,6 @@ function recordVisitCost(record) {
     return Math.max(0, treatmentsTotal);
   }
   return Math.max(0, Number(record.amountPaid || 0) + Number(record.amountDue || 0));
-}
-
-function groupTreatmentEntries(entries) {
-  const groups = new Map();
-  entries.forEach(item => {
-    const key = `${item.visitId}|${item.type || ""}`;
-    if (!groups.has(key)) {
-      groups.set(key, {
-        date: item.date,
-        visitId: item.visitId,
-        procedure: item.procedure,
-        type: item.type,
-        currency: item.currency || "EUR",
-        teeth: [],
-        notes: [],
-        gross: 0,
-        discount: 0,
-        discountGroups: new Map()
-      });
-    }
-    const group = groups.get(key);
-    group.teeth.push(item.tooth);
-    if (item.note && item.note !== "-") group.notes.push(item.note);
-    group.gross += Number(item.price || 0);
-    group.discount += treatmentDiscountAmount(item);
-    const itemDiscount = treatmentDiscountAmount(item);
-    if (itemDiscount > 0) {
-      const discountType = normalizeDiscountType(item.discountType || item.discount_type);
-      const discountValue = normalizeDiscountValue(item.discountValue ?? item.discount_value ?? item.discount ?? 0, discountType);
-      const discountKey = `${discountType}:${discountValue}`;
-      const currentDiscount = group.discountGroups.get(discountKey) || { type: discountType, value: discountValue, discount: 0 };
-      currentDiscount.discount += itemDiscount;
-      group.discountGroups.set(discountKey, currentDiscount);
-    }
-  });
-
-  return Array.from(groups.values()).map(group => ({
-    ...group,
-    teeth: Array.from(new Set(group.teeth)).sort((a, b) => Number(a) - Number(b)),
-    notes: Array.from(new Set(group.notes)),
-    discountLabel: discountSummaryFromGroups(group.discountGroups, group.currency),
-    total: Math.max(0, group.gross - group.discount)
-  }));
 }
 
 function formatDebtTotals(records) {
@@ -217,28 +157,28 @@ const imagingState = {
 const statusLabels = {
   planned: "Planirano",
   in_progress: "U toku",
-  completed: "Zavrseno",
-  watch: "Pracenje",
-  referred: "Upucen",
+  completed: "Završeno",
+  watch: "Praćenje",
+  referred: "Upućen",
   draft: "Nacrt",
   presented: "Prezentovan",
-  accepted: "Prihvacen",
+  accepted: "Prihvaćen",
   declined: "Odbijen",
   issued: "Izdat",
-  partially_paid: "Delimicno placen",
-  paid: "Placeno",
+  partially_paid: "Delimično placen",
+  paid: "Plaćeno",
   void: "Storniran",
   refunded: "Refundiran",
   eligibility_checked: "Proverena podobnost",
   preauth_sent: "Predautorizacija poslata",
   submitted: "Poslato",
   approved: "Odobreno",
-  partially_approved: "Delimicno odobreno",
+  partially_approved: "Delimično odobreno",
   denied: "Odbijeno",
   eligibility_ok: "Podobnost potvrdjena",
   eligibility_failed: "Podobnost odbijena",
   submitted_to_clearinghouse: "Poslato posredniku",
-  era_posted: "Obracun proknjizen",
+  era_posted: "Obračun proknjizen",
   unreconciled: "Nije uskladjeno",
   reconciled: "Uskladjeno"
 };
@@ -329,10 +269,10 @@ function updateClinicalPricePreview() {
   if (!preview) return;
   const { currency, exchangeRateToRsd, priceRsd } = clinicalPriceState();
   const rateText = currency === "RSD"
-    ? "Valuta je RSD, preracun nije potreban."
+    ? "Valuta je RSD, preračun nije potreban."
     : exchangeRateToRsd > 0
       ? `Kurs: 1 ${currency} = ${exchangeRateToRsd.toFixed(4)} RSD`
-      : `Nema kursa za ${currency}. Unesite kurs u sifarniku valuta.`;
+      : `Nema kursa za ${currency}. Unesite kurs u šifarniku valuta.`;
   preview.innerHTML = `<strong>RSD iznos:</strong> ${formatMoney(priceRsd, "RSD")} <span class="muted">(${rateText})</span>`;
 }
 
@@ -420,7 +360,7 @@ function documentTypeLabel(type) {
     finding: "Nalaz",
     lab: "Laboratorija",
     consent: "Saglasnost",
-    invoice: "Racun",
+    invoice: "Račun",
     other: "Ostalo"
   }[type] || type || "-";
 }
@@ -444,7 +384,7 @@ function renderDocuments(documents) {
         <button class="secondary-btn edit-document-btn" type="button" data-document-id="${document.id}">Uredi</button>
         <button class="secondary-btn analyze-imaging-btn" type="button" data-document-id="${document.id}">AI pregled</button>
         <button class="secondary-btn download-document-btn" type="button" data-document-id="${document.id}">Preuzmi</button>
-        <button class="danger-btn delete-document-btn" type="button" data-document-id="${document.id}">Obrisi</button>
+        <button class="danger-btn delete-document-btn" type="button" data-document-id="${document.id}">Obriši</button>
       </td>
     </tr>
   `).join("") : `<tr><td colspan="7" class="empty-row">Nema dokumenata za ovog pacijenta.</td></tr>`;
@@ -487,7 +427,7 @@ function fillDocumentForm(documentRow) {
   document.getElementById("document-description").value = documentRow.description || "";
   document.getElementById("document-file").value = "";
   document.getElementById("cancel-document-edit-btn").hidden = false;
-  document.getElementById("upload-document-btn").textContent = "Sacuvaj dokument";
+  document.getElementById("upload-document-btn").textContent = "Sačuvaj dokument";
   document.getElementById("import-scan-btn").hidden = true;
   documentForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -699,7 +639,7 @@ function parseDicomImage(buffer) {
   }
 
   if (!meta.rows || !meta.columns || !pixelOffset || !pixelLength) {
-    throw new Error("DICOM snimak ne moze da se procita u pregledacu. Preuzmite fajl ili ga otvorite u DICOM programu.");
+    throw new Error("DICOM snimak ne može da se procita u pregledacu. Preuzmite fajl ili ga otvorite u DICOM programu.");
   }
   return { ...meta, pixelOffset, pixelLength };
 }
@@ -885,7 +825,7 @@ function renderInvoiceDraft() {
   const preview = document.getElementById("invoice-items-preview");
   preview.innerHTML = invoiceItemsDraft.length
     ? invoiceItemsDraft.map((item, index) => `<p>${escapeHtml(item.description)} - ${formatMoney(item.unitPrice)} <button class="danger-btn remove-invoice-item" type="button" data-index="${index}">x</button></p>`).join("")
-    : "<p>Nema stavki racuna.</p>";
+    : "<p>Nema stavki računa.</p>";
 }
 
 function readInvoiceItemForm() {
@@ -916,7 +856,7 @@ function renderInvoices(invoices) {
         <button class="secondary-btn invoice-pdf-btn" type="button" data-invoice-id="${invoice.id}">PDF</button>
       </td>
     </tr>
-  `).join("") : `<tr><td colspan="5" class="empty-row">Nema racuna.</td></tr>`;
+  `).join("") : `<tr><td colspan="5" class="empty-row">Nema računa.</td></tr>`;
 }
 
 function renderLedger(ledger) {
@@ -932,11 +872,11 @@ function renderInsuranceClaims(claims) {
       <td>${escapeHtml(claim.provider)}<br><small>${escapeHtml(claim.policyNumber || "-")}</small></td>
       <td>${escapeHtml(labelFromMap(statusLabels, claim.status))}${claim.eligibilityStatus ? `<br><small>${escapeHtml(labelFromMap(statusLabels, claim.eligibilityStatus))}</small>` : ""}</td>
       <td>${formatMoney(claim.requestedAmount)}</td>
-      <td>${claim.eob ? `${formatMoney(claim.paidAmount)}<br><small>${escapeHtml(labelFromMap(statusLabels, claim.eraStatus) || "Obracun")}</small>` : escapeHtml(claim.denialReason || claim.eligibilityNotes || "-")}</td>
+      <td>${claim.eob ? `${formatMoney(claim.paidAmount)}<br><small>${escapeHtml(labelFromMap(statusLabels, claim.eraStatus) || "Obračun")}</small>` : escapeHtml(claim.denialReason || claim.eligibilityNotes || "-")}</td>
       <td>
         <button class="secondary-btn claim-eligibility-btn" type="button" data-claim-id="${claim.id}">Proveri podobnost</button>
         <button class="secondary-btn claim-submit-btn" type="button" data-claim-id="${claim.id}">Posalji zahtev</button>
-        <button class="secondary-btn claim-era-btn" type="button" data-claim-id="${claim.id}" data-amount="${claim.approvedAmount || claim.requestedAmount || 0}">Proknjizi obracun</button>
+        <button class="secondary-btn claim-era-btn" type="button" data-claim-id="${claim.id}" data-amount="${claim.approvedAmount || claim.requestedAmount || 0}">Proknjizi obračun</button>
       </td>
     </tr>
   `).join("") : `<tr><td colspan="5" class="empty-row">Nema zahteva za osiguranje.</td></tr>`;
@@ -952,7 +892,7 @@ function renderClinicalChart(entries) {
       <td>${escapeHtml(entry.diagnosis || entry.notes || "-")}</td>
       <td>
         <button class="secondary-btn edit-clinical-chart-btn" type="button" data-entry-id="${entry.id}">Uredi</button>
-        <button class="danger-btn delete-clinical-chart-btn" type="button" data-entry-id="${entry.id}">Obrisi</button>
+        <button class="danger-btn delete-clinical-chart-btn" type="button" data-entry-id="${entry.id}">Obriši</button>
       </td>
     </tr>
   `).join("") : `<tr><td colspan="5" class="empty-row">Nema unosa zubnog statusa.</td></tr>`;
@@ -984,7 +924,7 @@ function resetClinicalChartForm() {
   document.getElementById("clinical-phase").value = "1";
   document.getElementById("clinical-currency").value = "EUR";
   document.getElementById("cancel-clinical-chart-edit-btn").hidden = true;
-  form.querySelector('button[type="submit"]').textContent = "Sacuvaj zubni status";
+  form.querySelector('button[type="submit"]').textContent = "Sačuvaj zubni status";
   updateClinicalPricePreview();
 }
 
@@ -1002,14 +942,14 @@ function fillClinicalChartForm(entry) {
   document.getElementById("clinical-procedure-code").value = entry.procedureCode || "";
   document.getElementById("clinical-notes").value = entry.notes || "";
   document.getElementById("cancel-clinical-chart-edit-btn").hidden = false;
-  document.getElementById("clinical-chart-form").querySelector('button[type="submit"]').textContent = "Sacuvaj izmenu";
+  document.getElementById("clinical-chart-form").querySelector('button[type="submit"]').textContent = "Sačuvaj izmenu";
   updateClinicalPricePreview();
   document.getElementById("clinical-chart-form").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderClinicalNoteTemplates(templates) {
   const select = document.getElementById("clinical-note-template");
-  select.innerHTML = `<option value="">Prazna beleska</option>${templates.map(template => `
+  select.innerHTML = `<option value="">Prazna beleška</option>${templates.map(template => `
     <option value="${template.id}" data-title="${escapeHtml(template.title)}" data-body="${escapeHtml(template.body)}">${escapeHtml(labelFromMap(noteCategoryLabels, template.category))} - ${escapeHtml(template.title)}</option>
   `).join("")}`;
 }
@@ -1024,10 +964,10 @@ function renderClinicalNotes(notes) {
       <td>
         <button class="secondary-btn edit-clinical-note-btn" type="button" data-note-id="${note.id}">Uredi</button>
         ${note.signedAt ? "" : `<button class="primary-btn sign-clinical-note-btn" type="button" data-note-id="${note.id}">Potpis</button>`}
-        <button class="danger-btn delete-clinical-note-btn" type="button" data-note-id="${note.id}">Obrisi</button>
+        <button class="danger-btn delete-clinical-note-btn" type="button" data-note-id="${note.id}">Obriši</button>
       </td>
     </tr>
-  `).join("") : `<tr><td colspan="4" class="empty-row">Nema klinickih beleski.</td></tr>`;
+  `).join("") : `<tr><td colspan="4" class="empty-row">Nema kliničkih beleški.</td></tr>`;
 }
 
 function renderPatientConsents(consents) {
@@ -1039,10 +979,10 @@ function renderPatientConsents(consents) {
       <td>${formatDate(consent.signedAt)}</td>
       <td>
         <button class="secondary-btn edit-consent-btn" type="button" data-consent-id="${consent.id}">Uredi</button>
-        <button class="danger-btn delete-consent-btn" type="button" data-consent-id="${consent.id}">Obrisi</button>
+        <button class="danger-btn delete-consent-btn" type="button" data-consent-id="${consent.id}">Obriši</button>
       </td>
     </tr>
-  `).join("") : `<tr><td colspan="4" class="empty-row">Nema sacuvanih saglasnosti.</td></tr>`;
+  `).join("") : `<tr><td colspan="4" class="empty-row">Nema sačuvanih saglasnosti.</td></tr>`;
 }
 
 function clinicalNotePayloadFromForm() {
@@ -1059,7 +999,7 @@ function resetClinicalNoteForm() {
   form.reset();
   document.getElementById("clinical-note-id").value = "";
   document.getElementById("cancel-clinical-note-edit-btn").hidden = true;
-  form.querySelector('button[type="submit"]').textContent = "Sacuvaj belesku";
+  form.querySelector('button[type="submit"]').textContent = "Sačuvaj belesku";
 }
 
 function fillClinicalNoteForm(note) {
@@ -1069,7 +1009,7 @@ function fillClinicalNoteForm(note) {
   document.getElementById("clinical-note-body").value = note.body || "";
   document.getElementById("clinical-note-signed-by").value = note.signedBy || "";
   document.getElementById("cancel-clinical-note-edit-btn").hidden = false;
-  document.getElementById("clinical-note-form").querySelector('button[type="submit"]').textContent = "Sacuvaj izmenu";
+  document.getElementById("clinical-note-form").querySelector('button[type="submit"]').textContent = "Sačuvaj izmenu";
   document.getElementById("clinical-note-form").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -1088,7 +1028,7 @@ function resetConsentForm() {
   form.reset();
   document.getElementById("consent-id").value = "";
   document.getElementById("cancel-consent-edit-btn").hidden = true;
-  form.querySelector('button[type="submit"]').textContent = "Sacuvaj saglasnost";
+  form.querySelector('button[type="submit"]').textContent = "Sačuvaj saglasnost";
 }
 
 function fillConsentForm(consent) {
@@ -1099,7 +1039,7 @@ function fillConsentForm(consent) {
   document.getElementById("consent-signer").value = consent.signerName || "";
   document.getElementById("consent-signature").value = consent.signatureData || "";
   document.getElementById("cancel-consent-edit-btn").hidden = false;
-  document.getElementById("patient-consent-form").querySelector('button[type="submit"]').textContent = "Sacuvaj izmenu";
+  document.getElementById("patient-consent-form").querySelector('button[type="submit"]').textContent = "Sačuvaj izmenu";
   document.getElementById("patient-consent-form").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -1153,10 +1093,10 @@ async function initializeClinicalWorkflows(patientId) {
         await window.DrRosaApi.createClinicalChartEntry(patientId, payload);
       }
       resetClinicalChartForm();
-      setMessage("clinical-chart-message", entryId ? "Zubni status je izmenjen." : "Zubni status je sacuvan.");
+      setMessage("clinical-chart-message", entryId ? "Zubni status je izmenjen." : "Zubni status je sačuvan.");
       await refreshClinicalChart();
     } catch (error) {
-      setMessage("clinical-chart-message", error.message || "Zubni status nije sacuvan.", true);
+      setMessage("clinical-chart-message", error.message || "Zubni status nije sačuvan.", true);
     }
   });
 
@@ -1191,10 +1131,10 @@ async function initializeClinicalWorkflows(patientId) {
         await window.DrRosaApi.createClinicalNote(patientId, payload);
       }
       resetClinicalNoteForm();
-      setMessage("clinical-note-message", noteId ? "Klinicka beleska je izmenjena." : "Klinicka beleska je sacuvana.");
+      setMessage("clinical-note-message", noteId ? "Klinička beleška je izmenjena." : "Klinička beleška je sačuvana.");
       await refreshClinicalNotes();
     } catch (error) {
-      setMessage("clinical-note-message", userFacingError(error, "Klinicka beleska nije sacuvana."), true);
+      setMessage("clinical-note-message", userFacingError(error, "Klinička beleška nije sačuvana."), true);
     }
   });
 
@@ -1216,15 +1156,15 @@ async function initializeClinicalWorkflows(patientId) {
       const signedBy = window.prompt("Potpisuje:", "Dr Rosa");
       if (!signedBy) return;
       await window.DrRosaApi.signClinicalNote(signButton.dataset.noteId, { signedBy });
-      setMessage("clinical-note-message", "Klinicka beleska je potpisana.");
+      setMessage("clinical-note-message", "Klinička beleška je potpisana.");
       await refreshClinicalNotes();
       return;
     }
     if (!deleteButton) return;
-    if (!confirm("Da li zelite da obrisete ovu klinicku belesku?")) return;
+    if (!confirm("Da li želite da obrišete ovu klinicku belesku?")) return;
     await window.DrRosaApi.deleteClinicalNote(deleteButton.dataset.noteId);
     resetClinicalNoteForm();
-    setMessage("clinical-note-message", "Klinicka beleska je obrisana.");
+    setMessage("clinical-note-message", "Klinička beleška je obrisana.");
     await refreshClinicalNotes();
   });
 
@@ -1239,10 +1179,10 @@ async function initializeClinicalWorkflows(patientId) {
         await window.DrRosaApi.createPatientConsent(patientId, payload);
       }
       resetConsentForm();
-      setMessage("consent-message", consentId ? "Saglasnost je izmenjena." : "Saglasnost je sacuvana i potpisana.");
+      setMessage("consent-message", consentId ? "Saglasnost je izmenjena." : "Saglasnost je sačuvana i potpisana.");
       await refreshConsents();
     } catch (error) {
-      setMessage("consent-message", userFacingError(error, "Saglasnost nije sacuvana."), true);
+      setMessage("consent-message", userFacingError(error, "Saglasnost nije sačuvana."), true);
     }
   });
 
@@ -1260,7 +1200,7 @@ async function initializeClinicalWorkflows(patientId) {
       return;
     }
     if (!deleteButton) return;
-    if (!confirm("Da li zelite da obrisete ovu saglasnost?")) return;
+    if (!confirm("Da li želite da obrišete ovu saglasnost?")) return;
     await window.DrRosaApi.deletePatientConsent(deleteButton.dataset.consentId);
     resetConsentForm();
     setMessage("consent-message", "Saglasnost je obrisana.");
@@ -1330,9 +1270,9 @@ async function initializeAdvancedWorkflows(patientId) {
       event.target.reset();
       renderPlanItemsDraft();
       await refreshPlans();
-      setMessage("treatment-plan-message", "Plan terapije je sacuvan.");
+      setMessage("treatment-plan-message", "Plan terapije je sačuvan.");
     } catch (error) {
-      setMessage("treatment-plan-message", error.message || "Plan nije sacuvan.", true);
+      setMessage("treatment-plan-message", error.message || "Plan nije sačuvan.", true);
     }
   });
   document.getElementById("treatment-plans-body").addEventListener("click", async event => {
@@ -1378,9 +1318,9 @@ async function initializeAdvancedWorkflows(patientId) {
       document.getElementById("perio-date").value = today();
       renderPerioDraft();
       await refreshPerio();
-      setMessage("perio-message", "Parodontalni chart je sacuvan.");
+      setMessage("perio-message", "Parodontalni nalaz je sačuvan.");
     } catch (error) {
-      setMessage("perio-message", error.message || "Parodontalni chart nije sacuvan.", true);
+      setMessage("perio-message", error.message || "Parodontalni nalaz nije sačuvan.", true);
     }
   });
 
@@ -1390,7 +1330,7 @@ async function initializeAdvancedWorkflows(patientId) {
     invoiceItemsDraft.push(item);
     clearInvoiceItemForm();
     renderInvoiceDraft();
-    setMessage("invoice-message", "Stavka je dodata na racun.");
+    setMessage("invoice-message", "Stavka je dodata na račun.");
   });
   document.getElementById("invoice-items-preview").addEventListener("click", event => {
     const button = event.target.closest(".remove-invoice-item");
@@ -1405,7 +1345,7 @@ async function initializeAdvancedWorkflows(patientId) {
       invoiceItemsDraft.push(currentItem);
     }
     if (invoiceItemsDraft.length === 0) {
-      setMessage("invoice-message", "Dodajte bar jednu stavku racuna.", true);
+      setMessage("invoice-message", "Dodajte bar jednu stavku računa.", true);
       return;
     }
     try {
@@ -1420,9 +1360,9 @@ async function initializeAdvancedWorkflows(patientId) {
       document.getElementById("invoice-date").value = today();
       renderInvoiceDraft();
       await refreshInvoices();
-      setMessage("invoice-message", "Racun je kreiran.");
+      setMessage("invoice-message", "Račun je kreiran.");
     } catch (error) {
-      setMessage("invoice-message", error.message || "Racun nije kreiran.", true);
+      setMessage("invoice-message", error.message || "Račun nije kreiran.", true);
     }
   });
   document.getElementById("invoices-body").addEventListener("click", async event => {
@@ -1468,9 +1408,9 @@ async function initializeAdvancedWorkflows(patientId) {
       });
       event.target.reset();
       await refreshClaims();
-      setMessage("insurance-message", "Zahtev za osiguranje je sacuvan.");
+      setMessage("insurance-message", "Zahtev za osiguranje je sačuvan.");
     } catch (error) {
-      setMessage("insurance-message", userFacingError(error, "Zahtev nije sacuvan."), true);
+      setMessage("insurance-message", userFacingError(error, "Zahtev nije sačuvan."), true);
     }
   });
 
@@ -1491,7 +1431,7 @@ async function initializeAdvancedWorkflows(patientId) {
         const amount = Number(eraButton.dataset.amount || 0);
         await window.DrRosaApi.postInsuranceEra(eraButton.dataset.claimId, { paidAmount: amount, approvedAmount: amount });
         await refreshInvoices();
-        setMessage("insurance-message", "Obracun je proknjizen u karticu.");
+        setMessage("insurance-message", "Obračun je proknjizen u karticu.");
       }
       await refreshClaims();
     } catch (error) {
@@ -1523,9 +1463,9 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
     try {
       const updated = await window.DrRosaApi.updateMedicalProfile(patientId, readMedicalProfileForm());
       fillMedicalProfile(updated);
-      setMessage("medical-profile-message", "Karton je sacuvan.");
+      setMessage("medical-profile-message", "Karton je sačuvan.");
     } catch (error) {
-      setMessage("medical-profile-message", error.message || "Karton nije sacuvan.", true);
+      setMessage("medical-profile-message", error.message || "Karton nije sačuvan.", true);
     }
   });
 
@@ -1554,7 +1494,7 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
       await loadDocuments(patientId);
       setMessage("document-message", documentId ? "Dokument je izmenjen." : "Dokument je dodat.");
     } catch (error) {
-      setMessage("document-message", userFacingError(error, "Dokument nije sacuvan."), true);
+      setMessage("document-message", userFacingError(error, "Dokument nije sačuvan."), true);
     }
   });
 
@@ -1601,11 +1541,11 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
       if (analyzeButton) {
         await window.DrRosaApi.analyzeDocumentImaging(analyzeButton.dataset.documentId);
         await loadDocuments(patientId);
-        setMessage("document-message", "AI preliminarni pregled je sacuvan.");
+        setMessage("document-message", "AI preliminarni pregled je sačuvan.");
       }
       if (downloadButton) await openDocument(downloadButton.dataset.documentId, true);
       if (deleteButton) {
-        if (!confirm("Da li zelite da obrisete ovaj dokument?")) return;
+        if (!confirm("Da li želite da obrišete ovaj dokument?")) return;
         await window.DrRosaApi.deleteDocument(deleteButton.dataset.documentId);
         resetDocumentForm(patientRecords);
         await loadDocuments(patientId);
@@ -1623,7 +1563,7 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
 
   if (!queryPatientId && !legacyPatientName) {
     title.textContent = "Pacijent nije odabran";
-    summaryCards.innerHTML = `<div class="hero-stats-card"><p class="eyebrow">Greska</p><span>Odaberite pacijenta iz evidencije.</span></div>`;
+    summaryCards.innerHTML = `<div class="hero-stats-card"><p class="eyebrow">Greška</p><span>Odaberite pacijenta iz evidencije.</span></div>`;
     return;
   }
 
@@ -1652,7 +1592,7 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
 
   if (!selectedPatientName) {
     title.textContent = "Pacijent nije pronadjen";
-    summaryCards.innerHTML = `<div class="hero-stats-card"><p class="eyebrow">Greska</p><span>Pacijent nije pronadjen.</span></div>`;
+    summaryCards.innerHTML = `<div class="hero-stats-card"><p class="eyebrow">Greška</p><span>Pacijent nije pronadjen.</span></div>`;
     return;
   }
 
@@ -1679,8 +1619,8 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
     editPatientLink.href = `new-patient.html?patient=${encodeURIComponent(patientDetails.id)}`;
     deletePatientBtn.addEventListener("click", async () => {
       const confirmMessage = patientRecords.length > 0
-        ? `Pacijent ima ${patientRecords.length} povezanih zapisa. Brisanje pacijenta ce biti odbijeno dok postoji istorija. Zelite li ipak pokusati?`
-        : "Da li ste sigurni da zelite da obrisete ovog pacijenta?";
+        ? `Pacijent ima ${patientRecords.length} povezanih zapisa. Brisanje pacijenta će biti odbijeno dok postoji istorija. Želite li ipak pokušati?`
+        : "Da li ste sigurni da želite da obrišete ovog pacijenta?";
       if (!confirm(confirmMessage)) return;
       try {
         await window.DrRosaApi.deletePatient(patientDetails.id);
@@ -1691,11 +1631,11 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
     });
     patientInfo.innerHTML = `
       <p><strong>Ime:</strong> ${escapeHtml(patientFullName(patientDetails))}</p>
-      <p><strong>Datum rodjenja:</strong> ${formatDate(patientDetails.birthDate || patientDetails.date_of_birth)}</p>
+      <p><strong>Datum rođenja:</strong> ${formatDate(patientDetails.birthDate || patientDetails.date_of_birth)}</p>
       <p><strong>Pol:</strong> ${escapeHtml(patientDetails.gender || "-")}</p>
       <p><strong>Telefon:</strong> ${escapeHtml(patientDetails.phone || "-")}</p>
       <p><strong>Email:</strong> ${escapeHtml(patientDetails.email || "-")}</p>
-      <p><strong>Kontakt u hitnim slucajevima:</strong> ${escapeHtml(patientDetails.emergencyContact || patientDetails.emergency_contact || "-")}</p>
+      <p><strong>Kontakt u hitnim slučajevima:</strong> ${escapeHtml(patientDetails.emergencyContact || patientDetails.emergency_contact || "-")}</p>
       <p><strong>Alergije:</strong> ${escapeHtml(patientDetails.allergies || "-")}</p>
       <p><strong>Medicinska istorija:</strong> ${escapeHtml(patientDetails.medicalHistory || patientDetails.medical_history || "-")}</p>
     `;
@@ -1703,7 +1643,7 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
       await initializeClinicalSection(patientDetails, patientRecords);
     } catch (error) {
       console.error("Clinical section load error:", error);
-      setMessage("medical-profile-message", "Karton trenutno nije ucitan.", true);
+      setMessage("medical-profile-message", "Karton trenutno nije učitan.", true);
     }
   }
 
@@ -1725,14 +1665,14 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
       <td>${escapeHtml(record.note || "-")}</td>
       <td>
         <a class="secondary-btn" href="${recordDetailsUrl(record)}">Uredi</a>
-        <button class="danger-btn delete-record-btn" type="button" data-record-id="${escapeHtml(record.id)}">Obrisi</button>
+        <button class="danger-btn delete-record-btn" type="button" data-record-id="${escapeHtml(record.id)}">Obriši</button>
       </td>
     </tr>
   `).join("");
 
   document.querySelectorAll(".delete-record-btn").forEach(button => {
     button.addEventListener("click", async () => {
-      if (!confirm("Da li ste sigurni da zelite da obrisete ovaj zapis iz istorije pacijenta?")) return;
+      if (!confirm("Da li ste sigurni da želite da obrišete ovaj zapis iz istorije pacijenta?")) return;
       try {
         await window.DrRosaApi.deleteRecord(button.dataset.recordId);
         window.location.reload();
@@ -1742,36 +1682,10 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
     });
   });
 
-  const treatmentEntries = [];
-  patientRecords.forEach((record) => {
-    if (record.treatments) {
-      Object.entries(record.treatments).forEach(([tooth, treatments]) => {
-        treatmentListForValue(treatments).forEach(treatment => {
-          treatmentEntries.push({
-            tooth,
-            ...treatment,
-            date: record.lastVisit,
-            visitId: record.id || `${record.lastVisit}-${record.procedure}`,
-            procedure: record.procedure,
-            currency: record.currency
-          });
-        });
-      });
-    }
+  const treatmentEntries = window.DrRosaTreatmentHistory.entriesFromRecords(patientRecords);
+  treatmentList.innerHTML = window.DrRosaTreatmentHistory.renderEntries(treatmentEntries, {
+    emptyMessage: "Nema unesenih tretmana po zubima.",
+    formatMoney,
+    formatDate
   });
-
-  const treatmentGroups = groupTreatmentEntries(treatmentEntries);
-  treatmentList.innerHTML = treatmentEntries.length === 0
-    ? `<p>Nema unesenih tretmana po zubima.</p>`
-    : treatmentGroups.map(item => `
-      <div class="treatment-item">
-        <div>
-          <strong>Zubi ${escapeHtml(item.teeth.join(", "))}</strong> - ${escapeHtml(item.type)}
-          <div style="margin-top: 6px; font-weight: 700;">Ukupno: ${formatMoney(item.total, item.currency)}</div>
-          ${Number(item.discount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${escapeHtml(item.discountLabel || formatMoney(item.discount, item.currency))}</div>` : ""}
-          <div style="margin-top: 6px;">${escapeHtml(item.notes.join("; ") || "-")}</div>
-          <div style="margin-top: 6px; font-size: 0.9rem; color: #5b6c7d;">${formatDate(item.date)} | ${escapeHtml(item.procedure)}</div>
-        </div>
-      </div>
-    `).join("");
 })();

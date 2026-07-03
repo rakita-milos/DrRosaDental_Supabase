@@ -10,7 +10,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <a class="logo-link" href="index.html" aria-label="Pocetna strana">
+        <a class="logo-link" href="index.html" aria-label="Početna strana">
           <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
         </a>
         <div>
@@ -19,12 +19,12 @@
         </div>
       </div>
       <nav class="topbar-actions" aria-label="Glavna navigacija">
-        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="index.html" class="nav-link">Kontrolna tabla</a>
         <a href="calendar.html" class="nav-link">Kalendar</a>
         <a href="new-entry.html" class="nav-link">Novi unos</a>
         <a href="new-patient.html" class="nav-link">Novi pacijent</a>
         <a href="all-records.html" class="nav-link" aria-current="page">Evidencija</a>
-        <a href="public-booking.html" class="nav-link">Online zakazivanje</a>
+        <a href="public-booking.html" class="nav-link">Onlajn zakazivanje</a>
         <a id="director-panel-link" href="director-panel.html" class="nav-link" style="display: none;">Direktor panel</a>
         <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
@@ -35,7 +35,7 @@
         <div>
           <p class="eyebrow">Kompletna evidencija</p>
           <h2>Pretražite sve pacijente i termine</h2>
-          <p>Funkcionalnost omogućuje filtriranje, pretraživanje i pregled statusa svih zapisa iz sustava.</p>
+          <p>Funkcionalnost omogućava filtriranje, pretraživanje i pregled statusa svih zapisa iz sistema.</p>
         </div>
         <div class="hero-stats all-records-summary" id="summary-cards"></div>
       </section>
@@ -54,7 +54,7 @@
             <select id="status-filter">
               <option value="">Svi statusi</option>
               <option value="Zakazano">Zakazano</option>
-              <option value="U tijeku">U tijeku</option>
+              <option value="U toku">U toku</option>
               <option value="Završeno">Završeno</option>
               <option value="Otkazano">Otkazano</option>
             </select>
@@ -96,7 +96,7 @@
             <thead>
               <tr>
                 <th>Pacijent</th>
-                <th>Zadnji posjet</th>
+                <th>Poslednja poseta</th>
                 <th>Ukupno poseta</th>
                 <th>Status</th>
                 <th>Plaćanje</th>

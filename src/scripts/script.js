@@ -30,7 +30,7 @@ function formatDate(rawDate) {
 
 function paymentIsDebt(record) {
   const payment = String(record.paymentStatus || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  return Number(record.amountDue || 0) > 0 && ["dugovanje", "delimicno"].includes(payment);
+  return Number(record.amountDue || 0) > 0 && ["dugovanje", "delimično"].includes(payment);
 }
 
 function isToday(rawDate) {

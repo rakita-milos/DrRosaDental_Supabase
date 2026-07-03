@@ -2,10 +2,10 @@
   const STATUS_LABELS = {
     scheduled: "Zakazano",
     confirmed: "Potvrdjeno",
-    arrived: "Dosao",
-    completed: "Zavrseno",
+    arrived: "Došao",
+    completed: "Završeno",
     cancelled: "Otkazano",
-    no_show: "Nije dosao"
+    no_show: "Nije došao"
   };
   const DAY_NAMES = ["Pon", "Uto", "Sre", "Cet", "Pet", "Sub", "Ned"];
   const state = {
@@ -226,7 +226,7 @@
     const hiddenCount = appointments.length - visible.length;
     return `
       ${visible.map(renderCompactAppointment).join("")}
-      ${hiddenCount > 0 ? `<button class="more-appointments" type="button" data-date="${dateKey(parseLocalDateTime(appointments[0].startsAt))}">+${hiddenCount} jos</button>` : ""}
+      ${hiddenCount > 0 ? `<button class="more-appointments" type="button" data-date="${dateKey(parseLocalDateTime(appointments[0].startsAt))}">+${hiddenCount} još</button>` : ""}
     `;
   }
 
@@ -264,7 +264,7 @@
     return `
       <div class="week-slot" data-date="${dateKey(day)}" data-hour="${hour}">
         ${slotAppointments.slice(0, 3).map(renderWeekAppointment).join("")}
-        ${slotAppointments.length > 3 ? `<button class="more-appointments" type="button" data-date="${dateKey(day)}">+${slotAppointments.length - 3} jos</button>` : ""}
+        ${slotAppointments.length > 3 ? `<button class="more-appointments" type="button" data-date="${dateKey(day)}">+${slotAppointments.length - 3} još</button>` : ""}
       </div>
     `;
   }
@@ -360,7 +360,7 @@
     document.getElementById("create-visit-btn").disabled = Boolean(appointment.visitRecordId) || appointment.status === "cancelled";
     document.getElementById("cancel-appointment-btn").hidden = false;
     document.getElementById("cancel-appointment-btn").disabled = appointment.status === "cancelled";
-    setAlert(`Google sync: ${appointment.googleSyncStatus || "not_synced"}`, "info");
+    setAlert(`Google sinhronizacija: ${appointment.googleSyncStatus || "not_synced"}`, "info");
   }
 
   function formPayload() {
@@ -495,7 +495,7 @@
           : await window.DrRosaApi.createAppointment(formPayload());
         await loadAppointments();
         editAppointment(saved.id);
-        setAlert("Termin je sacuvan.", "success");
+        setAlert("Termin je sačuvan.", "success");
       } catch (error) {
         setAlert(error.message, "error");
       }

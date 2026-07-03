@@ -357,7 +357,7 @@ function isPublicBookingEnabled() {
 
 function requirePublicBookingEnabled(_req, res, next) {
   if (isPublicBookingEnabled()) return next();
-  return res.status(503).json({ error: 'Online zakazivanje trenutno nije dostupno.' });
+  return res.status(503).json({ error: 'Onlajn zakazivanje trenutno nije dostupno.' });
 }
 
 function ensureClinicalWorkflowTables() {
@@ -903,8 +903,8 @@ function seedCodebooks() {
     ['Fiksna', 'Ortodoncija', 900],
     ['Ostalo', 'Ortodoncija', 0]
   ].forEach(([value, groupName, price], index) => add('procedure', value, value, groupName, price, index + 1));
-  ['Zakazano', 'U tijeku', 'Zavrseno', 'Otkazano'].forEach((item, index) => add('visit_status', item, item, null, 0, index + 1));
-  ['Placeno', 'Dugovanje', 'Delimicno'].forEach((item, index) => add('payment_status', item, item, null, 0, index + 1));
+  ['Zakazano', 'U toku', 'Završeno', 'Otkazano'].forEach((item, index) => add('visit_status', item, item, null, 0, index + 1));
+  ['Plaćeno', 'Dugovanje', 'Delimično'].forEach((item, index) => add('payment_status', item, item, null, 0, index + 1));
   [
     ['EUR', { exchangeRate: 117, rateDate: 'manual', rateBase: 'EUR', rateCurrency: 'RSD', rateSource: 'default' }],
     ['RSD', { exchangeRate: 1, rateDate: 'manual', rateBase: 'RSD', rateCurrency: 'RSD', rateSource: 'default' }],
@@ -1013,7 +1013,7 @@ function auditLog({ userId = null, action, entityType = null, entityId = null, r
       metadata ? JSON.stringify(metadata) : null
     );
   } catch (error) {
-    console.error('Audit log error:', error);
+    console.error('Revizija log error:', error);
   }
 }
 
@@ -1225,9 +1225,9 @@ function backupStatus() {
     backupCount: count,
     warning: !last || ageMs > AUTO_BACKUP_INTERVAL_MS,
     warningMessage: !last
-      ? 'Backup jos nije uradjen.'
+      ? 'Rezervna kopija još nije urađena.'
       : ageMs > AUTO_BACKUP_INTERVAL_MS
-        ? 'Backup je stariji od 24 sata.'
+        ? 'Rezervna kopija je starija od 24 sata.'
         : null
   };
 }
@@ -1272,7 +1272,7 @@ async function testEncryptedBackupRestore(backup, userId, req) {
     const status = missingTables.length ? 'failed' : 'passed';
     const message = missingTables.length
       ? `Nedostaju tabele: ${missingTables.join(', ')}`
-      : 'Backup je dekriptovan i osnovne tabele su proverene.';
+      : 'Rezervna kopija je dekriptovana i osnovne tabele su proverene.';
     const result = db.prepare(`
       INSERT INTO backup_restore_tests (backup_id, status, message, checked_tables, checked_by)
       VALUES (?, ?, ?, ?, ?)
@@ -1303,7 +1303,7 @@ function serializeSession(row) {
   };
 }
 
-function serializeAuditEntry(row) {
+function serializeRevizijaEntry(row) {
   return {
     id: row.id,
     userId: row.user_id,
@@ -1331,8 +1331,8 @@ function serializeRestoreTest(row) {
 
 function normalizePaymentStatus(value) {
   const raw = String(value || '').toLowerCase();
-  if (raw.includes('pla')) return 'Placeno';
-  if (raw.includes('delimi') || raw.includes('delimi')) return 'Delimicno';
+  if (raw.includes('pla')) return 'Plaćeno';
+  if (raw.includes('delimi') || raw.includes('delimi')) return 'Delimično';
   if (raw.includes('dug')) return 'Dugovanje';
   return 'Dugovanje';
 }
@@ -1352,9 +1352,9 @@ function normalizeShift(value) {
 
 function normalizeStatus(value) {
   const raw = String(value || '').toLowerCase();
-  if (raw.includes('zavr')) return 'Zavrseno';
+  if (raw.includes('zavr')) return 'Završeno';
   if (raw.includes('otkaz')) return 'Otkazano';
-  if (raw.includes('tijek') || raw.includes('toku')) return 'U tijeku';
+  if (raw.includes('tijek') || raw.includes('toku')) return 'U toku';
   return value || 'Zakazano';
 }
 
@@ -1559,11 +1559,11 @@ function normalizeAppointmentStatus(value) {
     zakazano: 'scheduled',
     potvrdjeno: 'confirmed',
     potvrdeno: 'confirmed',
-    dosao: 'arrived',
+    došao: 'arrived',
     dosla: 'arrived',
-    zavrseno: 'completed',
+    završeno: 'completed',
     otkazano: 'cancelled',
-    nije_dosao: 'no_show',
+    nije_došao: 'no_show',
     no_show: 'no_show'
   };
   const status = map[raw] || raw || 'scheduled';
@@ -1773,7 +1773,7 @@ function queueCalendarSync(appointmentId, action) {
     .run(status === 'pending' ? 'pending' : 'skipped', appointmentId);
 }
 
-async function processCalendarSyncQueue({ limit = 10 } = {}) {
+async function processCalendarSyncRed({ limit = 10 } = {}) {
   const settings = db.prepare('SELECT * FROM google_calendar_settings WHERE id = 1').get();
   const rows = db.prepare(`
     SELECT q.*, a.google_event_id, a.procedure_name, a.starts_at, a.ends_at, a.notes,
@@ -2439,7 +2439,7 @@ app.delete('/api/patients/:id', authenticateToken, requirePermission('patients:w
     const relatedPayments = db.prepare('SELECT COUNT(*) as count FROM payments WHERE patient_id = ?').get(req.params.id).count || 0;
     if (relatedRecords > 0 || relatedPayments > 0) {
       return res.status(409).json({
-        error: 'Pacijent ima povezanu istoriju/posete i ne moze biti obrisan dok se ti zapisi ne uklone.',
+        error: 'Pacijent ima povezanu istoriju/posete i ne može biti obrisan dok se ti zapisi ne uklone.',
         related: {
           records: Number(relatedRecords),
           payments: Number(relatedPayments)
@@ -2688,7 +2688,7 @@ app.put('/api/documents/:id', authenticateToken, requirePermission('documents:wr
     res.json(serializeDocument(db.prepare('SELECT * FROM patient_documents WHERE id = ?').get(documentId)));
   } catch (error) {
     console.error('Update document error:', error);
-    res.status(500).json({ error: 'Dokument nije sacuvan.' });
+    res.status(500).json({ error: 'Dokument nije sačuvan.' });
   }
 });
 
@@ -2734,7 +2734,7 @@ app.put('/api/documents/:id/imaging', authenticateToken, requirePermission('docu
     res.json(serializeDocument(db.prepare('SELECT * FROM patient_documents WHERE id = ?').get(documentId)));
   } catch (error) {
     console.error('Update imaging metadata error:', error);
-    res.status(500).json({ error: 'Imaging metadata nije sacuvan.' });
+    res.status(500).json({ error: 'Metapodaci snimka nije sačuvan.' });
   }
 });
 
@@ -3061,7 +3061,7 @@ app.post('/api/appointments', authenticateToken, requirePermission('calendar:wri
 
     const conflict = appointmentConflict({ doctorId, chairId, startsAt, endsAt });
     if (conflict) {
-      return res.status(409).json({ error: 'Termin se preklapa sa postojecim zakazivanjem.', conflict });
+      return res.status(409).json({ error: 'Termin se preklapa sa postojećim zakazivanjem.', conflict });
     }
 
     const result = db.prepare(`
@@ -3088,7 +3088,7 @@ app.post('/api/appointments', authenticateToken, requirePermission('calendar:wri
     db.prepare('INSERT INTO appointment_status_history (appointment_id, old_status, new_status, changed_by) VALUES (?, NULL, ?, ?)')
       .run(result.lastInsertRowid, status, req.user.id);
     queueCalendarSync(result.lastInsertRowid, 'create_google_event');
-    processCalendarSyncQueue({ limit: 5 });
+    processCalendarSyncRed({ limit: 5 });
     res.status(201).json(serializeAppointment(appointmentById(result.lastInsertRowid)));
   } catch (error) {
     console.error('Create appointment error:', error);
@@ -3127,7 +3127,7 @@ app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:
 
     const conflict = appointmentConflict({ appointmentId: current.id, doctorId, chairId, startsAt, endsAt });
     if (conflict) {
-      return res.status(409).json({ error: 'Termin se preklapa sa postojecim zakazivanjem.', conflict });
+      return res.status(409).json({ error: 'Termin se preklapa sa postojećim zakazivanjem.', conflict });
     }
 
     db.prepare(`
@@ -3155,7 +3155,7 @@ app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:
         .run(current.id, current.status, status, req.user.id);
     }
     queueCalendarSync(current.id, status === 'cancelled' ? 'cancel_google_event' : 'update_google_event');
-    processCalendarSyncQueue({ limit: 5 });
+    processCalendarSyncRed({ limit: 5 });
     res.json(serializeAppointment(appointmentById(current.id)));
   } catch (error) {
     console.error('Update appointment error:', error);
@@ -3173,7 +3173,7 @@ app.patch('/api/appointments/:id/status', authenticateToken, requirePermission('
     db.prepare('INSERT INTO appointment_status_history (appointment_id, old_status, new_status, changed_by) VALUES (?, ?, ?, ?)')
       .run(current.id, current.status, status, req.user.id);
     queueCalendarSync(current.id, status === 'cancelled' ? 'cancel_google_event' : 'update_google_event');
-    processCalendarSyncQueue({ limit: 5 });
+    processCalendarSyncRed({ limit: 5 });
     res.json(serializeAppointment(appointmentById(current.id)));
   } catch (error) {
     console.error('Update appointment status error:', error);
@@ -3192,7 +3192,7 @@ app.delete('/api/appointments/:id', authenticateToken, requirePermission('calend
     db.prepare('UPDATE appointments SET status = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .run('cancelled', req.user.id, current.id);
     queueCalendarSync(current.id, 'cancel_google_event');
-    processCalendarSyncQueue({ limit: 5 });
+    processCalendarSyncRed({ limit: 5 });
     res.json({ id: Number(current.id), message: 'Appointment cancelled successfully' });
   } catch (error) {
     console.error('Delete appointment error:', error);
@@ -3213,11 +3213,11 @@ app.post('/api/appointments/:id/create-visit', authenticateToken, requirePermiss
       doctor_id: appointment.doctor_id,
       visit_date: appointment.starts_at.slice(0, 10),
       procedure: appointment.procedure_name,
-      status: 'Zavrseno',
+      status: 'Završeno',
       notes: appointment.notes || `Termin ${appointment.starts_at}`,
       amount: req.body.amount || 0,
       currency: req.body.currency || 'EUR',
-      payment_status: req.body.payment_status || 'Placeno',
+      payment_status: req.body.payment_status || 'Plaćeno',
       shift: req.body.shift || 'Prva smena',
       treatments: req.body.treatments || {}
     });
@@ -3229,7 +3229,7 @@ app.post('/api/appointments/:id/create-visit', authenticateToken, requirePermiss
     db.prepare('INSERT INTO appointment_status_history (appointment_id, old_status, new_status, changed_by) VALUES (?, ?, ?, ?)')
       .run(appointment.id, appointment.status, 'completed', req.user.id);
     queueCalendarSync(appointment.id, 'update_google_event');
-    processCalendarSyncQueue({ limit: 5 });
+    processCalendarSyncRed({ limit: 5 });
     res.status(201).json({ id: visitId, appointmentId: appointment.id, message: 'Visit created from appointment' });
   } catch (error) {
     console.error('Create visit from appointment error:', error);
@@ -3358,7 +3358,7 @@ app.post('/api/public/booking', publicBookingWriteLimiter, requirePublicBookingE
       throw error;
     }
 
-    processCalendarSyncQueue({ limit: 5 });
+    processCalendarSyncRed({ limit: 5 });
     res.status(201).json(responsePayload);
   } catch (error) {
     console.error('Public booking create error:', error);
@@ -3453,7 +3453,7 @@ app.post('/api/patients/:id/treatment-plans', authenticateToken, requirePermissi
     res.status(201).json(serializeTreatmentPlan(db.prepare('SELECT * FROM treatment_plans WHERE id = ?').get(result.lastInsertRowid)));
   } catch (error) {
     console.error('Create treatment plan error:', error);
-    res.status(500).json({ error: 'Plan terapije nije sacuvan.' });
+    res.status(500).json({ error: 'Plan terapije nije sačuvan.' });
   }
 });
 
@@ -3542,7 +3542,7 @@ function serializeClinicalNote(row) {
   };
 }
 
-function serializeConsent(row) {
+function serializeSaglasnost(row) {
   return {
     id: row.id,
     patientId: row.patient_id,
@@ -3598,7 +3598,7 @@ app.post('/api/patients/:id/clinical-chart', authenticateToken, requirePermissio
     res.status(201).json(serializeClinicalChart(db.prepare('SELECT * FROM clinical_chart_entries WHERE id = ?').get(result.lastInsertRowid)));
   } catch (error) {
     console.error('Create clinical chart error:', error);
-    res.status(500).json({ error: 'Clinical chart nije sacuvan.' });
+    res.status(500).json({ error: 'Zubni status nije sačuvan.' });
   }
 });
 
@@ -3606,7 +3606,7 @@ app.put('/api/clinical-chart/:id', authenticateToken, requirePermission('clinica
   try {
     const chartId = positiveInteger(req.params.id);
     const existing = db.prepare('SELECT * FROM clinical_chart_entries WHERE id = ?').get(chartId);
-    if (!existing) return res.status(404).json({ error: 'Clinical chart entry not found' });
+    if (!existing) return res.status(404).json({ error: 'Zubni status entry not found' });
     const surfaces = Array.isArray(req.body.surfaces)
       ? req.body.surfaces.map(surface => cleanText(surface, { max: 20 })).filter(Boolean)
       : safeJsonParse(existing.surfaces, []);
@@ -3640,13 +3640,13 @@ app.put('/api/clinical-chart/:id', authenticateToken, requirePermission('clinica
     res.json(serializeClinicalChart(db.prepare('SELECT * FROM clinical_chart_entries WHERE id = ?').get(chartId)));
   } catch (error) {
     console.error('Update clinical chart error:', error);
-    res.status(500).json({ error: 'Clinical chart nije izmenjen.' });
+    res.status(500).json({ error: 'Zubni status nije izmenjen.' });
   }
 });
 
 app.delete('/api/clinical-chart/:id', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   const chartId = positiveInteger(req.params.id);
-  if (!rowExists('clinical_chart_entries', chartId)) return res.status(404).json({ error: 'Clinical chart entry not found' });
+  if (!rowExists('clinical_chart_entries', chartId)) return res.status(404).json({ error: 'Zubni status entry not found' });
   db.prepare('DELETE FROM clinical_chart_entries WHERE id = ?').run(chartId);
   auditLog({ userId: req.user.id, action: 'clinical_chart_deleted', entityType: 'clinical_chart', entityId: chartId, req });
   res.json({ success: true });
@@ -3677,7 +3677,7 @@ app.post('/api/director/clinical-note-templates', authenticateToken, requireDire
     res.status(201).json({ id: row.id, title: row.title, category: row.category, body: row.body });
   } catch (error) {
     console.error('Create clinical note template error:', error);
-    res.status(500).json({ error: 'Template nije sacuvan.' });
+    res.status(500).json({ error: 'Šablon nije sačuvan.' });
   }
 });
 
@@ -3710,7 +3710,7 @@ app.post('/api/patients/:id/clinical-notes', authenticateToken, requirePermissio
     res.status(201).json(serializeClinicalNote(db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(result.lastInsertRowid)));
   } catch (error) {
     console.error('Create clinical note error:', error);
-    res.status(500).json({ error: 'Clinical note nije sacuvan.' });
+    res.status(500).json({ error: 'Klinička beleška nije sačuvan.' });
   }
 });
 
@@ -3718,7 +3718,7 @@ app.put('/api/clinical-notes/:id', authenticateToken, requirePermission('clinica
   try {
     const noteId = positiveInteger(req.params.id);
     const current = db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(noteId);
-    if (!current) return res.status(404).json({ error: 'Klinicka beleska nije pronadjena' });
+    if (!current) return res.status(404).json({ error: 'Klinička beleška nije pronadjena' });
     db.prepare(`
       UPDATE clinical_notes
       SET visit_record_id = ?, template_id = ?, title = ?, body = ?, signed_by = ?, signed_at = ?, updated_at = CURRENT_TIMESTAMP
@@ -3736,20 +3736,20 @@ app.put('/api/clinical-notes/:id', authenticateToken, requirePermission('clinica
     res.json(serializeClinicalNote(db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(noteId)));
   } catch (error) {
     console.error('Update clinical note error:', error);
-    res.status(500).json({ error: 'Klinicka beleska nije sacuvana.' });
+    res.status(500).json({ error: 'Klinička beleška nije sačuvana.' });
   }
 });
 
 app.delete('/api/clinical-notes/:id', authenticateToken, requirePermission('clinical:write'), (req, res) => {
   try {
     const noteId = positiveInteger(req.params.id);
-    if (!rowExists('clinical_notes', noteId)) return res.status(404).json({ error: 'Klinicka beleska nije pronadjena' });
+    if (!rowExists('clinical_notes', noteId)) return res.status(404).json({ error: 'Klinička beleška nije pronadjena' });
     db.prepare('DELETE FROM clinical_notes WHERE id = ?').run(noteId);
     auditLog({ userId: req.user.id, action: 'clinical_note_deleted', entityType: 'clinical_note', entityId: noteId, req });
     res.json({ success: true });
   } catch (error) {
     console.error('Delete clinical note error:', error);
-    res.status(500).json({ error: 'Klinicka beleska nije obrisana.' });
+    res.status(500).json({ error: 'Klinička beleška nije obrisana.' });
   }
 });
 
@@ -3757,14 +3757,14 @@ app.post('/api/clinical-notes/:id/sign', authenticateToken, requirePermission('c
   try {
     const noteId = positiveInteger(req.params.id);
     const note = db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(noteId);
-    if (!note) return res.status(404).json({ error: 'Clinical note not found' });
+    if (!note) return res.status(404).json({ error: 'Klinička beleška not found' });
     db.prepare('UPDATE clinical_notes SET signed_by = ?, signed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .run(cleanText(req.body.signedBy || req.body.signed_by || req.user.name, { max: 160, required: true }), noteId);
     auditLog({ userId: req.user.id, action: 'clinical_note_signed', entityType: 'clinical_note', entityId: noteId, req });
     res.json(serializeClinicalNote(db.prepare('SELECT * FROM clinical_notes WHERE id = ?').get(noteId)));
   } catch (error) {
     console.error('Sign clinical note error:', error);
-    res.status(500).json({ error: 'Clinical note nije potpisan.' });
+    res.status(500).json({ error: 'Klinička beleška nije potpisan.' });
   }
 });
 
@@ -3772,7 +3772,7 @@ app.get('/api/patients/:id/consents', authenticateToken, requirePermission('clin
   const patientId = positiveInteger(req.params.id);
   if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
   const rows = db.prepare('SELECT * FROM patient_consents WHERE patient_id = ? ORDER BY signed_at DESC, id DESC').all(patientId);
-  res.json(rows.map(serializeConsent));
+  res.json(rows.map(serializeSaglasnost));
 });
 
 app.post('/api/patients/:id/consents', authenticateToken, requirePermission('clinical:write'), (req, res) => {
@@ -3795,10 +3795,10 @@ app.post('/api/patients/:id/consents', authenticateToken, requirePermission('cli
       req.user.id
     );
     auditLog({ userId: req.user.id, action: 'consent_signed', entityType: 'patient', entityId: patientId, req });
-    res.status(201).json(serializeConsent(db.prepare('SELECT * FROM patient_consents WHERE id = ?').get(result.lastInsertRowid)));
+    res.status(201).json(serializeSaglasnost(db.prepare('SELECT * FROM patient_consents WHERE id = ?').get(result.lastInsertRowid)));
   } catch (error) {
     console.error('Create consent error:', error);
-    res.status(500).json({ error: 'Consent nije sacuvan.' });
+    res.status(500).json({ error: 'Saglasnost nije sačuvan.' });
   }
 });
 
@@ -3823,10 +3823,10 @@ app.put('/api/consents/:id', authenticateToken, requirePermission('clinical:writ
       consentId
     );
     auditLog({ userId: req.user.id, action: 'consent_updated', entityType: 'consent', entityId: consentId, req });
-    res.json(serializeConsent(db.prepare('SELECT * FROM patient_consents WHERE id = ?').get(consentId)));
+    res.json(serializeSaglasnost(db.prepare('SELECT * FROM patient_consents WHERE id = ?').get(consentId)));
   } catch (error) {
     console.error('Update consent error:', error);
-    res.status(500).json({ error: 'Saglasnost nije sacuvana.' });
+    res.status(500).json({ error: 'Saglasnost nije sačuvana.' });
   }
 });
 
@@ -3894,7 +3894,7 @@ app.post('/api/patients/:id/perio-charts', authenticateToken, requirePermission(
     res.status(201).json(serializePerioChart(db.prepare('SELECT * FROM perio_charts WHERE id = ?').get(result.lastInsertRowid)));
   } catch (error) {
     console.error('Create perio chart error:', error);
-    res.status(500).json({ error: 'Perio chart nije sacuvan.' });
+    res.status(500).json({ error: 'Perio chart nije sačuvan.' });
   }
 });
 
@@ -4001,7 +4001,7 @@ app.post('/api/patients/:id/invoices', authenticateToken, requirePermission('bil
   try {
     const patientId = positiveInteger(req.params.id);
     const items = Array.isArray(req.body.items) ? req.body.items : [];
-    if (items.length === 0) return res.status(400).json({ error: 'Dodajte bar jednu stavku racuna.' });
+    if (items.length === 0) return res.status(400).json({ error: 'Dodajte bar jednu stavku računa.' });
     if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
     db.exec('BEGIN');
     let invoiceId;
@@ -4020,7 +4020,7 @@ app.post('/api/patients/:id/invoices', authenticateToken, requirePermission('bil
         entryType: 'charge',
         amount: invoice.total,
         currency: invoice.currency,
-        description: `Racun ${invoice.invoice_number}`,
+        description: `Račun ${invoice.invoice_number}`,
         source: 'invoice',
         userId: req.user.id
       });
@@ -4033,7 +4033,7 @@ app.post('/api/patients/:id/invoices', authenticateToken, requirePermission('bil
     res.status(201).json(serializeInvoice(db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId)));
   } catch (error) {
     console.error('Create invoice error:', error);
-    res.status(500).json({ error: 'Racun nije sacuvan.' });
+    res.status(500).json({ error: 'Račun nije sačuvan.' });
   }
 });
 
@@ -4054,7 +4054,7 @@ app.post('/api/invoices/:id/payments', authenticateToken, requirePermission('bil
         entryType: paymentType === 'refund' ? 'refund' : 'patient_payment',
         amount: paymentType === 'refund' ? money(req.body.amount) : -money(req.body.amount),
         currency: invoice.currency,
-        description: `${paymentType === 'refund' ? 'Povracaj' : 'Uplata'} za racun ${invoice.invoice_number}`,
+        description: `${paymentType === 'refund' ? 'Povracaj' : 'Uplata'} za račun ${invoice.invoice_number}`,
         source: 'invoice_payment',
         userId: req.user.id
       });
@@ -4066,7 +4066,7 @@ app.post('/api/invoices/:id/payments', authenticateToken, requirePermission('bil
     res.status(201).json(serializeInvoice(db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId)));
   } catch (error) {
     console.error('Invoice payment error:', error);
-    res.status(500).json({ error: 'Uplata nije sacuvana.' });
+    res.status(500).json({ error: 'Uplata nije sačuvana.' });
   }
 });
 
@@ -4075,7 +4075,7 @@ app.get('/api/invoices/:id/pdf', authenticateToken, requirePermission('billing:r
   if (!invoice) return res.status(404).send('Invoice not found');
   const data = serializeInvoice(invoice);
   const rows = data.items.map(item => `<tr><td>${escapeHtml(item.description)}</td><td>${escapeHtml(item.toothNumber || '-')}</td><td>${escapeHtml(item.quantity)}</td><td>${escapeHtml(item.unitPrice.toFixed(2))}</td><td>${escapeHtml(item.discount.toFixed(2))}</td></tr>`).join('');
-  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(data.invoiceNumber)}</title><style>body{font-family:Arial;padding:32px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:8px;text-align:left}</style></head><body><h1>Racun ${escapeHtml(data.invoiceNumber)}</h1><p>Pacijent: ${escapeHtml(invoice.first_name)} ${escapeHtml(invoice.last_name)}</p><p>Datum: ${escapeHtml(data.issueDate)}</p><table><thead><tr><th>Stavka</th><th>Zub</th><th>Kolicina</th><th>Cena</th><th>Popust</th></tr></thead><tbody>${rows}</tbody></table><h2>Ukupno: ${escapeHtml(data.total.toFixed(2))} ${escapeHtml(data.currency)}</h2><p>Placeno: ${escapeHtml(data.amountPaid.toFixed(2))} ${escapeHtml(data.currency)}</p><script>window.print()</script></body></html>`);
+  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(data.invoiceNumber)}</title><style>body{font-family:Arial;padding:32px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:8px;text-align:left}</style></head><body><h1>Račun ${escapeHtml(data.invoiceNumber)}</h1><p>Pacijent: ${escapeHtml(invoice.first_name)} ${escapeHtml(invoice.last_name)}</p><p>Datum: ${escapeHtml(data.issueDate)}</p><table><thead><tr><th>Stavka</th><th>Zub</th><th>Količina</th><th>Cena</th><th>Popust</th></tr></thead><tbody>${rows}</tbody></table><h2>Ukupno: ${escapeHtml(data.total.toFixed(2))} ${escapeHtml(data.currency)}</h2><p>Plaćeno: ${escapeHtml(data.amountPaid.toFixed(2))} ${escapeHtml(data.currency)}</p><script>window.print()</script></body></html>`);
 });
 
 app.delete('/api/invoices/:id', authenticateToken, requirePermission('billing:write'), (req, res) => {
@@ -4093,7 +4093,7 @@ app.delete('/api/invoices/:id', authenticateToken, requirePermission('billing:wr
           entryType: Number(ledgerBalance) > 0 ? 'adjustment' : 'charge',
           amount: -Number(ledgerBalance),
           currency: invoice.currency,
-          description: `Storno racuna ${invoice.invoice_number}`,
+          description: `Storno računa ${invoice.invoice_number}`,
           source: 'invoice_delete',
           userId: req.user.id
         });
@@ -4108,7 +4108,7 @@ app.delete('/api/invoices/:id', authenticateToken, requirePermission('billing:wr
     res.json({ success: true });
   } catch (error) {
     console.error('Delete invoice error:', error);
-    res.status(500).json({ error: 'Racun nije obrisan.' });
+    res.status(500).json({ error: 'Račun nije obrisan.' });
   }
 });
 
@@ -4198,7 +4198,7 @@ app.post('/api/patients/:id/insurance-claims', authenticateToken, requirePermiss
     res.status(201).json(serializeClaim(db.prepare('SELECT * FROM insurance_claims WHERE id = ?').get(result.lastInsertRowid)));
   } catch (error) {
     console.error('Create insurance claim error:', error);
-    res.status(500).json({ error: 'Zahtev za osiguranje nije sacuvan.' });
+    res.status(500).json({ error: 'Zahtev za osiguranje nije sačuvan.' });
   }
 });
 
@@ -4270,7 +4270,7 @@ app.post('/api/insurance-claims/:id/submit', authenticateToken, requirePermissio
     `).run(
       new Date().toISOString(),
       clearinghouseRef,
-      cleanText(req.body.notes || `Submitted with ${attachmentCount} attachment(s).`, { max: 2000 }),
+      cleanText(req.body.notes || `Poslato sa ${attachmentCount} priloga.`, { max: 2000 }),
       claimId
     );
     db.prepare("UPDATE insurance_claim_attachments SET status = 'submitted', clearinghouse_ref = ? WHERE claim_id = ?")
@@ -4357,7 +4357,7 @@ app.get('/api/patients/:id/ledger', authenticateToken, requirePermission('billin
     });
   } catch (error) {
     console.error('Patient ledger error:', error);
-    res.status(500).json({ error: 'Ledger nije ucitan.' });
+    res.status(500).json({ error: 'Ledger nije učitan.' });
   }
 });
 
@@ -4394,18 +4394,18 @@ app.post('/api/director/backups', authenticateToken, requireDirector, async (req
     res.status(201).json(await createEncryptedBackup({ type: 'manual', userId: req.user.id, req }));
   } catch (error) {
     console.error('Create backup error:', error);
-    res.status(500).json({ error: 'Backup could not be created' });
+    res.status(500).json({ error: 'Rezervna kopija nije mogla da se napravi.' });
   }
 });
 
 app.get('/api/director/backups/:id/download', authenticateToken, requireDirector, async (req, res) => {
   try {
     const backup = db.prepare("SELECT * FROM backup_files WHERE id = ? AND status IN ('ready', 'restored')").get(positiveInteger(req.params.id));
-    if (!backup) return res.status(404).json({ error: 'Backup not found' });
+    if (!backup) return res.status(404).json({ error: 'Rezervna kopija nije pronađena.' });
     try {
       await fsp.access(backup.file_path);
     } catch {
-      return res.status(404).json({ error: 'Backup not found' });
+      return res.status(404).json({ error: 'Rezervna kopija nije pronađena.' });
     }
     auditLog({ userId: req.user.id, action: 'backup_downloaded', entityType: 'backup', entityId: backup.id, req });
     res.download(backup.file_path, backup.filename);
@@ -4417,26 +4417,26 @@ app.get('/api/director/backups/:id/download', authenticateToken, requireDirector
 
 app.post('/api/director/backups/:id/restore', authenticateToken, requireDirector, async (req, res) => {
   if (restoreInProgress) {
-    return res.status(409).json({ error: 'Restore is already in progress.' });
+    return res.status(409).json({ error: 'Vraćanje rezervne kopije je već u toku.' });
   }
   try {
     const confirmation = cleanText(req.body.confirmation, { max: 80 });
     if (confirmation !== 'VRATI BACKUP') {
-      return res.status(400).json({ error: 'Type VRATI BACKUP to confirm restore.' });
+      return res.status(400).json({ error: 'Unesite VRATI BACKUP da potvrdite vraćanje.' });
     }
     const backup = db.prepare("SELECT * FROM backup_files WHERE id = ? AND status = 'ready'").get(positiveInteger(req.params.id));
-    if (!backup) return res.status(404).json({ error: 'Backup not found' });
+    if (!backup) return res.status(404).json({ error: 'Rezervna kopija nije pronađena.' });
     try {
       await fsp.access(backup.file_path);
     } catch {
-      return res.status(404).json({ error: 'Backup not found' });
+      return res.status(404).json({ error: 'Rezervna kopija nije pronađena.' });
     }
     restoreInProgress = true;
     await restoreEncryptedBackup(backup, req.user.id, req);
-    res.json({ success: true, message: 'Backup je vracen. Osvezite aplikaciju pre nastavka rada.' });
+    res.json({ success: true, message: 'Rezervna kopija je vraćena. Osvežite aplikaciju pre nastavka rada.' });
   } catch (error) {
     console.error('Restore backup error:', error);
-    res.status(500).json({ error: 'Restore failed. Pre-restore backup was attempted before restore.' });
+    res.status(500).json({ error: 'Vraćanje nije uspelo. Pre vraćanja je pokušana izrada rezervne kopije.' });
   } finally {
     restoreInProgress = false;
   }
@@ -4445,16 +4445,16 @@ app.post('/api/director/backups/:id/restore', authenticateToken, requireDirector
 app.post('/api/director/backups/:id/test-restore', authenticateToken, requireDirector, async (req, res) => {
   try {
     const backup = db.prepare("SELECT * FROM backup_files WHERE id = ? AND status IN ('ready', 'restored')").get(positiveInteger(req.params.id));
-    if (!backup) return res.status(404).json({ error: 'Backup not found' });
+    if (!backup) return res.status(404).json({ error: 'Rezervna kopija nije pronađena.' });
     try {
       await fsp.access(backup.file_path);
     } catch {
-      return res.status(404).json({ error: 'Backup not found' });
+      return res.status(404).json({ error: 'Rezervna kopija nije pronađena.' });
     }
     res.status(201).json(await testEncryptedBackupRestore(backup, req.user.id, req));
   } catch (error) {
     console.error('Test restore backup error:', error);
-    res.status(500).json({ error: 'Test restore nije uspeo.' });
+    res.status(500).json({ error: 'Test vraćanja nije uspeo.' });
   }
 });
 
@@ -4480,10 +4480,10 @@ app.get('/api/director/security/audit-log', authenticateToken, requireDirector, 
       ORDER BY a.created_at DESC
       LIMIT ?
     `).all(...params, limit);
-    res.json(rows.map(serializeAuditEntry));
+    res.json(rows.map(serializeRevizijaEntry));
   } catch (error) {
-    console.error('Audit log list error:', error);
-    res.status(500).json({ error: 'Audit log nije ucitan.' });
+    console.error('Revizija log list error:', error);
+    res.status(500).json({ error: 'Revizija log nije učitan.' });
   }
 });
 
@@ -4500,7 +4500,7 @@ app.get('/api/director/security/sessions', authenticateToken, requireDirector, (
     res.json(sessions.map(serializeSession));
   } catch (error) {
     console.error('Security sessions error:', error);
-    res.status(500).json({ error: 'Sesije nisu ucitane.' });
+    res.status(500).json({ error: 'Sesije nisu učitane.' });
   }
 });
 
@@ -4536,7 +4536,7 @@ app.put('/api/director/security/users/:id/permissions', authenticateToken, requi
     res.json(serializeUserSecurity(db.prepare('SELECT * FROM users WHERE id = ?').get(userId)));
   } catch (error) {
     console.error('Update permissions error:', error);
-    res.status(500).json({ error: 'Permisije nisu sacuvane.' });
+    res.status(500).json({ error: 'Dozvole nisu sačuvane.' });
   }
 });
 
@@ -4577,8 +4577,8 @@ app.get('/api/director/legal-export', authenticateToken, requireDirector, (req, 
       consents: legalExportRows(tables.consents, limit)
     });
   } catch (error) {
-    console.error('Legal export error:', error);
-    res.status(500).json({ error: 'Legal export nije napravljen.' });
+    console.error('Pravno export error:', error);
+    res.status(500).json({ error: 'Pravno export nije napravljen.' });
   }
 });
 
@@ -4613,7 +4613,7 @@ app.get('/api/director/security/status', authenticateToken, requireDirector, (_r
       users: users.map(serializeUserSecurity),
       sessions: sessions.map(serializeSession),
       restoreTests: restoreTests.map(serializeRestoreTest),
-      auditLog: audit.map(serializeAuditEntry)
+      auditLog: audit.map(serializeRevizijaEntry)
     });
   } catch (error) {
     console.error('Security status error:', error);
@@ -4718,7 +4718,7 @@ app.get('/api/director/calendar-sync', authenticateToken, requireDirector, (_req
 
 app.post('/api/director/calendar-sync/retry', authenticateToken, requireDirector, async (_req, res) => {
   try {
-    const processed = await processCalendarSyncQueue({ limit: 25 });
+    const processed = await processCalendarSyncRed({ limit: 25 });
     res.json({ processed });
   } catch (error) {
     console.error('Retry sync queue error:', error);
@@ -4791,7 +4791,7 @@ app.put('/api/director/google-calendar/settings', authenticateToken, requireDire
     const defaultReminderMinutes = Math.max(0, Math.min(10080, Number(req.body.defaultReminderMinutes ?? req.body.default_reminder_minutes ?? 1440)));
 
     if (syncEnabled && (!connectedEmail || !calendarId)) {
-      return res.status(400).json({ error: 'Connected email and calendar are required when sync is enabled' });
+      return res.status(400).json({ error: 'Povezan email i kalendar su obavezni kada je sinhronizacija uključena.' });
     }
 
     const resetGooglePullToken = current?.calendar_id !== calendarId || current?.sync_direction !== syncDirection;
@@ -4861,7 +4861,7 @@ app.post('/api/director/google-calendar/oauth/exchange', authenticateToken, requ
 
 app.post('/api/director/google-calendar/test-sync', authenticateToken, requireDirector, async (_req, res) => {
   try {
-    const processed = await processCalendarSyncQueue({ limit: 25 });
+    const processed = await processCalendarSyncRed({ limit: 25 });
     const settings = db.prepare('SELECT last_sync_at FROM google_calendar_settings WHERE id = 1').get();
     res.json({ processed, lastSyncAt: settings.last_sync_at });
   } catch (error) {
@@ -4877,10 +4877,10 @@ app.get('/api/director/reports/financial', authenticateToken, requireDirector, (
     const data = db.prepare(`
       SELECT
         (SELECT COUNT(*) FROM patients) as total_patients,
-        COALESCE(SUM(CASE WHEN payment_status IN ('Placeno', 'Plaćeno') THEN amount ELSE 0 END), 0) as total_revenue,
-        COALESCE(SUM(CASE WHEN payment_status IN ('Dugovanje', 'Delimicno', 'Delimično') THEN amount ELSE 0 END), 0) as total_debt,
+        COALESCE(SUM(CASE WHEN payment_status IN ('Plaćeno', 'Plaćeno') THEN amount ELSE 0 END), 0) as total_revenue,
+        COALESCE(SUM(CASE WHEN payment_status IN ('Dugovanje', 'Delimično', 'Delimično') THEN amount ELSE 0 END), 0) as total_debt,
         (SELECT COUNT(*) FROM visit_records) as total_visits,
-        COALESCE(AVG(CASE WHEN payment_status IN ('Placeno', 'Plaćeno') THEN 1.0 ELSE 0.0 END) * 100, 0) as payment_percentage
+        COALESCE(AVG(CASE WHEN payment_status IN ('Plaćeno', 'Plaćeno') THEN 1.0 ELSE 0.0 END) * 100, 0) as payment_percentage
       FROM payments
     `).get();
 
@@ -5171,7 +5171,7 @@ app.post('/api/director/codebooks', authenticateToken, requireDirector, (req, re
     res.status(201).json(serializeCodebookItem(db.prepare('SELECT * FROM codebook_items WHERE id = ?').get(result.lastInsertRowid)));
   } catch (error) {
     if (error.code === 'ERR_SQLITE_ERROR') {
-      return res.status(409).json({ error: 'Sifra vec postoji u ovom sifarniku.' });
+      return res.status(409).json({ error: 'Šifra vec postoji u ovom šifarniku.' });
     }
     console.error('Create codebook error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -5204,7 +5204,7 @@ app.put('/api/director/codebooks/:id', authenticateToken, requireDirector, (req,
     res.json(serializeCodebookItem(db.prepare('SELECT * FROM codebook_items WHERE id = ?').get(req.params.id)));
   } catch (error) {
     if (error.code === 'ERR_SQLITE_ERROR') {
-      return res.status(409).json({ error: 'Sifra vec postoji u ovom sifarniku.' });
+      return res.status(409).json({ error: 'Šifra vec postoji u ovom šifarniku.' });
     }
     console.error('Update codebook error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -5220,7 +5220,7 @@ app.delete('/api/director/codebooks/:id', authenticateToken, requireDirector, (r
       ? db.prepare('SELECT COUNT(*) as count FROM visit_records WHERE procedure = ?').get(current.value).count || 0
       : 0;
     if (usage > 0) {
-      return res.status(409).json({ error: 'Sifra se koristi u zapisima i ne moze biti obrisana. Deaktivirajte je umesto brisanja.' });
+      return res.status(409).json({ error: 'Šifra se koristi u zapisima i ne može biti obrisana. Deaktivirajte je umesto brisanja.' });
     }
 
     db.prepare('DELETE FROM codebook_items WHERE id = ?').run(req.params.id);

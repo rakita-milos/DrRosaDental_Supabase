@@ -51,7 +51,7 @@ function formatDate(dateString) {
 }
 
 function isDebt(record) {
-  return ["dugovanje", "delimicno"].includes(fold(record.paymentStatus)) || Number(record.amountDue || 0) > 0;
+  return ["dugovanje", "delimično"].includes(fold(record.paymentStatus)) || Number(record.amountDue || 0) > 0;
 }
 
 function fold(value) {
@@ -100,7 +100,7 @@ function populateProcedureFilter() {
 async function populateCodebookFilters() {
   const mappings = [
     { type: "visit_status", select: statusFilter, placeholder: "Svi statusi" },
-    { type: "payment_status", select: paymentFilter, placeholder: "Sva placanja", extras: [{ value: "debtors", label: "Duznici" }] }
+    { type: "payment_status", select: paymentFilter, placeholder: "Sva placanja", extras: [{ value: "debtors", label: "Dužnici" }] }
   ];
 
   await Promise.all(mappings.map(async ({ type, select, placeholder, extras = [] }) => {
@@ -161,7 +161,7 @@ function renderSummary(records) {
   summaryCards.innerHTML = `
     <div class="hero-stats-card"><p class="eyebrow">Ukupno pacijenata</p><span>${totalPatients}</span></div>
     <div class="hero-stats-card"><p class="eyebrow">Redovni pacijenti</p><span>${returnedPatients}</span></div>
-    <div class="hero-stats-card"><p class="eyebrow">Duznici</p><span>${debtorPatients}</span></div>
+    <div class="hero-stats-card"><p class="eyebrow">Dužnici</p><span>${debtorPatients}</span></div>
     <div class="hero-stats-card"><p class="eyebrow">Novi pacijenti</p><span>${totalPatients - returnedPatients}</span></div>
   `;
 }
@@ -203,7 +203,7 @@ function renderRecords(records) {
     formatDate(patient.lastVisit),
     patient.visits,
     "-",
-    patient.hasDebt ? "Dugovanje" : "Placeno",
+    patient.hasDebt ? "Dugovanje" : "Plaćeno",
     Array.from(patient.currencies).join(" / "),
     Array.from(patient.shifts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "-",
     formatCurrencyAmounts(patient.totalDebt),
@@ -216,8 +216,8 @@ function renderRecords(records) {
   }
 
   uniquePatients.forEach((patient) => {
-    const paymentStatus = patient.hasDebt ? "Dugovanje" : "Placeno";
-    const paymentClass = patient.hasDebt ? "status-dugovanje" : "status-placeno";
+    const paymentStatus = patient.hasDebt ? "Dugovanje" : "Plaćeno";
+    const paymentClass = patient.hasDebt ? "status-dugovanje" : "status-plaćeno";
     const row = document.createElement("tr");
     row.append(
       window.DrRosaSecurity.cell(patient.patient),
@@ -284,7 +284,7 @@ function refresh() {
 
 function exportFiltered(format) {
   const title = "Filtrirana evidencija pacijenata";
-  const headers = ["Pacijent", "Zadnji posjet", "Ukupno poseta", "Status", "Placanje", "Valuta", "Smena", "Dugovanje", "Detalji"];
+  const headers = ["Pacijent", "Poslednja poseta", "Ukupno poseta", "Status", "Placanje", "Valuta", "Smena", "Dugovanje", "Detalji"];
   if (format === "excel") {
     window.DrRosaExport.exportExcel(title, headers, currentExportRows);
     return;

@@ -43,7 +43,7 @@ async function loadPatientForEdit() {
     const patient = patients.find(item => String(item.id) === String(patientId));
     if (!patient) return;
     document.querySelector(".section-header h2").textContent = "Uredi pacijenta";
-    form.querySelector("button[type='submit']").textContent = "Sacuvaj izmene";
+    form.querySelector("button[type='submit']").textContent = "Sačuvaj izmene";
     setValue("first-name", patient.firstName || patient.first_name);
     setValue("last-name", patient.lastName || patient.last_name);
     setValue("birth-date", patient.birthDate || patient.date_of_birth);
@@ -54,7 +54,7 @@ async function loadPatientForEdit() {
     setValue("emergency-contact", patient.emergencyContact || patient.emergency_contact);
     setValue("medical-history", patient.medicalHistory || patient.medical_history);
   } catch (error) {
-    alert(error.message || "Pacijent nije ucitan.");
+    alert(error.message || "Pacijent nije učitan.");
   }
 }
 
@@ -84,15 +84,15 @@ form.addEventListener("submit", async (event) => {
       return;
     }
     await window.DrRosaApi.createPatient(patient);
-    alert("Pacijent sacuvan!");
+    alert("Pacijent sačuvan!");
     form.reset();
   } catch (error) {
-    alert(error.message || "Pacijent nije sacuvan. Proverite backend konekciju.");
+    alert(error.message || "Pacijent nije sačuvan. Proverite vezu sa serverom.");
   }
 });
 
 cancelBtn.addEventListener("click", () => {
-  if (confirm("Da li ste sigurni da zelite da otkazete?")) {
+  if (confirm("Da li ste sigurni da želite da otkazete?")) {
     window.location.href = "index.html";
   }
 });

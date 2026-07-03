@@ -81,7 +81,7 @@
       note: row.notes || row.note || "-",
       doctor: row.doctor_name || row.doctor || "-",
       visits: Number(row.visits || 1),
-      paymentStatus: row.payment_status || row.paymentStatus || "Placeno",
+      paymentStatus: row.payment_status || row.paymentStatus || "Plaćeno",
       amountDue: Number(row.amount_due ?? row.amountDue ?? 0),
       amountPaid: Number(row.amount_paid ?? row.amountPaid ?? 0),
       currency: row.currency || row.paymentCurrency || "EUR",

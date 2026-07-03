@@ -2,12 +2,12 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 
 const fs = require('fs');
 const path = require('path');
-const { DatabaseSync } = require('node:sqlite');
+const { DatabaseSinhronizacija } = require('node:sqlite');
 
 const dbPath = path.resolve(__dirname, '..', process.env.SQLITE_DB_PATH || './data/drosa.sqlite');
-fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+fs.mkdirSinhronizacija(path.dirname(dbPath), { recursive: true });
 
-const db = new DatabaseSync(dbPath);
+const db = new DatabaseSinhronizacija(dbPath);
 db.exec('PRAGMA foreign_keys = ON');
 
 function ensureColumn(table, column, definition) {
@@ -61,7 +61,7 @@ try {
       patient[4],
       patient[5],
       '+381601119999',
-      'Demo pacijent za testiranje izvjestaja'
+      'Demo pacijent za testiranje izveštaja'
     );
     return Number(result.lastInsertRowid);
   });
@@ -78,8 +78,8 @@ try {
     'Izbeljivanje',
     'Parodontologija'
   ];
-  const statuses = ['Zakazano', 'U tijeku', 'Zavrseno', 'Zavrseno', 'Zavrseno', 'U tijeku'];
-  const paymentStatuses = ['Placeno', 'Placeno', 'Placeno', 'Delimicno', 'Dugovanje'];
+  const statuses = ['Zakazano', 'U toku', 'Završeno', 'Završeno', 'Završeno', 'U toku'];
+  const paymentStatuses = ['Plaćeno', 'Plaćeno', 'Plaćeno', 'Delimično', 'Dugovanje'];
   const teeth = ['11', '12', '14', '16', '21', '24', '26', '31', '36', '41', '44', '46'];
 
   const insertVisit = db.prepare(`
@@ -135,7 +135,7 @@ try {
       visitId,
       teeth[index % teeth.length],
       procedure,
-      status === 'Zavrseno' ? 'Zavrseno' : 'Planirano',
+      status === 'Završeno' ? 'Završeno' : 'Planirano',
       `${marker}; demo tretman`
     );
   }

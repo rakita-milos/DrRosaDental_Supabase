@@ -95,7 +95,7 @@
       renderSlots();
       message(state.slots.length ? "Izaberite termin." : "Nema slobodnih termina za izabrani dan.", !state.slots.length);
     } catch (error) {
-      message(error.message || "Termini nisu ucitani.", true);
+      message(error.message || "Termini nisu učitani.", true);
     }
   }
 
@@ -157,5 +157,5 @@
     });
   }
 
-  init().catch(error => message(error.message || "Online zakazivanje trenutno nije dostupno.", true));
+  init().catch(error => message(error.message || "Onlajn zakazivanje trenutno nije dostupno.", true));
 })();

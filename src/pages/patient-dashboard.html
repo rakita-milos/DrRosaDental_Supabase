@@ -10,7 +10,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <a class="logo-link" href="index.html" aria-label="Pocetna strana">
+        <a class="logo-link" href="index.html" aria-label="Početna strana">
           <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
         </a>
         <div>
@@ -24,7 +24,7 @@
         <a href="new-entry.html" class="nav-link">Novi unos</a>
         <a href="new-patient.html" class="nav-link">Novi pacijent</a>
         <a href="all-records.html" class="nav-link">Evidencija</a>
-        <a href="public-booking.html" class="nav-link">Online zakazivanje</a>
+        <a href="public-booking.html" class="nav-link">Onlajn zakazivanje</a>
         <a id="director-panel-link" href="director-panel.html" class="nav-link" style="display: none;">Direktor panel</a>
         <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
@@ -34,12 +34,12 @@
       <section class="hero-card patient-hero">
         <div class="patient-hero-copy">
           <p class="eyebrow">Pacijent</p>
-          <h2 id="patient-summary-title">Detalji i historija</h2>
+          <h2 id="patient-summary-title">Detalji i istorija</h2>
           <p id="patient-summary-description">Pregledajte sve tretmane, naplate i dugovanja ovog pacijenta.</p>
           <div class="hero-actions">
             <a id="new-entry-for-patient" href="new-entry.html" class="primary-btn">Novi unos za ovog pacijenta</a>
             <a id="edit-patient-link" href="new-patient.html" class="secondary-btn">Uredi pacijenta</a>
-            <button id="delete-patient-btn" class="danger-btn" type="button">Obrisi pacijenta</button>
+            <button id="delete-patient-btn" class="danger-btn" type="button">Obriši pacijenta</button>
           </div>
         </div>
         <div class="hero-stats" id="patient-summary-cards"></div>
@@ -72,7 +72,7 @@
           <button class="patient-tab" type="button" data-patient-tab="documents-card">Dokumenti</button>
           <button class="patient-tab" type="button" data-patient-tab="plans-card">Plan terapije</button>
           <button class="patient-tab" type="button" data-patient-tab="perio-card">Parodontologija</button>
-          <button class="patient-tab" type="button" data-patient-tab="invoices-card">Racuni</button>
+          <button class="patient-tab" type="button" data-patient-tab="invoices-card">Računi</button>
           <button class="patient-tab" type="button" data-patient-tab="insurance-card">Osiguranje</button>
         </div>
 
@@ -84,7 +84,7 @@
                 <input id="medical-blood-type" type="text" />
               </label>
               <label>
-                Trudnoca
+                Trudnoća
                 <input id="medical-pregnancy-status" type="text" />
               </label>
               <label class="full-width">
@@ -96,7 +96,7 @@
                 <textarea id="medical-medications" rows="3"></textarea>
               </label>
               <label class="full-width">
-                Hronicne bolesti
+                Hronične bolesti
                 <textarea id="medical-chronic-conditions" rows="3"></textarea>
               </label>
               <label class="full-width">
@@ -107,7 +107,7 @@
                 Prethodne operacije
                 <textarea id="medical-previous-surgeries" rows="3"></textarea>
               </label>
-              <label class="checkbox-row"><input id="medical-smoker" type="checkbox" /> Pusac</label>
+              <label class="checkbox-row"><input id="medical-smoker" type="checkbox" /> Pušač</label>
               <label class="checkbox-row"><input id="medical-diabetes" type="checkbox" /> Dijabetes</label>
               <label class="checkbox-row"><input id="medical-high-blood-pressure" type="checkbox" /> Visok pritisak</label>
               <label class="checkbox-row"><input id="medical-heart-condition" type="checkbox" /> Srcani problemi</label>
@@ -116,7 +116,7 @@
                 <textarea id="medical-anesthesia-warning" rows="3"></textarea>
               </label>
               <label class="full-width">
-                Stomatoloske napomene
+                Stomatološke napomene
                 <textarea id="medical-dental-notes" rows="3"></textarea>
               </label>
               <label class="full-width">
@@ -125,7 +125,7 @@
               </label>
             </div>
             <div class="form-actions">
-              <button class="primary-btn" type="submit">Sacuvaj karton</button>
+              <button class="primary-btn" type="submit">Sačuvaj karton</button>
             </div>
             <p id="medical-profile-message" class="form-alert" role="status"></p>
           </form>
@@ -151,9 +151,9 @@
                 <select id="clinical-status">
                   <option value="planned">Planirano</option>
                   <option value="in_progress">U toku</option>
-                  <option value="completed">Zavrseno</option>
-                  <option value="watch">Pracenje</option>
-                  <option value="referred">Upucen</option>
+                  <option value="completed">Završeno</option>
+                  <option value="watch">Praćenje</option>
+                  <option value="referred">Upućen</option>
                 </select>
               </label>
               <label>Faza plana
@@ -181,7 +181,7 @@
             </label>
             <div id="clinical-price-preview" class="info-card">RSD iznos: 0.00 RSD</div>
             <div class="form-actions">
-              <button class="primary-btn" type="submit">Sacuvaj zubni status</button>
+              <button class="primary-btn" type="submit">Sačuvaj zubni status</button>
               <button class="secondary-btn" id="cancel-clinical-chart-edit-btn" type="button" hidden>Odustani od izmene</button>
             </div>
             <p id="clinical-chart-message" class="form-alert" role="status"></p>
@@ -203,16 +203,16 @@
                 <input id="clinical-note-signed-by" placeholder="Dr Rosa" />
               </label>
             </div>
-            <label><span>Klinicka beleska <span class="required-marker">*</span></span>
+            <label><span>Klinička beleška <span class="required-marker">*</span></span>
               <textarea id="clinical-note-body" rows="8" required></textarea>
             </label>
             <div class="form-actions">
-              <button class="primary-btn" type="submit">Sacuvaj belesku</button>
+              <button class="primary-btn" type="submit">Sačuvaj belesku</button>
               <button class="secondary-btn" id="cancel-clinical-note-edit-btn" type="button" hidden>Odustani od izmene</button>
             </div>
             <p id="clinical-note-message" class="form-alert" role="status"></p>
           </form>
-          <div class="table-wrap"><table><thead><tr><th>Beleska</th><th>Potpis</th><th>Datum</th><th>Akcije</th></tr></thead><tbody id="clinical-notes-body"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Beleška</th><th>Potpis</th><th>Datum</th><th>Akcije</th></tr></thead><tbody id="clinical-notes-body"></tbody></table></div>
         </div>
 
         <div class="patient-tab-panel" id="consents-card">
@@ -241,7 +241,7 @@
               <input id="consent-signature" placeholder="Ime i prezime / digitalni potpis" required />
             </label>
             <div class="form-actions">
-              <button class="primary-btn" type="submit">Sacuvaj saglasnost</button>
+              <button class="primary-btn" type="submit">Sačuvaj saglasnost</button>
               <button class="secondary-btn" id="cancel-consent-edit-btn" type="button" hidden>Odustani od izmene</button>
             </div>
             <p id="consent-message" class="form-alert" role="status"></p>
@@ -262,7 +262,7 @@
                   <option value="finding">Nalaz</option>
                   <option value="lab">Laboratorija</option>
                   <option value="consent">Saglasnost</option>
-                  <option value="invoice">Racun</option>
+                  <option value="invoice">Račun</option>
                   <option value="other">Ostalo</option>
                 </select>
               </label>
@@ -322,7 +322,7 @@
                   <th>Datum</th>
                   <th>Izvor</th>
                   <th>Snimak</th>
-                  <th>Velicina</th>
+                  <th>Veličina</th>
                   <th>Akcije</th>
                 </tr>
               </thead>
@@ -350,7 +350,7 @@
               <button class="secondary-btn" type="button" data-imaging-tool="rotate-left">Rotiraj levo</button>
               <button class="secondary-btn" type="button" data-imaging-tool="rotate-right">Rotiraj desno</button>
               <button class="secondary-btn" type="button" data-imaging-tool="invert">Invertuj</button>
-              <button class="secondary-btn" type="button" data-imaging-tool="reset">Resetuj</button>
+              <button class="secondary-btn" type="button" data-imaging-tool="reset">Poništi</button>
               <label>
                 Svetlina
                 <input id="imaging-brightness" type="range" min="50" max="180" value="100" />
@@ -383,9 +383,9 @@
                 <select id="plan-status">
                   <option value="draft">Nacrt</option>
                   <option value="presented">Prezentovan</option>
-                  <option value="accepted">Prihvacen</option>
+                  <option value="accepted">Prihvaćen</option>
                   <option value="declined">Odbijen</option>
-                  <option value="completed">Zavrsen</option>
+                  <option value="completed">Završen</option>
                 </select>
               </label>
               <label>
@@ -411,7 +411,7 @@
             </div>
             <div class="form-actions">
               <button class="secondary-btn" id="add-plan-item-btn" type="button">Dodaj stavku</button>
-              <button class="primary-btn" type="submit">Sacuvaj plan</button>
+              <button class="primary-btn" type="submit">Sačuvaj plan</button>
             </div>
             <div id="plan-items-preview" class="info-card"></div>
             <p id="treatment-plan-message" class="form-alert" role="status"></p>
@@ -457,7 +457,7 @@
             </div>
             <div class="form-actions">
               <button class="secondary-btn" id="add-perio-measurement-btn" type="button">Dodaj merenje</button>
-              <button class="primary-btn" type="submit">Sacuvaj parodontalni chart</button>
+              <button class="primary-btn" type="submit">Sačuvaj parodontalni nalaz</button>
             </div>
             <div id="perio-measurements-preview" class="info-card"></div>
             <p id="perio-message" class="form-alert" role="status"></p>
@@ -478,7 +478,7 @@
               </label>
               <label>
                 <span>Stavka <span class="required-marker">*</span></span>
-                <input id="invoice-item-description" placeholder="Stomatoloska usluga" />
+                <input id="invoice-item-description" placeholder="Stomatološka usluga" />
               </label>
               <label>
                 Cena
@@ -487,13 +487,13 @@
             </div>
             <div class="form-actions">
               <button class="secondary-btn" id="add-invoice-item-btn" type="button">Dodaj stavku</button>
-              <button class="primary-btn" type="submit">Kreiraj racun</button>
+              <button class="primary-btn" type="submit">Kreiraj račun</button>
             </div>
             <div id="invoice-items-preview" class="info-card"></div>
             <p id="invoice-message" class="form-alert" role="status"></p>
           </form>
           <div id="patient-ledger-summary" class="info-card"></div>
-          <div class="table-wrap"><table><thead><tr><th>Broj</th><th>Status</th><th>Ukupno</th><th>Placeno</th><th>Akcije</th></tr></thead><tbody id="invoices-body"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Broj</th><th>Status</th><th>Ukupno</th><th>Plaćeno</th><th>Akcije</th></tr></thead><tbody id="invoices-body"></tbody></table></div>
         </div>
 
         <div class="patient-tab-panel" id="insurance-card">
@@ -516,11 +516,11 @@
                   <option value="submitted">Poslato</option>
                   <option value="approved">Odobreno</option>
                   <option value="denied">Odbijeno</option>
-                  <option value="paid">Placeno</option>
+                  <option value="paid">Plaćeno</option>
                 </select>
               </label>
               <label>
-                <span>Trazeni iznos <span class="required-marker">*</span></span>
+                <span>Traženi iznos <span class="required-marker">*</span></span>
                 <input id="insurance-requested" type="number" min="0" step="0.01" required />
               </label>
               <label class="full-width">
@@ -529,11 +529,11 @@
               </label>
             </div>
             <div class="form-actions">
-              <button class="primary-btn" type="submit">Sacuvaj zahtev</button>
+              <button class="primary-btn" type="submit">Sačuvaj zahtev</button>
             </div>
             <p id="insurance-message" class="form-alert" role="status"></p>
           </form>
-          <div class="table-wrap"><table><thead><tr><th>Osiguranje</th><th>Status</th><th>Trazeno</th><th>Obracun</th><th>Akcije</th></tr></thead><tbody id="insurance-claims-body"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Osiguranje</th><th>Status</th><th>Traženo</th><th>Obračun</th><th>Akcije</th></tr></thead><tbody id="insurance-claims-body"></tbody></table></div>
         </div>
       </section>
 
@@ -570,7 +570,7 @@
         <div class="section-header">
           <div>
             <p class="eyebrow">Tretmani zuba</p>
-            <h2>Detaljna historija rada po zubima</h2>
+            <h2>Detaljna istorija rada po zubima</h2>
           </div>
         </div>
         <div class="info-card" id="treatment-list"></div>
@@ -580,6 +580,7 @@
 
   <script src="../scripts/api.js"></script>
   <script src="../scripts/currency-utils.js"></script>
+  <script src="../scripts/treatment-history.js"></script>
   <script src="../scripts/patient-dashboard.js"></script>
 </body>
 </html>

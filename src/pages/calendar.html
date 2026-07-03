@@ -10,7 +10,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <a class="logo-link" href="index.html" aria-label="Pocetna strana">
+        <a class="logo-link" href="index.html" aria-label="Početna strana">
           <img src="../assets/logo.svg" alt="Dr Rosa Logo" class="logo" />
         </a>
         <div>
@@ -19,12 +19,12 @@
         </div>
       </div>
       <nav class="topbar-actions" aria-label="Glavna navigacija">
-        <a href="index.html" class="nav-link">Dashboard</a>
+        <a href="index.html" class="nav-link">Kontrolna tabla</a>
         <a href="calendar.html" class="nav-link" aria-current="page">Kalendar</a>
         <a href="new-entry.html" class="nav-link">Novi unos</a>
         <a href="new-patient.html" class="nav-link">Novi pacijent</a>
         <a href="all-records.html" class="nav-link">Evidencija</a>
-        <a href="public-booking.html" class="nav-link">Online zakazivanje</a>
+        <a href="public-booking.html" class="nav-link">Onlajn zakazivanje</a>
         <a id="director-panel-link" href="director-panel.html" class="nav-link" style="display: none;">Direktor panel</a>
         <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
@@ -62,10 +62,10 @@
               <option value="">Svi statusi</option>
               <option value="scheduled">Zakazano</option>
               <option value="confirmed">Potvrdjeno</option>
-              <option value="arrived">Dosao</option>
-              <option value="completed">Zavrseno</option>
+              <option value="arrived">Došao</option>
+              <option value="completed">Završeno</option>
               <option value="cancelled">Otkazano</option>
-              <option value="no_show">Nije dosao</option>
+              <option value="no_show">Nije došao</option>
             </select>
           </label>
           <button id="new-appointment-btn" class="primary-btn" type="button">Novi termin</button>
@@ -126,10 +126,10 @@
                 <select id="appointment-status">
                   <option value="scheduled">Zakazano</option>
                   <option value="confirmed">Potvrdjeno</option>
-                  <option value="arrived">Dosao</option>
-                  <option value="completed">Zavrseno</option>
+                  <option value="arrived">Došao</option>
+                  <option value="completed">Završeno</option>
                   <option value="cancelled">Otkazano</option>
-                  <option value="no_show">Nije dosao</option>
+                  <option value="no_show">Nije došao</option>
                 </select>
               </label>
               <label>
@@ -142,10 +142,10 @@
               </label>
             </div>
             <div class="form-actions appointment-actions">
-              <button class="primary-btn" type="submit">Sacuvaj termin</button>
+              <button class="primary-btn" type="submit">Sačuvaj termin</button>
               <button id="dismiss-appointment-btn" class="secondary-btn" type="button">Odustani</button>
               <button id="create-visit-btn" class="secondary-btn" type="button" disabled>Kreiraj posetu</button>
-              <button id="cancel-appointment-btn" class="danger-btn" type="button" disabled>Otkazi termin</button>
+              <button id="cancel-appointment-btn" class="danger-btn" type="button" disabled>Otkaži termin</button>
             </div>
           </form>
         </section>

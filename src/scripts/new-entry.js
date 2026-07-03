@@ -274,7 +274,7 @@ function openRecordInForm(record) {
   inputs.amountPaid.value = Math.max(0, currentVisitTotal() - Number(record.amountDue || 0)).toFixed(2);
   updatePaymentCalculation();
   updatePreview();
-  showAlert("Pregled je otvoren sa postojecim podacima.");
+  showAlert("Pregled je otvoren sa postojećim podacima.");
 }
 
 const teethPanel = document.getElementById("tooth-treatment-panel");
@@ -290,6 +290,7 @@ const treatmentPrice = document.getElementById("treatment-price");
 const treatmentTotalPrice = document.getElementById("treatment-total-price");
 const teethSummary = document.getElementById("teeth-summary");
 const toothNodes = document.querySelectorAll(".tooth-node");
+let toothHistoryCollapsed = false;
 
 function formatMoney(amount, currency = paymentCurrency()) {
   return currencyUtils ? currencyUtils.formatMoney(amount, currency) : `${Number(amount || 0).toFixed(2)} ${currency}`;
@@ -662,19 +663,25 @@ function updateTeethSummary() {
     </div>
   `).join("")}`;
 
+  const historyTitle = treatments.length ? "Prethodna istorija:" : "Istorija rada po zubima:";
   const historyHtml = history.length === 0 ? "" : `
-    <h4>${treatments.length ? "Prethodna istorija:" : "Istorija rada po zubima:"}</h4>
-    ${history.map(item => `
-      <div class="treatment-item">
-        <div>
-          <strong>Zub ${escapeHtml(item.tooth)}:</strong> ${escapeHtml(item.type)}
-          <div style="margin-top: 6px; font-weight: 700;">${formatMoney(item.price, item.currency || "EUR")}</div>
-          ${treatmentDiscountAmount(item) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${escapeHtml(treatmentDiscountLabel(item, item.currency || "EUR"))}</div>` : ""}
-          ${item.note ? `<div style="margin-top: 6px;">${escapeHtml(item.note)}</div>` : ""}
-          <div style="margin-top: 6px; font-size: 0.9rem; color: #5b6c7d;">${formatDate(item.date)} | ${escapeHtml(item.procedure || "-")}</div>
-        </div>
-      </div>
-    `).join("")}`;
+    <div class="treatment-history-header">
+      <h4>${escapeHtml(historyTitle)}</h4>
+      <button
+        class="secondary-btn treatment-history-toggle"
+        type="button"
+        data-toggle-tooth-history
+        aria-expanded="${toothHistoryCollapsed ? "false" : "true"}"
+      >
+        ${toothHistoryCollapsed ? "Prikazi" : "Sakrij"}
+      </button>
+    </div>
+    <div class="treatment-history-content" ${toothHistoryCollapsed ? "hidden" : ""}>
+      ${window.DrRosaTreatmentHistory.renderEntries(history, {
+      formatMoney,
+      formatDate
+    })}
+    </div>`;
 
   teethSummary.innerHTML = currentHtml + historyHtml;
   updateAmountDueLimit();
@@ -696,29 +703,23 @@ function updateTeethSummary() {
     });
   });
 
+  document.querySelector("[data-toggle-tooth-history]")?.addEventListener("click", () => {
+    toothHistoryCollapsed = !toothHistoryCollapsed;
+    updateTeethSummary();
+  });
+
   updateToothHighlights();
 }
 
 function getPatientToothHistory(name) {
   if (!name) return [];
-  return allRecords
-    .filter(record => record.patient === name && record.treatments)
-    .flatMap(record => Object.entries(record.treatments).flatMap(([tooth, treatments]) =>
-      treatmentListForValue(treatments).map(treatment => ({
-        tooth,
-        type: treatment.type,
-        activity: treatment.activity || procedureCatalog.findActivityForProcedure(treatment.type),
-        note: treatment.note,
-        price: treatment.price,
-        discount: treatment.discount,
-        discountType: treatment.discountType || treatment.discount_type || "amount",
-        discountValue: treatment.discountValue ?? treatment.discount_value ?? treatment.discount ?? 0,
-        currency: treatment.currency || record.currency || "EUR",
-        date: record.lastVisit,
-        procedure: record.procedure
-      }))
-    ))
-    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const patient = findPatientByName(name);
+  return window.DrRosaTreatmentHistory.entriesFromRecords(allRecords, {
+    patientId: patient?.id,
+    patientName: name,
+    excludeRecordId: recordParam,
+    procedureCatalog
+  });
 }
 
 function updateToothHighlights() {
@@ -903,7 +904,7 @@ form.addEventListener("submit", async (event) => {
     updatePaymentCalculation();
     updatePreview();
   } catch (error) {
-    showAlert(error.message || "Unos nije sacuvan.", "error");
+    showAlert(error.message || "Unos nije sačuvan.", "error");
   }
 });
 

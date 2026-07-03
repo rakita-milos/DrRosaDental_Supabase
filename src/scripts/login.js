@@ -42,7 +42,7 @@ form.addEventListener("submit", async (event) => {
       pendingTwoFactor = true;
       ensureTwoFactorField().focus();
     }
-    showError(error.message || "Pogresan email, uloga ili lozinka");
+    showError(error.message || "Pogrešan email, uloga ili lozinka");
   } finally {
     submitButton.disabled = false;
     submitButton.textContent = pendingTwoFactor ? "Potvrdi 2FA" : "Prijavi se";

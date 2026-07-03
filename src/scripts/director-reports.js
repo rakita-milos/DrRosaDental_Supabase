@@ -1,5 +1,5 @@
 let cachedRecords = [];
-let currentReportExport = { title: "Direktor izvjestaj", headers: [], rows: [] };
+let currentReportExport = { title: "Direktor izveštaj", headers: [], rows: [] };
 let activeExcelSheet = "PAZARI";
 let codebookItems = [];
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
@@ -62,7 +62,7 @@ function formatDate(dateString) {
 
 function isDebt(record) {
   const payment = String(record.paymentStatus || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  return ["dugovanje", "delimicno"].includes(payment) || Number(record.amountDue || 0) > 0;
+  return ["dugovanje", "delimično"].includes(payment) || Number(record.amountDue || 0) > 0;
 }
 
 function addCurrencyAmount(target, currency, amount) {
@@ -110,17 +110,17 @@ window.showReport = showReport;
 
 function initializeReports() {
   const reports = [
-    { id: "financial-report", tone: "blue", icon: "EUR", title: "Finansijski Izvjestaj", description: "Prihodi, naplata i dugovanja" },
+    { id: "financial-report", tone: "blue", icon: "EUR", title: "Finansijski Izveštaj", description: "Prihodi, naplata i dugovanja" },
     { id: "patients-report", tone: "green", icon: "PAC", title: "Pacijenti", description: "Rast, retencija i statusi pacijenata" },
     { id: "doctors-report", tone: "teal", icon: "DR", title: "Doktori", description: "Produktivnost i opterecenje tima" },
-    { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosjecna naplata" },
-    { id: "excel-report", tone: "blue", icon: "TAB", title: "Izvještaji po tabovima", description: "PAZARI, hirurgija, protetika, ortodoncija, troškovi i ukupno" },
-    { id: "public-booking-report", tone: "green", icon: "ONL", title: "Online zakazivanje", description: "Ukljuci ili iskljuci javnu formu za termine" },
-    { id: "google-calendar-report", tone: "green", icon: "GCal", title: "Google Calendar", description: "Nalog ordinacije, kalendar i sync status" },
-    { id: "backup-security-report", tone: "orange", icon: "SEC", title: "Backup i sigurnost", description: "Backup baze, restore, sesije, 2FA i audit log" }
+    { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosečna naplata" },
+    { id: "excel-report", tone: "blue", icon: "TAB", title: "Izveštaji po tabovima", description: "PAZARI, hirurgija, protetika, ortodoncija, troškovi i ukupno" },
+    { id: "public-booking-report", tone: "green", icon: "ONL", title: "Onlajn zakazivanje", description: "Uključi ili isključi javnu formu za termine" },
+    { id: "google-calendar-report", tone: "green", icon: "GCal", title: "Google Calendar", description: "Nalog ordinacije, kalendar i status sinhronizacije" },
+    { id: "backup-security-report", tone: "orange", icon: "SEC", title: "Rezervne kopije i bezbednost", description: "Rezervna kopija baze, restore, sesije, 2FA i audit log" }
   ];
 
-  reports.push({ id: "admin-codebooks-report", tone: "teal", icon: "ADM", title: "Admin sifarnici", description: "Delatnosti, postupci, statusi, valute i smene" });
+  reports.push({ id: "admin-codebooks-report", tone: "teal", icon: "ADM", title: "Admin šifarnici", description: "Delatnosti, postupci, statusi, valute i smene" });
 
   document.getElementById("reports-grid").innerHTML = reports.map(report => `
     <button class="report-card report-card-${report.tone}" type="button" data-report-id="${report.id}">
@@ -238,8 +238,8 @@ async function loadFinancialReport() {
   }).join("") : `<tr><td colspan="6" class="empty-row">Nema podataka za prikaz.</td></tr>`;
 
   currentReportExport = {
-    title: "Finansijski izvjestaj",
-    headers: ["Pacijent", "Broj pregleda", "Ukupan iznos", "Placeno", "Dugovanje", "Procenat"],
+    title: "Finansijski izveštaj",
+    headers: ["Pacijent", "Broj pregleda", "Ukupan iznos", "Plaćeno", "Dugovanje", "Procenat"],
     rows: paymentRows.length ? paymentRows.map(([patient, data]) => {
       const percentage = data.amountTotal > 0 ? ((data.paidTotal / data.amountTotal) * 100).toFixed(0) : 0;
       return [patient, data.visits, formatCurrencyAmounts(data.amount), formatCurrencyAmounts(data.paid), formatCurrencyAmounts(data.debt), `${percentage}%`];
@@ -269,17 +269,17 @@ async function loadPatientsReport() {
   document.getElementById("new-patients").textContent = apiReport?.new ?? newPatients;
 
   document.getElementById("patients-table").innerHTML = patients.length ? patients.map(([patient, data]) => `
-    <tr><td>${escapeHtml(patient)}</td><td>${data.visits}</td><td>${formatDate(data.lastVisit)}</td><td>${data.debtTotal > 0 ? "Dugovanje" : "Placeno"}</td><td>${formatCurrencyAmounts(data.debt)}</td></tr>
+    <tr><td>${escapeHtml(patient)}</td><td>${data.visits}</td><td>${formatDate(data.lastVisit)}</td><td>${data.debtTotal > 0 ? "Dugovanje" : "Plaćeno"}</td><td>${formatCurrencyAmounts(data.debt)}</td></tr>
   `).join("") : `<tr><td colspan="5" class="empty-row">Nema podataka za prikaz.</td></tr>`;
 
   currentReportExport = {
-    title: "Izvjestaj o pacijentima",
-    headers: ["Pacijent", "Broj posjeta", "Zadnja posjeta", "Status", "Dugovanje"],
+    title: "Izveštaj o pacijentima",
+    headers: ["Pacijent", "Broj posetaa", "Poslednja poseta", "Status", "Dugovanje"],
     rows: patients.length ? patients.map(([patient, data]) => [
       patient,
       data.visits,
       formatDate(data.lastVisit),
-      data.debtTotal > 0 ? "Dugovanje" : "Placeno",
+      data.debtTotal > 0 ? "Dugovanje" : "Plaćeno",
       formatCurrencyAmounts(data.debt)
     ]) : [["Nema podataka", "-", "-", "-", "-"]]
   };
@@ -315,7 +315,7 @@ async function loadDoctorsReport() {
   `).join("") : `<tr><td colspan="4" class="empty-row">Nema podataka za prikaz.</td></tr>`;
 
   currentReportExport = {
-    title: "Izvjestaj o doktorima",
+    title: "Izveštaj o doktorima",
     headers: ["Doktor", "Broj pregleda", "Broj pacijenata", "Procenat ukupnog rada"],
     rows: rows.length ? rows.map(row => [
       row.doctor,
@@ -351,8 +351,8 @@ async function loadProceduresReport() {
   `).join("") : `<tr><td colspan="5" class="empty-row">Nema podataka za prikaz.</td></tr>`;
 
   currentReportExport = {
-    title: "Izvjestaj o postupcima",
-    headers: ["Postupak", "Delatnost", "Broj izvrsenih", "Procenat", "Prosjecna naplata"],
+    title: "Izveštaj o postupcima",
+    headers: ["Postupak", "Delatnost", "Broj izvrsenih", "Procenat", "Prosečna naplata"],
     rows: rows.length ? rows.map(row => [
       row.procedure,
       row.activity || procedureCatalog.findActivityForProcedure(row.procedure) || "-",
@@ -565,7 +565,7 @@ function renderCategorySheet(sheet, monthIndex, year) {
   return `
     <caption>${escapeHtml(sheet)} - ${MONTHS[monthIndex]} ${year}</caption>
     <thead>
-      <tr><th>Dan</th><th>Stavka</th><th>Kolicina</th><th>Cena</th></tr>
+      <tr><th>Dan</th><th>Stavka</th><th>Količina</th><th>Cena</th></tr>
     </thead>
     <tbody>${bodyRows}<tr class="excel-sum-row">${cell("Ukupno:")}${cell("")}${cell(totalCount)}${cell(formatNumber(grandTotal))}</tr></tbody>
   `;
@@ -719,7 +719,7 @@ function openCodebookEditor(type) {
   activeCodebookType = type;
   const elements = codebookFormElements();
   elements.type.value = type;
-  elements.title.textContent = CODEBOOK_LABELS[type] || "Sifarnik";
+  elements.title.textContent = CODEBOOK_LABELS[type] || "Šifarnik";
   document.querySelectorAll(".report-content").forEach(el => el.classList.remove("active"));
   document.getElementById("reports-grid").style.display = "none";
   document.getElementById("admin-codebook-editor").classList.add("active");
@@ -896,7 +896,7 @@ async function applyAutomaticCurrencyRate(payload) {
       metadata: await fetchCurrencyMetadata(payload.value)
     };
   } catch (error) {
-    showCodebookMessage(error.message || "Kurs nije povucen automatski. Pokusajte ponovo kasnije.", true);
+    showCodebookMessage(error.message || "Kurs nije povučen automatski. Pokušajte ponovo kasnije.", true);
     throw error;
   }
 }
@@ -994,10 +994,10 @@ function renderCodebooksAdmin() {
       <td>${item.isActive === false ? "Neaktivno" : "Aktivno"}</td>
       <td>
         <button class="secondary-btn edit-codebook-btn" type="button" data-codebook-id="${item.id}">Uredi</button>
-        <button class="danger-btn delete-codebook-btn" type="button" data-codebook-id="${item.id}">Obrisi</button>
+        <button class="danger-btn delete-codebook-btn" type="button" data-codebook-id="${item.id}">Obriši</button>
       </td>
     </tr>
-  `).join("") : `<tr><td colspan="${emptyColspan}" class="empty-row">Nema sifri za odabrani sifarnik.</td></tr>`;
+  `).join("") : `<tr><td colspan="${emptyColspan}" class="empty-row">Nema šifri za odabrani šifarnik.</td></tr>`;
 
   renderCodebookGroups();
 }
@@ -1008,7 +1008,7 @@ async function loadCodebooksAdmin() {
     window.DrRosaCurrencyUtils?.setCurrencies(codebookItems.filter(item => item.type === "currency"));
     renderCodebookGrid();
   } catch (error) {
-    showCodebookMessage(error.message || "Sifarnici nisu ucitani.", true);
+    showCodebookMessage(error.message || "Šifarnici nisu učitani.", true);
   }
 }
 
@@ -1027,16 +1027,16 @@ function initializeCodebookAdmin() {
   elements.fetchCurrencyRate?.addEventListener("click", async () => {
     const currency = elements.value.value.trim().toUpperCase();
     if (!currency) {
-      showCodebookMessage("Unesite sifru valute pre povlacenja kursa.", true);
+      showCodebookMessage("Unesite šifru valute pre povlacenja kursa.", true);
       return;
     }
     try {
       const metadata = await fetchCurrencyMetadata(currency);
       elements.currencyRate.value = metadata.exchangeRate;
       elements.currencyRateDate.value = metadata.rateDate;
-      showCodebookMessage(`Kurs je povucen iz ${metadata.rateSource}.`);
+      showCodebookMessage(`Kurs je povučen iz ${metadata.rateSource}.`);
     } catch (error) {
-      showCodebookMessage(error.message || "Kurs nije povucen. Unesite ga rucno.", true);
+      showCodebookMessage(error.message || "Kurs nije povučen. Unesite ga ručno.", true);
     }
   });
 
@@ -1044,7 +1044,7 @@ function initializeCodebookAdmin() {
     event.preventDefault();
     let payload = readCodebookForm();
     if (!payload.value || !payload.label) {
-      showCodebookMessage("Unesite sifru i naziv.", true);
+      showCodebookMessage("Unesite šifru i naziv.", true);
       return;
     }
 
@@ -1052,10 +1052,10 @@ function initializeCodebookAdmin() {
       payload = await applyAutomaticCurrencyRate(payload);
       if (elements.id.value) {
         await window.DrRosaApi.updateCodebookItem(elements.id.value, payload);
-        showCodebookMessage("Sifra je azurirana.");
+        showCodebookMessage("Šifra je azurirana.");
       } else {
         await window.DrRosaApi.createCodebookItem(payload);
-        showCodebookMessage("Sifra je dodata.");
+        showCodebookMessage("Šifra je dodata.");
       }
       codebookItems = await window.DrRosaApi.getAdminCodebooks();
       resetCodebookForm();
@@ -1063,7 +1063,7 @@ function initializeCodebookAdmin() {
       renderCodebookGrid();
       await procedureCatalog.loadFromApi?.();
     } catch (error) {
-      showCodebookMessage(error.message || "Sifra nije sacuvana.", true);
+      showCodebookMessage(error.message || "Šifra nije sačuvana.", true);
     }
   });
 
@@ -1076,16 +1076,16 @@ function initializeCodebookAdmin() {
       return;
     }
     if (!deleteButton) return;
-    if (!confirm("Da li ste sigurni da zelite da obrisete ovu sifru?")) return;
+    if (!confirm("Da li ste sigurni da želite da obrišete ovu šifru?")) return;
     try {
       await window.DrRosaApi.deleteCodebookItem(deleteButton.dataset.codebookId);
       codebookItems = await window.DrRosaApi.getAdminCodebooks();
       resetCodebookForm();
       renderCodebooksAdmin();
       renderCodebookGrid();
-      showCodebookMessage("Sifra je obrisana.");
+      showCodebookMessage("Šifra je obrisana.");
     } catch (error) {
-      showCodebookMessage(error.message || "Sifra nije obrisana.", true);
+      showCodebookMessage(error.message || "Šifra nije obrisana.", true);
     }
   });
 }
@@ -1110,9 +1110,9 @@ async function loadPublicBookingSettings() {
   try {
     const settings = await window.DrRosaApi.getPublicBookingSettings();
     checkbox.checked = Boolean(settings.enabled);
-    showPublicBookingMessage(settings.enabled ? "Online zakazivanje je ukljuceno." : "Online zakazivanje je iskljuceno.");
+    showPublicBookingMessage(settings.enabled ? "Onlajn zakazivanje je uključeno." : "Onlajn zakazivanje je isključeno.");
   } catch (error) {
-    showPublicBookingMessage(error.message || "Podesavanja nisu ucitana.", true);
+    showPublicBookingMessage(error.message || "Podešavanja nisu učitana.", true);
   }
 }
 
@@ -1125,10 +1125,10 @@ function initializePublicBookingSettings() {
       const settings = await window.DrRosaApi.updatePublicBookingSettings({ enabled: checkbox.checked });
       checkbox.checked = Boolean(settings.enabled);
       window.DrRosaApi.updatePublicBookingNavigation?.(settings.enabled);
-      showPublicBookingMessage(settings.enabled ? "Online zakazivanje je ukljuceno." : "Online zakazivanje je iskljuceno.");
+      showPublicBookingMessage(settings.enabled ? "Onlajn zakazivanje je uključeno." : "Onlajn zakazivanje je isključeno.");
     } catch (error) {
       checkbox.checked = !checkbox.checked;
-      showPublicBookingMessage(error.message || "Podesavanje nije sacuvano.", true);
+      showPublicBookingMessage(error.message || "Podesavanje nije sačuvano.", true);
     } finally {
       checkbox.disabled = false;
     }
@@ -1155,12 +1155,12 @@ function renderGoogleSummary(settings) {
   const summary = document.getElementById("google-sync-summary");
   if (!summary) return;
   summary.innerHTML = `
-    <div class="sync-pill"><strong>Status</strong><span>${settings.syncEnabled ? "Ukljuceno" : "Iskljuceno"}</span></div>
+    <div class="sync-pill"><strong>Status</strong><span>${settings.syncEnabled ? "Uključeno" : "Isključeno"}</span></div>
     <div class="sync-pill"><strong>Nalog</strong><span>${escapeHtml(settings.connectedEmail || "Nije povezan")}</span></div>
     <div class="sync-pill"><strong>Kalendar</strong><span>${escapeHtml(settings.calendarName || settings.calendarId || "-")}</span></div>
     <div class="sync-pill"><strong>OAuth</strong><span>${settings.oauthConnected ? "Povezan" : "Nije povezan"}</span></div>
-    <div class="sync-pill"><strong>Queue</strong><span>${Number(settings.pendingSyncItems || 0)} otvoreno</span></div>
-    <div class="sync-pill"><strong>Zadnji sync</strong><span>${settings.lastSyncAt ? formatDate(settings.lastSyncAt) : "-"}</span></div>
+    <div class="sync-pill"><strong>Red</strong><span>${Number(settings.pendingSyncItems || 0)} otvoreno</span></div>
+    <div class="sync-pill"><strong>Poslednja sinhronizacija</strong><span>${settings.lastSyncAt ? formatDate(settings.lastSyncAt) : "-"}</span></div>
     <div class="sync-pill"><strong>Google pull</strong><span>${settings.lastGooglePullAt ? formatDate(settings.lastGooglePullAt) : "Nije pokrenut"}</span></div>
   `;
 }
@@ -1179,7 +1179,7 @@ async function loadGoogleCalendarSettings() {
     document.getElementById("google-reminder-minutes").value = String(settings.defaultReminderMinutes || 1440);
     renderGoogleSummary(settings);
   } catch (error) {
-    showGoogleMessage(error.message || "Google Calendar podesavanja nisu ucitana.", true);
+    showGoogleMessage(error.message || "Google Calendar podešavanja nisu učitana.", true);
   }
 }
 
@@ -1200,20 +1200,20 @@ function initializeGoogleCalendarSettings() {
         syncDirection: document.getElementById("google-sync-direction").value,
         defaultReminderMinutes: Number(document.getElementById("google-reminder-minutes").value)
       });
-      showGoogleMessage("Google Calendar podesavanja su sacuvana.");
+      showGoogleMessage("Google Calendar podešavanja su sačuvana.");
       await loadGoogleCalendarSettings();
     } catch (error) {
-      showGoogleMessage(error.message || "Podesavanja nisu sacuvana.", true);
+      showGoogleMessage(error.message || "Podešavanja nisu sačuvana.", true);
     }
   });
 
   document.getElementById("google-test-sync")?.addEventListener("click", async () => {
     try {
       const result = await window.DrRosaApi.testGoogleCalendarSync();
-      showGoogleMessage(`Test sync zavrsen. Obradjeno: ${result.processed || 0}.`);
+      showGoogleMessage(`Test sinhronizacije je završen. Obrađeno: ${result.processed || 0}.`);
       await loadGoogleCalendarSettings();
     } catch (error) {
-      showGoogleMessage(error.message || "Test sync nije uspeo.", true);
+      showGoogleMessage(error.message || "Test sinhronizacije nije uspeo.", true);
     }
   });
 
@@ -1221,11 +1221,11 @@ function initializeGoogleCalendarSettings() {
     try {
       const result = await window.DrRosaApi.pullGoogleCalendarChanges();
       showGoogleMessage(
-        `Google pull zavrsen. Procitano: ${result.fetched || 0}, azurirano: ${result.updated || 0}, otkazano: ${result.cancelled || 0}, preskoceno: ${Number(result.skippedExternal || 0) + Number(result.skippedMissingLocal || 0) + Number(result.skippedUnsupportedTime || 0) + Number(result.skippedConflicts || 0)}.`
+        `Preuzimanje iz Google-a je završeno. Pročitano: ${result.fetched || 0}, ažurirano: ${result.updated || 0}, otkazano: ${result.cancelled || 0}, preskočeno: ${Number(result.skippedExternal || 0) + Number(result.skippedMissingLocal || 0) + Number(result.skippedUnsupportedTime || 0) + Number(result.skippedConflicts || 0)}.`
       );
       await loadGoogleCalendarSettings();
     } catch (error) {
-      showGoogleMessage(error.message || "Google izmene nisu povucene.", true);
+      showGoogleMessage(error.message || "Google izmene nisu povučene.", true);
     }
   });
 
@@ -1294,13 +1294,13 @@ async function loadBackupsPanel() {
         <td>${escapeHtml(backup.status)}</td>
         <td class="table-actions">
           <button class="secondary-btn" type="button" data-download-backup="${backup.id}" data-backup-filename="${escapeHtml(backup.filename)}">Preuzmi</button>
-          <button class="secondary-btn" type="button" data-test-backup="${backup.id}">Test restore</button>
-          <button class="secondary-btn danger-btn" type="button" data-restore-backup="${backup.id}">Restore</button>
+          <button class="secondary-btn" type="button" data-test-backup="${backup.id}">Test vraćanja</button>
+          <button class="secondary-btn danger-btn" type="button" data-restore-backup="${backup.id}">Vrati</button>
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-row">Nema backup fajlova.</td></tr>`;
+    `).join("") : `<tr><td colspan="5" class="empty-row">Nema rezervnih kopija.</td></tr>`;
   } catch (error) {
-    showSystemMessage("backup-message", error.message || "Backup status nije ucitan.", true);
+    showSystemMessage("backup-message", error.message || "Status rezervnih kopija nije učitan.", true);
   }
 }
 
@@ -1313,12 +1313,12 @@ async function loadSecurityPanel() {
         <td>${escapeHtml(user.name)}<br><small>${escapeHtml(user.email)}</small></td>
         <td>${escapeHtml(user.role)}</td>
         <td>${escapeHtml((user.permissions || []).slice(0, 4).join(", ") || "-")}${(user.permissions || []).length > 4 ? `<br><small>+${(user.permissions || []).length - 4}</small>` : ""}</td>
-        <td>${user.failedLoginAttempts}${user.lockedUntil ? `<br><small>Zakljucan do ${formatDateTime(user.lockedUntil)}</small>` : ""}</td>
-        <td>${user.twoFactorEnabled ? "Ukljucen" : "Iskljucen"}</td>
+        <td>${user.failedLoginAttempts}${user.lockedUntil ? `<br><small>Zaključan do ${formatDateTime(user.lockedUntil)}</small>` : ""}</td>
+        <td>${user.twoFactorEnabled ? "Uključen" : "Isključen"}</td>
         <td class="table-actions">
-          <button class="secondary-btn" type="button" data-unlock-user="${user.id}">Otkljucaj</button>
+          <button class="secondary-btn" type="button" data-unlock-user="${user.id}">Otključaj</button>
           <button class="secondary-btn" type="button" data-reset-user-password="${user.id}">Reset lozinke</button>
-          <button class="secondary-btn" type="button" data-edit-user-permissions="${user.id}" data-permissions="${escapeHtml((user.permissions || []).join(","))}">Permisije</button>
+          <button class="secondary-btn" type="button" data-edit-user-permissions="${user.id}" data-permissions="${escapeHtml((user.permissions || []).join(","))}">Dozvole</button>
         </td>
       </tr>
     `).join("");
@@ -1337,7 +1337,7 @@ async function loadSecurityPanel() {
         <td>${escapeHtml(test.status)}</td>
         <td>${escapeHtml(test.message || "-")}</td>
       </tr>
-    `).join("") : `<tr><td colspan="4" class="empty-row">Nema test restore provera.</td></tr>`;
+    `).join("") : `<tr><td colspan="4" class="empty-row">Nema provera vraćanja rezervne kopije.</td></tr>`;
     document.getElementById("audit-log-table").innerHTML = status.auditLog.length ? status.auditLog.map(item => `
       <tr>
         <td>${formatDateTime(item.createdAt)}</td>
@@ -1348,7 +1348,7 @@ async function loadSecurityPanel() {
       </tr>
     `).join("") : `<tr><td colspan="5" class="empty-row">Nema audit aktivnosti.</td></tr>`;
   } catch (error) {
-    showSystemMessage("security-message", error.message || "Sigurnosni status nije ucitan.", true);
+    showSystemMessage("security-message", error.message || "Sigurnosni status nije učitan.", true);
   }
 }
 
@@ -1357,10 +1357,10 @@ function initializeBackupSecurity() {
     event.currentTarget.disabled = true;
     try {
       await window.DrRosaApi.createBackup();
-      showSystemMessage("backup-message", "Backup je napravljen.");
+      showSystemMessage("backup-message", "Rezervna kopija je napravljena.");
       await loadBackupsPanel();
     } catch (error) {
-      showSystemMessage("backup-message", error.message || "Backup nije napravljen.", true);
+      showSystemMessage("backup-message", error.message || "Rezervna kopija nije napravljena.", true);
     } finally {
       event.currentTarget.disabled = false;
     }
@@ -1374,29 +1374,29 @@ function initializeBackupSecurity() {
       try {
         await downloadBackup(download.dataset.downloadBackup, download.dataset.backupFilename);
       } catch (error) {
-        showSystemMessage("backup-message", error.message || "Backup nije preuzet.", true);
+        showSystemMessage("backup-message", error.message || "Rezervna kopija nije preuzeta.", true);
       }
       return;
     }
     if (test) {
       try {
         await window.DrRosaApi.testRestoreBackup(test.dataset.testBackup);
-        showSystemMessage("backup-message", "Test restore je zavrsen.");
+        showSystemMessage("backup-message", "Test vraćanja je završen.");
         await loadSecurityPanel();
       } catch (error) {
-        showSystemMessage("backup-message", error.message || "Test restore nije uspeo.", true);
+        showSystemMessage("backup-message", error.message || "Test vraćanja nije uspeo.", true);
       }
       return;
     }
     if (!button) return;
-    const confirmation = window.prompt("Za restore unesite tacno: VRATI BACKUP");
+    const confirmation = window.prompt("Za vraćanje unesite tačno: VRATI BACKUP");
     if (confirmation !== "VRATI BACKUP") return;
     try {
       await window.DrRosaApi.restoreBackup(button.dataset.restoreBackup, confirmation);
-      showSystemMessage("backup-message", "Backup je vracen. Osvezite aplikaciju pre nastavka rada.");
+      showSystemMessage("backup-message", "Rezervna kopija je vraćena. Osvežite aplikaciju pre nastavka rada.");
       await loadBackupsPanel();
     } catch (error) {
-      showSystemMessage("backup-message", error.message || "Restore nije uspeo.", true);
+      showSystemMessage("backup-message", error.message || "Vraćanje nije uspelo.", true);
     }
   });
 
@@ -1407,7 +1407,7 @@ function initializeBackupSecurity() {
     try {
       if (unlock) {
         await window.DrRosaApi.unlockUser(unlock.dataset.unlockUser);
-        showSystemMessage("security-message", "Nalog je otkljucan.");
+        showSystemMessage("security-message", "Nalog je otključan.");
       }
       if (reset) {
         const newPassword = window.prompt("Unesite novu lozinku, najmanje 12 karaktera.");
@@ -1417,13 +1417,13 @@ function initializeBackupSecurity() {
       }
       if (permissions) {
         const current = permissions.dataset.permissions || "";
-        const raw = window.prompt("Permisije odvojene zarezom (* za sve):", current);
+        const raw = window.prompt("Dozvole odvojene zarezom (* za sve):", current);
         if (raw === null) return;
         await window.DrRosaApi.updateUserPermissions(
           permissions.dataset.editUserPermissions,
           raw.split(",").map(item => item.trim()).filter(Boolean)
         );
-        showSystemMessage("security-message", "Permisije su sacuvane.");
+        showSystemMessage("security-message", "Dozvole su sačuvane.");
       }
       await loadSecurityPanel();
     } catch (error) {
@@ -1445,7 +1445,7 @@ function initializeBackupSecurity() {
 
   document.getElementById("legal-export-btn")?.addEventListener("click", async () => {
     try {
-      const payload = await window.DrRosaApi.getLegalExport();
+      const payload = await window.DrRosaApi.getPravnoExport();
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -1455,9 +1455,9 @@ function initializeBackupSecurity() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      showSystemMessage("security-message", "Legal export je napravljen.");
+      showSystemMessage("security-message", "Pravno export je napravljen.");
     } catch (error) {
-      showSystemMessage("security-message", error.message || "Legal export nije napravljen.", true);
+      showSystemMessage("security-message", error.message || "Pravno export nije napravljen.", true);
     }
   });
 
@@ -1469,7 +1469,7 @@ function initializeBackupSecurity() {
         document.getElementById("new-password").value
       );
       event.currentTarget.reset();
-      showSystemMessage("security-message", "Lozinka je promenjena. Prijavite se ponovo na drugim uredjajima.");
+      showSystemMessage("security-message", "Lozinka je promenjena. Prijavite se ponovo na drugim uređajima.");
     } catch (error) {
       showSystemMessage("security-message", error.message || "Lozinka nije promenjena.", true);
     }
@@ -1489,7 +1489,7 @@ function initializeBackupSecurity() {
   document.getElementById("verify-2fa-btn")?.addEventListener("click", async () => {
     try {
       await window.DrRosaApi.verifyTwoFactor(document.getElementById("two-factor-verify-code").value);
-      showSystemMessage("security-message", "2FA je ukljucen za direktora.");
+      showSystemMessage("security-message", "2FA je uključen za direktora.");
       await loadSecurityPanel();
     } catch (error) {
       showSystemMessage("security-message", error.message || "2FA kod nije ispravan.", true);
@@ -1497,14 +1497,14 @@ function initializeBackupSecurity() {
   });
 
   document.getElementById("disable-2fa-btn")?.addEventListener("click", async () => {
-    const password = window.prompt("Unesite direktor lozinku za iskljucivanje 2FA.");
+    const password = window.prompt("Unesite direktor lozinku za isključivanje 2FA.");
     if (!password) return;
     try {
       await window.DrRosaApi.disableTwoFactor(password);
-      showSystemMessage("security-message", "2FA je iskljucen.");
+      showSystemMessage("security-message", "2FA je isključen.");
       await loadSecurityPanel();
     } catch (error) {
-      showSystemMessage("security-message", error.message || "2FA nije iskljucen.", true);
+      showSystemMessage("security-message", error.message || "2FA nije isključen.", true);
     }
   });
 }
@@ -1513,7 +1513,7 @@ async function downloadBackup(backupId, filename) {
   const response = await fetch(`/api/director/backups/${backupId}/download`, {
     credentials: "include"
   });
-  if (!response.ok) throw new Error("Backup nije preuzet.");
+  if (!response.ok) throw new Error("Rezervna kopija nije preuzeta.");
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
