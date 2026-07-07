@@ -303,6 +303,10 @@ function applyMigrations() {
   runMigration('2026-07-03-payment-amount-paid', () => {
     ensureColumn('payments', 'amount_paid', "REAL NOT NULL DEFAULT 0");
   });
+  runMigration('2026-07-03-payment-parts', () => {
+    ensurePaymentPartsTable();
+    backfillPaymentParts();
+  });
 }
 
 function ensureMigrationLedger() {
@@ -329,6 +333,51 @@ function ensureAppSettingsTable() {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `);
+}
+
+function ensurePaymentPartsTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payment_parts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      payment_id INTEGER NOT NULL REFERENCES payments(id) ON DELETE CASCADE,
+      visit_record_id INTEGER NOT NULL REFERENCES visit_records(id) ON DELETE CASCADE,
+      patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE RESTRICT,
+      amount REAL NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'EUR',
+      exchange_rate_to_rsd REAL NOT NULL DEFAULT 1,
+      amount_rsd REAL NOT NULL DEFAULT 0,
+      payment_method TEXT,
+      payment_date TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_payment_parts_payment ON payment_parts(payment_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_parts_visit ON payment_parts(visit_record_id);
+  `);
+}
+
+function backfillPaymentParts() {
+  const rows = db.prepare(`
+    SELECT p.*
+    FROM payments p
+    LEFT JOIN payment_parts pp ON pp.payment_id = p.id
+    WHERE COALESCE(p.amount_paid, 0) > 0
+    GROUP BY p.id
+    HAVING COUNT(pp.id) = 0
+  `).all();
+  const insert = db.prepare(`
+    INSERT INTO payment_parts (
+      payment_id, visit_record_id, patient_id, amount, currency, exchange_rate_to_rsd,
+      amount_rsd, payment_method, payment_date, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  rows.forEach(row => {
+    const currency = normalizeCurrency(row.currency);
+    const amount = money(row.amount_paid);
+    const rate = exchangeRateToRsd(currency);
+    insert.run(row.id, row.visit_record_id, row.patient_id, amount, currency, rate, amount * rate, row.payment_method || '', row.payment_date || todayIsoDate(), 'Migrirano iz starog placenog iznosa');
+  });
 }
 
 function seedAppSetting(key, value) {
@@ -1590,6 +1639,108 @@ function money(value) {
   return Math.max(0, Number(value || 0));
 }
 
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function exchangeRateToRsd(currency) {
+  const normalized = normalizeCurrency(currency);
+  if (normalized === 'RSD') return 1;
+  const local = localExchangeRate('RSD', normalized);
+  if (local?.rate > 0) return 1 / Number(local.rate);
+  const direct = localExchangeRate(normalized, 'RSD');
+  if (direct?.rate > 0) return Number(direct.rate);
+  return normalized === 'USD' ? 108 : 117;
+}
+
+function normalizePaymentPart(part) {
+  const currency = normalizeCurrency(part.currency);
+  const amount = money(part.amount);
+  const providedRate = Number(part.exchangeRateToRsd ?? part.exchange_rate_to_rsd ?? 0);
+  const rate = providedRate > 0 ? providedRate : exchangeRateToRsd(currency);
+  return {
+    amount: roundMoney(amount),
+    currency,
+    exchangeRateToRsd: rate,
+    amountRsd: roundMoney(amount * rate),
+    paymentMethod: cleanText(part.paymentMethod || part.payment_method, { max: 80 }),
+    paymentDate: cleanText(part.paymentDate || part.payment_date || todayIsoDate(), { max: 20 }),
+    notes: cleanText(part.notes, { max: 1000 })
+  };
+}
+
+function normalizedPaymentParts(record) {
+  const parts = Array.isArray(record.paymentParts)
+    ? record.paymentParts
+    : Array.isArray(record.payment_parts)
+      ? record.payment_parts
+      : null;
+  if (parts) return parts.map(normalizePaymentPart).filter(part => part.amount > 0);
+
+  const amountPaid = money(record.amount_paid ?? record.amountPaid ?? 0);
+  if (amountPaid <= 0) return [];
+  return [normalizePaymentPart({
+    amount: amountPaid,
+    currency: record.currency,
+    paymentMethod: record.payment_method,
+    paymentDate: record.payment_date
+  })];
+}
+
+function calculatePaymentSummary({ amount, currency, paymentParts, paymentStatus }) {
+  const total = money(amount);
+  const recordCurrency = normalizeCurrency(currency);
+  const recordRate = exchangeRateToRsd(recordCurrency);
+  const totalRsd = total * recordRate;
+  const paidRsd = paymentParts.reduce((sum, part) => sum + Number(part.amountRsd || 0), 0);
+  const paidInRecordCurrency = roundMoney(recordRate > 0 ? paidRsd / recordRate : paidRsd);
+  const debtInRecordCurrency = roundMoney(Math.max(0, total - paidInRecordCurrency));
+  const status = total > 0
+    ? paidRsd <= 0
+      ? 'Dugovanje'
+      : paidRsd + 0.01 >= totalRsd
+        ? 'PlaÄ‡eno'
+        : 'DelimiÄno'
+    : normalizePaymentStatus(paymentStatus);
+  return {
+    amountDue: debtInRecordCurrency,
+    amountPaid: Math.min(total || paidInRecordCurrency, paidInRecordCurrency),
+    paymentStatus: status
+  };
+}
+
+function totalAmountForPayment(record, paymentParts, currency) {
+  const explicit = money(record.totalAmount ?? record.total_amount ?? 0);
+  if (explicit > 0) return explicit;
+  const recordRate = exchangeRateToRsd(currency);
+  const paidInRecordCurrency = paymentParts.reduce((sum, part) => sum + (recordRate > 0 ? Number(part.amountRsd || 0) / recordRate : Number(part.amount || 0)), 0);
+  return roundMoney(money(record.amount) + paidInRecordCurrency);
+}
+
+function replacePaymentParts({ paymentId, visitRecordId, patientId, paymentParts }) {
+  db.prepare('DELETE FROM payment_parts WHERE payment_id = ?').run(paymentId);
+  const insert = db.prepare(`
+    INSERT INTO payment_parts (
+      payment_id, visit_record_id, patient_id, amount, currency, exchange_rate_to_rsd,
+      amount_rsd, payment_method, payment_date, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  paymentParts.forEach(part => {
+    insert.run(
+      paymentId,
+      visitRecordId,
+      patientId,
+      part.amount,
+      part.currency,
+      part.exchangeRateToRsd,
+      part.amountRsd,
+      part.paymentMethod,
+      part.paymentDate,
+      part.notes
+    );
+  });
+}
+
 function signedMoney(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) ? number : 0;
@@ -2799,6 +2950,12 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), (_
       FROM treatments
       WHERE visit_record_id = ?
     `);
+    const getPaymentParts = db.prepare(`
+      SELECT id, amount, currency, exchange_rate_to_rsd, amount_rsd, payment_method, payment_date, notes
+      FROM payment_parts
+      WHERE visit_record_id = ?
+      ORDER BY payment_date, id
+    `);
 
     res.json(records.map(record => {
       const treatments = {};
@@ -2817,7 +2974,17 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), (_
         });
       });
       const inferredPaid = Math.max(0, treatmentTotal - Number(record.amount_due || 0));
-      return { ...record, amount_paid: Number(record.amount_paid || inferredPaid || 0), treatments };
+      const paymentParts = getPaymentParts.all(record.id).map(part => ({
+        id: part.id,
+        amount: Number(part.amount || 0),
+        currency: part.currency || 'EUR',
+        exchangeRateToRsd: Number(part.exchange_rate_to_rsd || 0),
+        amountRsd: Number(part.amount_rsd || 0),
+        paymentMethod: part.payment_method || '',
+        paymentDate: part.payment_date || '',
+        notes: part.notes || ''
+      }));
+      return { ...record, amount_paid: Number(record.amount_paid || inferredPaid || 0), paymentParts, treatments };
     }));
   } catch (error) {
     console.error('Get records error:', error);
@@ -2845,17 +3012,27 @@ function insertRecordTransaction(record) {
 
   const visitId = visitResult.lastInsertRowid;
 
-  db.prepare(`
+  const paymentParts = normalizedPaymentParts(record);
+  const totalAmount = totalAmountForPayment(record, paymentParts, record.currency);
+  const summary = calculatePaymentSummary({
+    amount: totalAmount,
+    currency: record.currency,
+    paymentParts,
+    paymentStatus: record.payment_status
+  });
+
+  const paymentResult = db.prepare(`
     INSERT INTO payments (visit_record_id, patient_id, amount, amount_paid, currency, payment_status)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(
     visitId,
     patientId,
-    Math.max(0, Number(record.amount || 0)),
-    Math.max(0, Number(record.amount_paid ?? record.amountPaid ?? 0)),
+    summary.amountDue,
+    summary.amountPaid,
     normalizeCurrency(record.currency),
-    normalizePaymentStatus(record.payment_status)
+    summary.paymentStatus
   );
+  replacePaymentParts({ paymentId: paymentResult.lastInsertRowid, visitRecordId: visitId, patientId, paymentParts });
 
   if (record.treatments && typeof record.treatments === 'object') {
     const insertTreatment = db.prepare(`
@@ -2945,18 +3122,44 @@ app.put('/api/records/:id', authenticateToken, requirePermission('records:write'
       || req.body.amountPaid !== undefined
       || req.body.currency !== undefined
       || req.body.payment_status !== undefined
+      || req.body.paymentParts !== undefined
+      || req.body.payment_parts !== undefined
     ) {
-      db.prepare(`
-        UPDATE payments
-        SET amount = ?, amount_paid = ?, currency = ?, payment_status = ?
-        WHERE visit_record_id = ?
-      `).run(
-        Math.max(0, Number(req.body.amount ?? 0)),
-        Math.max(0, Number(req.body.amount_paid ?? req.body.amountPaid ?? 0)),
-        normalizeCurrency(req.body.currency),
-        normalizePaymentStatus(req.body.payment_status),
-        req.params.id
-      );
+      const payment = db.prepare('SELECT * FROM payments WHERE visit_record_id = ?').get(req.params.id);
+      const patientId = payment?.patient_id || current.patient_id;
+      const amount = req.body.amount ?? payment?.amount ?? 0;
+      const currency = req.body.currency ?? payment?.currency ?? 'EUR';
+      const paymentParts = normalizedPaymentParts({
+        ...req.body,
+        amount_paid: req.body.amount_paid ?? req.body.amountPaid ?? payment?.amount_paid ?? 0,
+        currency
+      });
+      const summary = calculatePaymentSummary({
+        amount: totalAmountForPayment({ ...req.body, amount }, paymentParts, currency),
+        currency,
+        paymentParts,
+        paymentStatus: req.body.payment_status ?? payment?.payment_status
+      });
+      if (!payment) {
+        const result = db.prepare(`
+          INSERT INTO payments (visit_record_id, patient_id, amount, amount_paid, currency, payment_status)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(req.params.id, patientId, summary.amountDue, summary.amountPaid, normalizeCurrency(currency), summary.paymentStatus);
+        replacePaymentParts({ paymentId: result.lastInsertRowid, visitRecordId: Number(req.params.id), patientId, paymentParts });
+      } else {
+        db.prepare(`
+          UPDATE payments
+          SET amount = ?, amount_paid = ?, currency = ?, payment_status = ?
+          WHERE visit_record_id = ?
+        `).run(
+          summary.amountDue,
+          summary.amountPaid,
+          normalizeCurrency(currency),
+          summary.paymentStatus,
+          req.params.id
+        );
+        replacePaymentParts({ paymentId: payment.id, visitRecordId: Number(req.params.id), patientId, paymentParts });
+      }
     }
 
     res.json({ id: Number(req.params.id), message: 'Record updated successfully' });

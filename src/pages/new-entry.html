@@ -239,17 +239,38 @@
             </label>
             <label>
               Plaćeno
-              <input id="amount-paid" name="amountPaid" type="number" min="0" step="0.01" placeholder="0.00" />
+              <input id="amount-paid" name="amountPaid" type="hidden" value="0" />
             </label>
             <label>
               Iznos duga
-              <input id="amount-due" name="amountDue" type="number" min="0" step="0.01" placeholder="0.00" />
+              <input id="amount-due" name="amountDue" type="number" min="0" step="0.01" placeholder="0.00" readonly />
             </label>
+            <label>
+              Ukupno za naplatu
+              <input id="total-amount" name="totalAmount" type="number" min="0" step="0.01" placeholder="0.00" />
+            </label>
+            <div class="payment-builder full-width">
+              <div class="payment-builder-header">
+                <div>
+                  <span class="payment-builder-title">Uplate</span>
+                  <small>Dodajte jednu ili vise uplata, svaka moze imati drugu valutu.</small>
+                </div>
+                <button type="button" class="secondary-btn" id="add-payment-part">Dodaj uplatu</button>
+              </div>
+              <div id="payment-parts-list" class="payment-parts-list"></div>
+              <div class="payment-summary-strip">
+                <span>Ukupno za naplatu: <strong id="payment-total-display">0.00 EUR</strong></span>
+                <span>Placeno: <strong id="payment-paid-display">0.00 EUR</strong></span>
+                <span>Dug: <strong id="payment-debt-display">0.00 EUR</strong></span>
+              </div>
+            </div>
             <label class="full-width">
               Napomena
               <textarea id="note" name="note" rows="4" placeholder="Kontrola za 2 nedelje"></textarea>
             </label>
           </div>
+
+          <div id="save-status" class="save-status" aria-live="assertive"></div>
 
           <div class="form-actions">
             <button type="submit" class="primary-btn">Sačuvaj unos</button>
@@ -283,6 +304,8 @@
           <p id="preview-amount-due">0.00</p>
           <p class="preview-label">Valuta plaćanja</p>
           <p id="preview-currency">EUR</p>
+          <p class="preview-label">Uplate</p>
+          <p id="preview-payment-parts">-</p>
           <p class="preview-label">Smena</p>
           <p id="preview-shift">Prva smena</p>
           <p class="preview-label">Napomena</p>
@@ -298,6 +321,6 @@
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/procedure-catalog.js"></script>
   <script src="../scripts/treatment-history.js"></script>
-  <script src="../scripts/new-entry.js"></script>
+  <script src="../scripts/new-entry.js?v=split-payments-20260704b"></script>
 </body>
 </html>

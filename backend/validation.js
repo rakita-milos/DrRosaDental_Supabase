@@ -86,6 +86,18 @@ const treatmentSchema = Joi.object({
   discount_value: Joi.number().min(0).optional().allow(null)
 });
 
+const paymentPartSchema = Joi.object({
+  amount: Joi.number().min(0).required(),
+  currency: Joi.string().max(10).optional().allow('', null),
+  exchangeRateToRsd: Joi.number().min(0).optional().allow(null),
+  exchange_rate_to_rsd: Joi.number().min(0).optional().allow(null),
+  paymentMethod: Joi.string().max(80).optional().allow('', null),
+  payment_method: Joi.string().max(80).optional().allow('', null),
+  paymentDate: Joi.string().max(20).optional().allow('', null),
+  payment_date: Joi.string().max(20).optional().allow('', null),
+  notes: Joi.string().max(1000).optional().allow('', null)
+});
+
 const recordCreateSchema = Joi.object({
   patient_id: Joi.number().integer().positive().required(),
   doctor_id: Joi.number().integer().positive().required(),
@@ -93,12 +105,16 @@ const recordCreateSchema = Joi.object({
   procedure: Joi.string().max(255).required(),
   status: Joi.string().max(80).optional().allow('', null),
   notes: Joi.string().max(2000).optional().allow('', null),
+  totalAmount: Joi.number().min(0).optional().allow(null),
+  total_amount: Joi.number().min(0).optional().allow(null),
   amount: Joi.number().min(0).optional().allow(null),
   amount_paid: Joi.number().min(0).optional().allow(null),
   amountPaid: Joi.number().min(0).optional().allow(null),
   currency: Joi.string().max(10).optional().allow('', null),
   payment_status: Joi.string().max(80).optional().allow('', null),
   shift: Joi.string().max(80).optional().allow('', null),
+  paymentParts: Joi.array().items(paymentPartSchema).optional(),
+  payment_parts: Joi.array().items(paymentPartSchema).optional(),
   treatments: Joi.alternatives().try(
     Joi.array().items(treatmentSchema),
     Joi.object().pattern(Joi.string().max(20), Joi.alternatives().try(treatmentSchema, Joi.array().items(treatmentSchema)))

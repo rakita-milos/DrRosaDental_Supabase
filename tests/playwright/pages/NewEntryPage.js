@@ -13,6 +13,7 @@ class NewEntryPage {
     this.shift = page.locator("#shift");
     this.amountPaid = page.locator("#amount-paid");
     this.amountDue = page.locator("#amount-due");
+    this.totalAmount = page.locator("#total-amount");
     this.note = page.locator("#note");
     this.submit = page.getByRole("button", { name: /Spremi unos/i });
     this.alert = page.locator(".form-alert");
@@ -44,7 +45,12 @@ class NewEntryPage {
     await this.paymentStatus.selectOption({ index: data.paymentIndex || 0 });
     await this.currency.selectOption(data.currency || "EUR");
     await this.shift.selectOption(data.shift || "Prva smena");
-    await this.amountDue.fill(String(data.amountDue ?? 0));
+    if (data.totalAmount !== undefined) {
+      await this.totalAmount.fill(String(data.totalAmount));
+    }
+    if (data.amountDue !== undefined) {
+      await expect(this.amountDue).toHaveValue(String(data.amountDue));
+    }
     await this.note.fill(data.note || "Automated Playwright visit smoke test");
   }
 
@@ -71,6 +77,7 @@ class NewEntryPage {
     await expect(this.shift).toBeVisible();
     await expect(this.amountPaid).toBeVisible();
     await expect(this.amountDue).toBeVisible();
+    await expect(this.totalAmount).toBeVisible();
     await expect(this.note).toBeVisible();
   }
 

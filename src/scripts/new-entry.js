@@ -25,6 +25,8 @@ async function requireAccess() {
 
 const form = document.getElementById("new-entry-form");
 const alertBox = document.querySelector(".form-alert");
+const saveStatusBox = document.getElementById("save-status");
+const submitButton = form?.querySelector("button[type='submit']");
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
 const previewElements = {
   name: document.getElementById("preview-name"),
@@ -35,6 +37,7 @@ const previewElements = {
   amountPaid: document.getElementById("preview-amount-paid"),
   amountDue: document.getElementById("preview-amount-due"),
   currency: document.getElementById("preview-currency"),
+  paymentParts: document.getElementById("preview-payment-parts"),
   shift: document.getElementById("preview-shift"),
   note: document.getElementById("preview-note")
 };
@@ -49,7 +52,13 @@ const inputs = {
   paymentStatus: document.getElementById("payment-status"),
   amountPaid: document.getElementById("amount-paid"),
   amountDue: document.getElementById("amount-due"),
+  totalAmount: document.getElementById("total-amount"),
   currency: document.getElementById("currency"),
+  paymentPartsList: document.getElementById("payment-parts-list"),
+  addPaymentPart: document.getElementById("add-payment-part"),
+  paymentTotalDisplay: document.getElementById("payment-total-display"),
+  paymentPaidDisplay: document.getElementById("payment-paid-display"),
+  paymentDebtDisplay: document.getElementById("payment-debt-display"),
   shift: document.getElementById("shift"),
   note: document.getElementById("note")
 };
@@ -59,6 +68,9 @@ let doctors = [];
 let allRecords = [];
 let teethTreatments = {};
 let selectedTeeth = new Set();
+let paymentParts = [];
+let totalAmountTouched = false;
+let alertTimeout;
 const procedureCatalog = window.DrRosaProcedureCatalog;
 const currencyUtils = window.DrRosaCurrencyUtils;
 
@@ -76,26 +88,64 @@ function formatDate(rawDate) {
   return new Date(rawDate).toLocaleDateString("hr-HR", { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
-function showAlert(message, type = "success") {
-  alertBox.textContent = message;
-  alertBox.className = `form-alert ${type}`;
-  setTimeout(() => {
-    alertBox.textContent = "";
-    alertBox.className = "form-alert";
-  }, 4500);
+function setAlertElement(element, message, type) {
+  if (!element) return;
+  element.textContent = message;
+  element.className = element.id === "save-status" ? `save-status ${type}` : `form-alert ${type}`;
+}
+
+function clearAlertElement(element) {
+  if (!element) return;
+  element.textContent = "";
+  element.className = element.id === "save-status" ? "save-status" : "form-alert";
+}
+
+function showAlert(message, type = "success", options = {}) {
+  const { persist = type === "error" || type === "info", scroll = false } = options;
+  window.clearTimeout(alertTimeout);
+  setAlertElement(alertBox, message, type);
+  setAlertElement(saveStatusBox, message, type);
+  if (scroll) {
+    (saveStatusBox || alertBox)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  if (!persist) {
+    alertTimeout = window.setTimeout(() => {
+      clearAlertElement(alertBox);
+      clearAlertElement(saveStatusBox);
+    }, 6500);
+  }
+}
+
+function setSubmitting(isSubmitting) {
+  if (!submitButton) return;
+  submitButton.disabled = isSubmitting;
+  submitButton.textContent = isSubmitting ? "Čuvanje..." : "Sačuvaj unos";
+}
+
+function controlLabel(control) {
+  const label = control.closest("label")?.childNodes?.[0]?.textContent?.trim()
+    || document.querySelector(`label[for="${control.id}"]`)?.textContent?.trim()
+    || control.name
+    || control.id
+    || "polje";
+  return label.replace(/\s+/g, " ");
 }
 
 function updatePreview() {
   const procedureText = inputs.procedure.value.trim();
   const activityText = inputs.procedureActivity.value.trim();
+  const summary = paymentSummary();
   previewElements.name.textContent = inputs.patient.value.trim() || "-";
   previewElements.visit.textContent = formatDate(inputs.lastVisit.value);
   previewElements.procedure.textContent = procedureText ? `${activityText ? `${activityText} / ` : ""}${procedureText}` : (hasToothTreatments() ? "Rad po zubima" : "-");
   previewElements.status.textContent = inputs.status.value;
   previewElements.paymentStatus.textContent = inputs.paymentStatus.value;
-  previewElements.amountPaid.textContent = Number(inputs.amountPaid.value || 0).toFixed(2);
-  previewElements.amountDue.textContent = Number(inputs.amountDue.value || 0).toFixed(2);
+  previewElements.amountPaid.textContent = formatMoney(summary.paid, summary.currency);
+  previewElements.amountDue.textContent = formatMoney(summary.debt, summary.currency);
   previewElements.currency.textContent = inputs.currency.value;
+  if (previewElements.paymentParts) {
+    previewElements.paymentParts.textContent = paymentParts.length ? paymentParts.map(paymentPartLabel).join(" / ") : "-";
+  }
   previewElements.shift.textContent = inputs.shift.value;
   previewElements.note.textContent = inputs.note.value.trim() || "-";
 }
@@ -268,10 +318,16 @@ function openRecordInForm(record) {
   setSelectValue(inputs.shift, record.shift || "");
   inputs.note.value = record.note === "-" ? "" : (record.note || "");
   teethTreatments = cloneTreatments(record.treatments, record.currency || paymentCurrency());
+  const inferredTotal = Number(record.amountDue || 0) + Number(record.amountPaid || 0);
+  inputs.totalAmount.value = inferredTotal > 0 ? inferredTotal.toFixed(2) : "";
+  totalAmountTouched = inferredTotal > 0;
   updateTeethSummary();
   updateToothHighlights();
   updateAmountDueLimit();
-  inputs.amountPaid.value = Math.max(0, currentVisitTotal() - Number(record.amountDue || 0)).toFixed(2);
+  paymentParts = (record.paymentParts || []).map(normalizedPaymentPart);
+  if (!paymentParts.length && Number(record.amountPaid || 0) > 0) {
+    paymentParts = [normalizedPaymentPart({ amount: record.amountPaid, currency: record.currency || paymentCurrency() })];
+  }
   updatePaymentCalculation();
   updatePreview();
   showAlert("Pregled je otvoren sa postojećim podacima.");
@@ -294,6 +350,111 @@ let toothHistoryCollapsed = false;
 
 function formatMoney(amount, currency = paymentCurrency()) {
   return currencyUtils ? currencyUtils.formatMoney(amount, currency) : `${Number(amount || 0).toFixed(2)} ${currency}`;
+}
+
+function todayInputDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function availableCurrencyCodes() {
+  const selectCodes = Array.from(inputs.currency?.options || []).map(option => option.value).filter(Boolean);
+  const utilityCodes = currencyUtils?.currencyItems ? currencyUtils.currencyItems().map(item => item.value).filter(Boolean) : [];
+  return Array.from(new Set([...selectCodes, ...utilityCodes, "EUR", "RSD", "USD"]));
+}
+
+function normalizedPaymentPart(part = {}) {
+  return {
+    amount: Math.max(0, Number(part.amount || 0)),
+    currency: String(part.currency || paymentCurrency() || "EUR").toUpperCase(),
+    paymentMethod: part.paymentMethod || part.payment_method || "Gotovina",
+    paymentDate: part.paymentDate || part.payment_date || todayInputDate(),
+    notes: part.notes || ""
+  };
+}
+
+function paymentPartLabel(part) {
+  const normalized = normalizedPaymentPart(part);
+  return `${formatMoney(normalized.amount, normalized.currency)}${normalized.paymentMethod ? ` (${normalized.paymentMethod})` : ""}`;
+}
+
+function paymentSummary() {
+  const total = currentVisitTotal();
+  const currency = paymentCurrency();
+  const paid = paymentParts.reduce((sum, part) => {
+    const normalized = normalizedPaymentPart(part);
+    const converted = currencyUtils
+      ? currencyUtils.convert(normalized.amount, normalized.currency, currency)
+      : normalized.amount;
+    return sum + Number(converted || 0);
+  }, 0);
+  const clampedPaid = total > 0 ? Math.min(paid, total) : paid;
+  const debt = Math.max(0, total - clampedPaid);
+  const status = total > 0
+    ? clampedPaid <= 0
+      ? "Dugovanje"
+      : clampedPaid + 0.01 >= total
+        ? "Placeno"
+        : "Delimicno"
+    : inputs.paymentStatus.value;
+  return { total, paid: clampedPaid, rawPaid: paid, debt, status, currency };
+}
+
+function renderPaymentParts() {
+  if (!inputs.paymentPartsList) return;
+  const currencies = availableCurrencyCodes();
+  inputs.paymentPartsList.innerHTML = paymentParts.length ? paymentParts.map((part, index) => {
+    const normalized = normalizedPaymentPart(part);
+    const currencyOptions = currencies.map(currency => `<option value="${escapeHtml(currency)}"${currency === normalized.currency ? " selected" : ""}>${escapeHtml(currency)}</option>`).join("");
+    return `
+      <div class="payment-part-row" data-payment-index="${index}">
+        <label>
+          Iznos
+          <input class="payment-part-amount" type="number" min="0" step="0.01" value="${Number(normalized.amount || 0) || ""}" />
+        </label>
+        <label>
+          Valuta
+          <select class="payment-part-currency">${currencyOptions}</select>
+        </label>
+        <label>
+          Nacin
+          <select class="payment-part-method">
+            ${["Gotovina", "Kartica", "Transfer", "Avans"].map(method => `<option value="${escapeHtml(method)}"${method === normalized.paymentMethod ? " selected" : ""}>${escapeHtml(method)}</option>`).join("")}
+          </select>
+        </label>
+        <label>
+          Datum
+          <input class="payment-part-date" type="date" value="${escapeHtml(normalized.paymentDate)}" />
+        </label>
+        <label class="payment-part-notes">
+          Napomena
+          <input class="payment-part-note" type="text" maxlength="1000" value="${escapeHtml(normalized.notes)}" />
+        </label>
+        <button class="danger-btn payment-part-remove" type="button" aria-label="Obrisi uplatu">x</button>
+      </div>
+    `;
+  }).join("") : `<div class="payment-empty-state">Nema dodatih uplata. Dug ce biti jednak ukupnoj ceni.</div>`;
+
+  inputs.paymentPartsList.querySelectorAll(".payment-part-row").forEach(row => {
+    const index = Number(row.dataset.paymentIndex);
+    const updatePart = () => {
+      paymentParts[index] = normalizedPaymentPart({
+        amount: row.querySelector(".payment-part-amount")?.value,
+        currency: row.querySelector(".payment-part-currency")?.value,
+        paymentMethod: row.querySelector(".payment-part-method")?.value,
+        paymentDate: row.querySelector(".payment-part-date")?.value,
+        notes: row.querySelector(".payment-part-note")?.value
+      });
+      updatePaymentCalculation({ render: false });
+      updatePreview();
+    };
+    row.querySelectorAll("input, select").forEach(input => input.addEventListener("input", updatePart));
+    row.querySelectorAll("select, input[type='date']").forEach(input => input.addEventListener("change", updatePart));
+    row.querySelector(".payment-part-remove")?.addEventListener("click", () => {
+      paymentParts.splice(index, 1);
+      updatePaymentCalculation();
+      updatePreview();
+    });
+  });
 }
 
 function selectedTeethList() {
@@ -406,18 +567,48 @@ function currentSelectedProcedureTotal() {
   return convertFromEur(basePrice);
 }
 
-function currentVisitTotal() {
+function currentAutoVisitTotal() {
   return hasToothTreatments() ? currentFinalTotal() : currentSelectedProcedureTotal();
+}
+
+function currentVisitTotal() {
+  const manualTotal = Number(inputs.totalAmount?.value || 0);
+  return manualTotal > 0 ? manualTotal : currentAutoVisitTotal();
+}
+
+function syncTotalAmountFromSelection({ force = false } = {}) {
+  if (!inputs.totalAmount) return;
+  const autoTotal = currentAutoVisitTotal();
+  if (force || !totalAmountTouched || Number(inputs.totalAmount.value || 0) === 0) {
+    inputs.totalAmount.value = autoTotal > 0 ? autoTotal.toFixed(2) : "";
+  }
 }
 
 function setPaymentStatusByBalance(status) {
   const target = foldText(status);
-  const match = Array.from(inputs.paymentStatus.options).find(option => foldText(option.value) === target || foldText(option.textContent) === target);
+  const canonicalTarget = target.includes("pla")
+    ? "placeno"
+    : target.includes("delimi")
+      ? "delimicno"
+      : target.includes("dug")
+        ? "dugovanje"
+        : target;
+  const canonical = value => {
+    const folded = foldText(value);
+    if (folded.includes("pla")) return "placeno";
+    if (folded.includes("delimi")) return "delimicno";
+    if (folded.includes("dug")) return "dugovanje";
+    return folded;
+  };
+  const match = Array.from(inputs.paymentStatus.options).find(option =>
+    canonical(option.value) === canonicalTarget || canonical(option.textContent) === canonicalTarget
+  );
+  if (!match && status) setSelectValue(inputs.paymentStatus, status);
   inputs.paymentStatus.value = match?.value || status;
   inputs.paymentStatus.dispatchEvent(new Event("drrosa-select-value"));
 }
 
-function updatePaymentCalculation() {
+function legacySinglePaymentCalculation() {
   const total = currentVisitTotal();
   const paid = Math.max(0, Number(inputs.amountPaid.value || 0));
   const clampedPaid = total > 0 ? Math.min(paid, total) : paid;
@@ -428,8 +619,8 @@ function updatePaymentCalculation() {
     setPaymentStatusByBalance(clampedPaid <= 0
       ? "Dugovanje"
       : clampedPaid >= total
-        ? "Plaćeno"
-        : "Delimično");
+        ? "Placeno"
+        : "Delimicno");
   }
 }
 
@@ -442,6 +633,20 @@ function updateAmountDueLimit() {
   }
 
   inputs.amountDue.removeAttribute("max");
+}
+
+function updatePaymentCalculation({ render = true } = {}) {
+  const summary = paymentSummary();
+  inputs.amountPaid.value = summary.paid.toFixed(2);
+  inputs.amountDue.value = summary.debt.toFixed(2);
+  inputs.amountDue.max = summary.total > 0 ? summary.total.toFixed(2) : "";
+  if (summary.total > 0) {
+    setPaymentStatusByBalance(summary.status);
+  }
+  if (inputs.paymentTotalDisplay) inputs.paymentTotalDisplay.textContent = formatMoney(summary.total, summary.currency);
+  if (inputs.paymentPaidDisplay) inputs.paymentPaidDisplay.textContent = formatMoney(summary.paid, summary.currency);
+  if (inputs.paymentDebtDisplay) inputs.paymentDebtDisplay.textContent = formatMoney(summary.debt, summary.currency);
+  if (render) renderPaymentParts();
 }
 
 function currentTreatmentDescription() {
@@ -614,8 +819,23 @@ inputs.amountPaid.addEventListener("input", () => {
   updatePreview();
 });
 
+inputs.amountPaid.closest("label")?.setAttribute("hidden", "");
+
+inputs.totalAmount?.addEventListener("input", () => {
+  totalAmountTouched = true;
+  updatePaymentCalculation();
+  updatePreview();
+});
+
+inputs.addPaymentPart?.addEventListener("click", () => {
+  paymentParts.push(normalizedPaymentPart({ currency: paymentCurrency() }));
+  updatePaymentCalculation();
+  updatePreview();
+});
+
 inputs.procedureActivity.addEventListener("change", () => {
   populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
+  syncTotalAmountFromSelection({ force: !totalAmountTouched });
   updatePaymentCalculation();
   updatePreview();
 });
@@ -624,6 +844,7 @@ inputs.procedure.addEventListener("change", () => {
   if (!inputs.procedureActivity.value) {
     inputs.procedureActivity.value = procedureCatalog.findActivityForProcedure(inputs.procedure.value);
   }
+  syncTotalAmountFromSelection({ force: !totalAmountTouched });
   updatePaymentCalculation();
   updatePreview();
 });
@@ -812,32 +1033,49 @@ document.addEventListener("click", event => {
 });
 
 form.addEventListener("input", updatePreview);
+form.addEventListener("invalid", (event) => {
+  const control = event.target;
+  showAlert(`Proverite polje "${controlLabel(control)}": ${control.validationMessage}`, "error", { persist: true });
+}, true);
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const patientNameValue = inputs.patient.value.trim();
   const procedureValue = inputs.procedure.value.trim();
   const procedureActivityValue = inputs.procedureActivity.value.trim() || procedureCatalog.findActivityForProcedure(procedureValue);
+  const hasProcedureSelection = Boolean(procedureValue);
+  const procedureForSave = procedureValue || currentTreatmentDescription() || "Rad po zubima";
   const hasTreatments = hasToothTreatments();
   const finalTotal = currentFinalTotal();
-  const amountDueValue = Number(inputs.amountDue.value || 0);
-  const amountPaidValue = Number(inputs.amountPaid.value || 0);
-  if (!patientNameValue || !inputs.lastVisit.value || (!procedureValue && !hasTreatments)) {
-    showAlert("Ispunite pacijenta, datum i odaberite postupak ili rad na mapi zuba.", "error");
+  updatePaymentCalculation({ render: false });
+  const summary = paymentSummary();
+  const amountDueValue = summary.debt;
+  const amountPaidValue = summary.paid;
+  if (!patientNameValue || !inputs.lastVisit.value || (!hasProcedureSelection && !hasTreatments)) {
+    showAlert("Ispunite pacijenta, datum i odaberite osnovnu delatnost/postupak ili rad na mapi zuba.", "error", { persist: true, scroll: true });
     return;
   }
 
   if (hasTreatments && amountDueValue > finalTotal) {
     inputs.amountDue.value = finalTotal.toFixed(2);
     updatePreview();
-    showAlert("Iznos duga ne može biti veći od ukupne cene svih radova.", "error");
+    showAlert("Iznos duga ne može biti veći od ukupne cene svih radova.", "error", { persist: true, scroll: true });
     return;
   }
-  if (amountPaidValue > currentVisitTotal()) {
+  if (summary.total <= 0 && summary.rawPaid > 0) {
+    showAlert("Unesite ukupno za naplatu pre dodavanja uplata.", "error", { persist: true, scroll: true });
+    inputs.totalAmount?.focus();
+    return;
+  }
+  if (summary.rawPaid > currentVisitTotal() + 0.01) {
     updatePaymentCalculation();
-    showAlert("Plaćeni iznos ne može biti veći od ukupne cene.", "error");
+    showAlert("Plaćeni iznos ne može biti veći od ukupne cene.", "error", { persist: true, scroll: true });
     return;
   }
+
+  setSubmitting(true);
+  showAlert("Čuvanje unosa...", "info", { persist: true });
 
   const hasBackendSession = Boolean(window.DrRosaApi.getSession?.());
   let patient = findPatientByName(patientNameValue);
@@ -857,12 +1095,14 @@ form.addEventListener("submit", async (event) => {
   }
 
   if (hasBackendSession && !patient) {
-    showAlert("Pacijent mora postojati u bazi prije unosa zapisa.", "error");
+    setSubmitting(false);
+    showAlert("Pacijent mora postojati u bazi prije unosa zapisa.", "error", { persist: true, scroll: true });
     return;
   }
 
   if (hasBackendSession && !doctor) {
-    showAlert("Doktor nije pronadjen u bazi.", "error");
+    setSubmitting(false);
+    showAlert("Doktor nije pronadjen u bazi.", "error", { persist: true, scroll: true });
     return;
   }
 
@@ -872,13 +1112,15 @@ form.addEventListener("submit", async (event) => {
     patient: patientNameValue,
     lastVisit: inputs.lastVisit.value,
     procedureActivity: procedureActivityValue,
-    procedure: procedureValue || currentTreatmentDescription() || "Rad po zubima",
+    procedure: procedureForSave || currentTreatmentDescription() || "Rad po zubima",
     doctor: inputs.doctor.value,
     status: inputs.status.value,
-    paymentStatus: inputs.paymentStatus.value,
+    paymentStatus: summary.status,
+    totalAmount: summary.total,
     amountDue: amountDueValue,
     amountPaid: amountPaidValue,
     currency: inputs.currency.value,
+    paymentParts: paymentParts.map(normalizedPaymentPart).filter(part => part.amount > 0),
     shift: inputs.shift.value,
     note: inputs.note.value.trim() || "-",
     treatments: teethTreatments
@@ -889,6 +1131,7 @@ form.addEventListener("submit", async (event) => {
       await window.DrRosaApi.updateRecord(recordParam, newRecord);
       showAlert("Unos je azuriran! Vratite se na dashboard da ga pregledate.");
       allRecords = await window.DrRosaApi.getRecords();
+      setSubmitting(false);
       return;
     }
 
@@ -896,6 +1139,8 @@ form.addEventListener("submit", async (event) => {
     showAlert("Unos je spremljen! Vratite se na dashboard da ga pregledate.");
     form.reset();
     teethTreatments = {};
+    paymentParts = [];
+    totalAmountTouched = false;
     populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
     populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
     allRecords = await window.DrRosaApi.getRecords();
@@ -903,8 +1148,10 @@ form.addEventListener("submit", async (event) => {
     updateToothHighlights();
     updatePaymentCalculation();
     updatePreview();
+    setSubmitting(false);
   } catch (error) {
-    showAlert(error.message || "Unos nije sačuvan.", "error");
+    setSubmitting(false);
+    showAlert(error.message || "Unos nije sačuvan.", "error", { persist: true, scroll: true });
   }
 });
 

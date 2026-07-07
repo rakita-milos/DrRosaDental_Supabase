@@ -83,7 +83,7 @@ class DirectorPanelPage {
 
     const row = this.page.locator("#codebook-table tr", { hasText: value }).first();
     this.page.once("dialog", dialog => dialog.accept());
-    await row.getByRole("button", { name: "Obrisi" }).click();
+    await row.getByRole("button", { name: /Obri/i }).click();
     await expect(this.page.locator("#codebook-table")).not.toContainText(value);
   }
 
@@ -150,7 +150,7 @@ class DirectorPanelPage {
     await expect(updatedRow.locator("td").first()).toHaveText(originalCode.trim());
 
     this.page.once("dialog", dialog => dialog.accept());
-    await updatedRow.getByRole("button", { name: "Obrisi" }).click();
+    await updatedRow.getByRole("button", { name: /Obri/i }).click();
     await expect(this.page.locator("#codebook-table")).not.toContainText(updatedName);
   }
 

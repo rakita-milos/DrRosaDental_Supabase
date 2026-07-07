@@ -115,7 +115,7 @@ class PatientDashboardPage {
 
     row = this.clinicalNotesBody.locator("tr", { hasText: updatedTitle }).first();
     this.page.once("dialog", dialog => dialog.accept());
-    await row.getByRole("button", { name: "Obrisi" }).click();
+    await row.getByRole("button", { name: /Obri/i }).click();
     await expect(this.clinicalNotesBody).not.toContainText(updatedTitle);
   }
 
@@ -136,7 +136,7 @@ class PatientDashboardPage {
 
     row = this.consentsBody.locator("tr", { hasText: updatedTitle }).first();
     this.page.once("dialog", dialog => dialog.accept());
-    await row.getByRole("button", { name: "Obrisi" }).click();
+    await row.getByRole("button", { name: /Obri/i }).click();
     await expect(this.consentsBody).not.toContainText(updatedTitle);
   }
 
@@ -151,7 +151,7 @@ class PatientDashboardPage {
 
     row = this.documentsBody.locator("tr", { hasText: updatedTitle }).first();
     this.page.once("dialog", dialog => dialog.accept());
-    await row.getByRole("button", { name: "Obrisi" }).click();
+    await row.getByRole("button", { name: /Obri/i }).click();
     await expect(this.documentsBody).not.toContainText(updatedTitle);
   }
 
@@ -222,7 +222,7 @@ class PatientDashboardPage {
 
   async deleteFirstRecord() {
     this.page.once("dialog", dialog => dialog.accept());
-    await this.recordsBody.getByRole("button", { name: "Obrisi" }).first().click();
+    await this.recordsBody.getByRole("button", { name: /Obri/i }).first().click();
   }
 
   async editPatientDetails() {

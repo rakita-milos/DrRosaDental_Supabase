@@ -85,6 +85,7 @@
       amountDue: Number(row.amount_due ?? row.amountDue ?? 0),
       amountPaid: Number(row.amount_paid ?? row.amountPaid ?? 0),
       currency: row.currency || row.paymentCurrency || "EUR",
+      paymentParts: row.paymentParts || row.payment_parts || [],
       shift: row.shift || "Prva smena",
       treatments: row.treatments || {}
     };
@@ -581,10 +582,12 @@
         procedure: record.procedure,
         status: record.status,
         notes: record.note,
+        total_amount: record.totalAmount,
         amount: record.amountDue,
         amount_paid: record.amountPaid,
         currency: record.currency,
         payment_status: record.paymentStatus,
+        paymentParts: record.paymentParts || [],
         shift: record.shift,
         treatments: record.treatments
       })
@@ -600,10 +603,12 @@
         status: record.status,
         notes: record.note,
         shift: record.shift,
+        total_amount: record.totalAmount,
         amount: record.amountDue,
         amount_paid: record.amountPaid,
         currency: record.currency,
-        payment_status: record.paymentStatus
+        payment_status: record.paymentStatus,
+        paymentParts: record.paymentParts || []
       })
     });
   }

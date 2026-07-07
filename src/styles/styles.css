@@ -1637,6 +1637,114 @@ td:nth-child(5) {
   font: inherit;
 }
 
+.payment-builder {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #d7e0eb;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.payment-builder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.payment-builder-title {
+  display: block;
+  color: #17212b;
+  font-weight: 800;
+}
+
+.payment-builder-header small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.payment-parts-list {
+  display: grid;
+  gap: 12px;
+}
+
+.payment-part-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(100px, 0.75fr) minmax(120px, 1fr) minmax(140px, 1fr) minmax(160px, 1.2fr) 42px;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: white;
+}
+
+.payment-part-row label {
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.payment-part-row input,
+.payment-part-row select {
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+.payment-part-remove {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 12px;
+}
+
+.payment-empty-state {
+  padding: 14px;
+  border: 1px dashed #b6c4d6;
+  border-radius: 14px;
+  color: #64748b;
+  background: white;
+}
+
+.payment-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.payment-summary-strip span {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: white;
+  color: #475569;
+  font-weight: 600;
+}
+
+@media (max-width: 980px) {
+  .payment-part-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .payment-part-notes {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .payment-builder-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .payment-part-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .custom-select-wrap {
   position: relative;
   display: block;
@@ -1864,6 +1972,31 @@ td:nth-child(5) {
 
 .form-alert.error {
   color: #b22f2f;
+}
+
+.form-alert.info {
+  color: #1b3c75;
+}
+
+.save-status {
+  width: 100%;
+  margin: 18px 0 0;
+  min-height: 22px;
+  color: #1b3c75;
+  font-weight: 800;
+}
+
+.save-status:not(:empty) {
+  padding: 12px 14px;
+  border: 1px solid #d7e0eb;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.save-status.error {
+  color: #b4232f;
+  border-color: #f0b4b4;
+  background: #fff7f7;
 }
 
 .preview-card,
