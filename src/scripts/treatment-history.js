@@ -119,7 +119,7 @@
         ? window.DrRosaCurrencyUtils.formatMoney(amount, currency)
         : `${Number(amount || 0).toFixed(2)} ${currency}`
     ));
-    const formatDate = options.formatDate || (value => value || "-");
+    const formatDate = options.formatDate || (value => window.DrRosaDateUtils ? window.DrRosaDateUtils.formatDate(value) : (value || "-"));
     const emptyMessage = options.emptyMessage || "Nema unesenih tretmana po zubima.";
     const title = options.title ? `<h4>${escapeHtml(options.title)}</h4>` : "";
 

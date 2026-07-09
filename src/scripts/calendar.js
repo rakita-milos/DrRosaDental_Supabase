@@ -24,11 +24,11 @@
   }
 
   function dateKey(date) {
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    return window.DrRosaDateUtils.isoDateKey(date);
   }
 
   function localDateTimeString(date) {
-    return `${dateKey(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    return window.DrRosaDateUtils.localDateTimeString(date);
   }
 
   function parseLocalDateTime(value) {
@@ -170,16 +170,18 @@
 
   function renderTitle() {
     if (state.viewMode === "day") {
-      document.getElementById("calendar-title").textContent = state.currentDate.toLocaleDateString("hr-HR", { weekday: "long", year: "numeric", month: "2-digit", day: "2-digit" });
+      document.getElementById("calendar-title").textContent = window.DrRosaDateUtils.formatDate(state.currentDate);
       return;
     }
     if (state.viewMode === "month") {
-      document.getElementById("calendar-title").textContent = state.currentDate.toLocaleDateString("hr-HR", { year: "numeric", month: "long" });
+      const start = startOfMonth(state.currentDate);
+      const end = addDays(endOfMonth(state.currentDate), -1);
+      document.getElementById("calendar-title").textContent = `${window.DrRosaDateUtils.formatDate(start)} - ${window.DrRosaDateUtils.formatDate(end)}`;
       return;
     }
     const start = startOfWeek(state.currentDate);
     const end = addDays(start, 6);
-    document.getElementById("calendar-title").textContent = `${start.toLocaleDateString("hr-HR")} - ${end.toLocaleDateString("hr-HR")}`;
+    document.getElementById("calendar-title").textContent = `${window.DrRosaDateUtils.formatDate(start)} - ${window.DrRosaDateUtils.formatDate(end)}`;
   }
 
   function renderCalendar() {

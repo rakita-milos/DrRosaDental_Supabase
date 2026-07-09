@@ -69,6 +69,12 @@ let allRecords = [];
 let teethTreatments = {};
 let selectedTeeth = new Set();
 let paymentParts = [];
+let paymentMethodItems = [
+  { value: "Gotovina", label: "Gotovina" },
+  { value: "Kartica", label: "Kartica" },
+  { value: "Virman", label: "Virman" },
+  { value: "Avans", label: "Avans" }
+];
 let totalAmountTouched = false;
 let alertTimeout;
 const procedureCatalog = window.DrRosaProcedureCatalog;
@@ -85,7 +91,7 @@ if (patientParam) {
 
 function formatDate(rawDate) {
   if (!rawDate) return "-";
-  return new Date(rawDate).toLocaleDateString("hr-HR", { year: "numeric", month: "2-digit", day: "2-digit" });
+  return window.DrRosaDateUtils.formatDate(rawDate);
 }
 
 function setAlertElement(element, message, type) {
@@ -251,14 +257,19 @@ async function populateCodebookSelects() {
     { type: "visit_status", select: inputs.status },
     { type: "payment_status", select: inputs.paymentStatus },
     { type: "currency", select: inputs.currency },
-    { type: "shift", select: inputs.shift }
+    { type: "shift", select: inputs.shift },
+    { type: "payment_method" }
   ];
 
   await Promise.all(mappings.map(async ({ type, select }) => {
-    if (!select) return;
     try {
       const items = await window.DrRosaApi.getCodebooks(type);
       if (!items.length) return;
+      if (type === "payment_method") {
+        paymentMethodItems = items.map(item => ({ value: item.value, label: item.label || item.value }));
+        return;
+      }
+      if (!select) return;
       if (type === "currency") {
         currencyUtils?.setCurrencies(items);
       }
@@ -402,9 +413,14 @@ function paymentSummary() {
 function renderPaymentParts() {
   if (!inputs.paymentPartsList) return;
   const currencies = availableCurrencyCodes();
+  const methods = paymentMethodItems.length ? paymentMethodItems : [{ value: "Gotovina", label: "Gotovina" }];
   inputs.paymentPartsList.innerHTML = paymentParts.length ? paymentParts.map((part, index) => {
     const normalized = normalizedPaymentPart(part);
     const currencyOptions = currencies.map(currency => `<option value="${escapeHtml(currency)}"${currency === normalized.currency ? " selected" : ""}>${escapeHtml(currency)}</option>`).join("");
+    const rowMethods = methods.some(method => method.value === normalized.paymentMethod)
+      ? methods
+      : [...methods, { value: normalized.paymentMethod, label: normalized.paymentMethod }];
+    const methodOptions = rowMethods.map(method => `<option value="${escapeHtml(method.value)}"${method.value === normalized.paymentMethod ? " selected" : ""}>${escapeHtml(method.label)}</option>`).join("");
     return `
       <div class="payment-part-row" data-payment-index="${index}">
         <label>
@@ -418,7 +434,7 @@ function renderPaymentParts() {
         <label>
           Nacin
           <select class="payment-part-method">
-            ${["Gotovina", "Kartica", "Transfer", "Avans"].map(method => `<option value="${escapeHtml(method)}"${method === normalized.paymentMethod ? " selected" : ""}>${escapeHtml(method)}</option>`).join("")}
+            ${methodOptions}
           </select>
         </label>
         <label>

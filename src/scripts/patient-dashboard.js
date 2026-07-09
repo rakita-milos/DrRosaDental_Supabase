@@ -29,7 +29,7 @@ function getQueryParam(name) {
 
 function formatDate(rawDate) {
   if (!rawDate) return "-";
-  return new Date(rawDate).toLocaleDateString("hr-HR", { year: "numeric", month: "2-digit", day: "2-digit" });
+  return window.DrRosaDateUtils.formatDate(rawDate);
 }
 
 function patientFullName(patient) {

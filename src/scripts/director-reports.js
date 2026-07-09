@@ -2,6 +2,7 @@ let cachedRecords = [];
 let currentReportExport = { title: "Direktor izveštaj", headers: [], rows: [] };
 let activeExcelSheet = "PAZARI";
 let codebookItems = [];
+let currentDailyCashReport = null;
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
 const procedureCatalog = window.DrRosaProcedureCatalog;
 const MONTHS = ["Januar", "Februar", "Mart", "April", "Maj", "Jun", "Jul", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"];
@@ -18,7 +19,9 @@ const CODEBOOK_LABELS = {
   visit_status: "Statusi posete",
   payment_status: "Statusi placanja",
   currency: "Valute",
-  shift: "Smene"
+  shift: "Smene",
+  payment_method: "Načini plaćanja",
+  cash_report_item: "Stavke kase"
 };
 const CODEBOOK_DESCRIPTIONS = {
   activity: "Grupe stomatoloskih usluga koje se koriste za postupke.",
@@ -26,7 +29,9 @@ const CODEBOOK_DESCRIPTIONS = {
   visit_status: "Status pregleda ili posete pacijenta.",
   payment_status: "Status naplate za posete i dugovanja.",
   currency: "Valute dostupne pri unosu placanja.",
-  shift: "Smene rada ordinacije sa vremenom i danima."
+  shift: "Smene rada ordinacije sa vremenom i danima.",
+  payment_method: "Nacini placanja",
+  cash_report_item: "Rucne stavke dnevne kase kao kurir, materijal i tehnicar."
 };
 const WEEKDAY_LABELS = {
   monday: "Ponedeljak",
@@ -57,7 +62,7 @@ async function checkDirectorAccess() {
 
 function formatDate(dateString) {
   if (!dateString) return "-";
-  return new Date(dateString).toLocaleDateString("hr-HR", { year: "numeric", month: "2-digit", day: "2-digit" });
+  return window.DrRosaDateUtils.formatDate(dateString);
 }
 
 function isDebt(record) {
@@ -99,6 +104,7 @@ async function showReport(reportId) {
   if (reportId === "doctors-report") await loadDoctorsReport();
   if (reportId === "procedures-report") await loadProceduresReport();
   if (reportId === "excel-report") loadExcelReport();
+  if (reportId === "daily-cash-report") await loadDailyCashReport();
   if (reportId === "public-booking-report") await loadPublicBookingSettings();
   if (reportId === "admin-codebooks-report") await loadCodebooksAdmin();
   if (reportId === "google-calendar-report") await loadGoogleCalendarSettings();
@@ -115,6 +121,7 @@ function initializeReports() {
     { id: "doctors-report", tone: "teal", icon: "DR", title: "Doktori", description: "Produktivnost i opterecenje tima" },
     { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosečna naplata" },
     { id: "excel-report", tone: "blue", icon: "TAB", title: "Izveštaji po tabovima", description: "PAZARI, hirurgija, protetika, ortodoncija, troškovi i ukupno" },
+    { id: "daily-cash-report", tone: "green", icon: "KAS", title: "Dnevna kasa", description: "Fizicki novac, izlazi i ostatak po danu" },
     { id: "public-booking-report", tone: "green", icon: "ONL", title: "Onlajn zakazivanje", description: "Uključi ili isključi javnu formu za termine" },
     { id: "google-calendar-report", tone: "green", icon: "GCal", title: "Google Calendar", description: "Nalog ordinacije, kalendar i status sinhronizacije" },
     { id: "backup-security-report", tone: "orange", icon: "SEC", title: "Rezervne kopije i bezbednost", description: "Rezervna kopija baze, restore, sesije, 2FA i audit log" }
@@ -151,7 +158,8 @@ function initializeExportActions() {
     "patients-report",
     "doctors-report",
     "procedures-report",
-    "excel-report"
+    "excel-report",
+    "daily-cash-report"
   ]);
 
   document.querySelectorAll(".report-content > .section-header").forEach(header => {
@@ -688,6 +696,11 @@ function codebookFormElements() {
     currencyRate: document.getElementById("currency-rate"),
     currencyRateDate: document.getElementById("currency-rate-date"),
     fetchCurrencyRate: document.getElementById("fetch-currency-rate"),
+    paymentMethodFields: document.getElementById("payment-method-fields"),
+    paymentMethodRevenue: document.getElementById("payment-method-revenue"),
+    paymentMethodCashRegister: document.getElementById("payment-method-cash-register"),
+    cashReportItemFields: document.getElementById("cash-report-item-fields"),
+    cashReportLineType: document.getElementById("cash-report-line-type"),
     groupField: document.querySelector(".codebook-group-field"),
     priceField: document.querySelector(".codebook-price-field"),
     valueField: document.getElementById("codebook-value-field"),
@@ -731,12 +744,15 @@ function openCodebookEditor(type) {
 
 function updateShiftFieldsVisibility() {
   const elements = codebookFormElements();
-  const hideGroupField = ["activity", "currency", "visit_status", "payment_status", "shift"].includes(activeCodebookType);
-  const hidePriceField = ["activity", "currency", "visit_status", "payment_status", "shift"].includes(activeCodebookType);
+  const simpleTypes = ["activity", "currency", "visit_status", "payment_status", "shift", "payment_method", "cash_report_item"];
+  const hideGroupField = simpleTypes.includes(activeCodebookType);
+  const hidePriceField = simpleTypes.includes(activeCodebookType);
   const hideDetailColumn = ["activity", "visit_status", "payment_status"].includes(activeCodebookType);
   const showPriceColumn = activeCodebookType === "procedure";
   elements.shiftFields?.classList.toggle("active", activeCodebookType === "shift");
   elements.currencyFields?.classList.toggle("active", activeCodebookType === "currency");
+  elements.paymentMethodFields?.classList.toggle("active", activeCodebookType === "payment_method");
+  elements.cashReportItemFields?.classList.toggle("active", activeCodebookType === "cash_report_item");
   elements.groupField?.classList.toggle("hidden", hideGroupField);
   elements.priceField?.classList.toggle("hidden", hidePriceField);
   elements.valueField?.classList.toggle("hidden", activeCodebookType !== "currency");
@@ -751,7 +767,11 @@ function updateShiftFieldsVisibility() {
         ? "Radno vreme / dani"
         : activeCodebookType === "currency"
           ? "Kurs"
-          : "Detalji";
+          : activeCodebookType === "payment_method"
+            ? "Uloga"
+            : activeCodebookType === "cash_report_item"
+              ? "Tip"
+              : "Detalji";
   }
 }
 
@@ -776,6 +796,9 @@ function clearShiftFields() {
   });
   elements.currencyRate.value = "";
   elements.currencyRateDate.value = "";
+  if (elements.paymentMethodRevenue) elements.paymentMethodRevenue.checked = true;
+  if (elements.paymentMethodCashRegister) elements.paymentMethodCashRegister.checked = false;
+  if (elements.cashReportLineType) elements.cashReportLineType.value = "outflow";
 }
 
 function setShiftFields(metadata = {}) {
@@ -788,6 +811,9 @@ function setShiftFields(metadata = {}) {
   });
   elements.currencyRate.value = metadata.exchangeRate || "";
   elements.currencyRateDate.value = metadata.rateDate || "";
+  if (elements.paymentMethodRevenue) elements.paymentMethodRevenue.checked = metadata.countsAsRevenue !== false;
+  if (elements.paymentMethodCashRegister) elements.paymentMethodCashRegister.checked = metadata.countsInCashRegister === true;
+  if (elements.cashReportLineType) elements.cashReportLineType.value = metadata.lineType || "outflow";
 }
 
 function readShiftMetadata() {
@@ -830,6 +856,20 @@ function formatCurrencyMetadata(item) {
   const base = metadata.rateBase || pair.base;
   const currency = metadata.rateCurrency || pair.currency;
   return `1 ${base} = ${metadata.exchangeRate} ${currency}${date}${source}`;
+}
+
+function formatPaymentMethodMetadata(item) {
+  const metadata = item.metadata || {};
+  const revenue = metadata.countsAsRevenue === false ? "ne ulazi u pazar" : "ulazi u pazar";
+  const cash = metadata.countsInCashRegister === true ? "ulazi u kasu" : "ne ulazi u kasu";
+  return `${revenue}; ${cash}`;
+}
+
+function formatCashReportItemMetadata(item) {
+  const type = (item.metadata || {}).lineType || "outflow";
+  if (type === "inflow") return "Ulaz u kasu";
+  if (type === "info") return "Informativno";
+  return "Izlaz iz kase";
 }
 
 function todayIsoDate() {
@@ -961,7 +1001,11 @@ function readCodebookForm() {
       ? readShiftMetadata()
       : activeCodebookType === "currency"
         ? readCurrencyMetadata()
-        : {}
+        : activeCodebookType === "payment_method"
+          ? readPaymentMethodMetadata()
+          : activeCodebookType === "cash_report_item"
+            ? readCashReportItemMetadata()
+            : {}
   };
 }
 
@@ -989,7 +1033,7 @@ function renderCodebooksAdmin() {
     <tr>
       <td>${escapeHtml(item.value)}</td>
       <td>${escapeHtml(item.label)}</td>
-      ${hideDetailColumn ? "" : `<td>${escapeHtml(item.type === "shift" ? formatShiftMetadata(item) : item.type === "currency" ? formatCurrencyMetadata(item) : (item.groupName || "-"))}</td>`}
+      ${hideDetailColumn ? "" : `<td>${escapeHtml(item.type === "shift" ? formatShiftMetadata(item) : item.type === "currency" ? formatCurrencyMetadata(item) : item.type === "payment_method" ? formatPaymentMethodMetadata(item) : item.type === "cash_report_item" ? formatCashReportItemMetadata(item) : (item.groupName || "-"))}</td>`}
       ${showPriceColumn ? `<td>${Number(item.price || 0).toFixed(2)}</td>` : ""}
       <td>${item.isActive === false ? "Neaktivno" : "Aktivno"}</td>
       <td>
@@ -1102,6 +1146,22 @@ function showPublicBookingMessage(text, isError = false) {
   if (!element) return;
   element.textContent = text || "";
   element.className = `form-alert ${isError ? "alert-error" : "alert-success"}`;
+}
+
+function readPaymentMethodMetadata() {
+  const elements = codebookFormElements();
+  return {
+    countsAsRevenue: elements.paymentMethodRevenue?.checked !== false,
+    countsInCashRegister: elements.paymentMethodCashRegister?.checked === true,
+    cashFlow: "inflow"
+  };
+}
+
+function readCashReportItemMetadata() {
+  const elements = codebookFormElements();
+  return {
+    lineType: elements.cashReportLineType?.value || "outflow"
+  };
 }
 
 async function loadPublicBookingSettings() {
@@ -1248,13 +1308,7 @@ function initializeGoogleCalendarSettings() {
 
 function formatDateTime(dateString) {
   if (!dateString) return "-";
-  return new Date(dateString).toLocaleString("sr-RS", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  return window.DrRosaDateUtils.formatDateTime(dateString);
 }
 
 function formatFileSize(bytes) {
@@ -1525,6 +1579,218 @@ async function downloadBackup(backupId, filename) {
   URL.revokeObjectURL(url);
 }
 
+function dailyCashElements() {
+  return {
+    date: document.getElementById("daily-cash-date"),
+    shift: document.getElementById("daily-cash-shift"),
+    load: document.getElementById("daily-cash-load"),
+    save: document.getElementById("daily-cash-save"),
+    toggleManual: document.getElementById("daily-cash-toggle-manual"),
+    manualPanel: document.getElementById("daily-cash-manual-panel"),
+    message: document.getElementById("daily-cash-message"),
+    cashIn: document.getElementById("daily-cash-in"),
+    cashOut: document.getElementById("daily-cash-out"),
+    remaining: document.getElementById("daily-cash-remaining"),
+    autoTable: document.getElementById("daily-cash-auto-table"),
+    linesTable: document.getElementById("daily-cash-lines-table"),
+    debtsTable: document.getElementById("daily-cash-debts-table")
+  };
+}
+
+function setDailyCashManualVisible(visible) {
+  const { toggleManual, manualPanel } = dailyCashElements();
+  if (!toggleManual || !manualPanel) return;
+  manualPanel.hidden = !visible;
+  toggleManual.setAttribute("aria-expanded", visible ? "true" : "false");
+  toggleManual.textContent = visible ? "Sakrij ručne stavke" : "Prikaži ručne stavke";
+  localStorage.setItem("drrosa-daily-cash-manual-visible", visible ? "1" : "0");
+}
+
+function showDailyCashMessage(message, isError = false) {
+  const { message: element } = dailyCashElements();
+  if (!element) return;
+  element.textContent = message || "";
+  element.classList.toggle("error", Boolean(isError));
+}
+
+function amountFor(amounts, currency) {
+  return Number((amounts || {})[currency] || 0);
+}
+
+function remainingDailyAmount(total, subtract, currency) {
+  return Math.max(0, amountFor(total, currency) - amountFor(subtract, currency));
+}
+
+function formatDailyAmount(amount, currency) {
+  return window.DrRosaCurrencyUtils
+    ? window.DrRosaCurrencyUtils.formatMoney(amount, currency)
+    : `${Number(amount || 0).toFixed(2)} ${currency}`;
+}
+
+function formatDailyPair(amounts) {
+  return `${formatDailyAmount(amountFor(amounts, "EUR"), "EUR")} / ${formatDailyAmount(amountFor(amounts, "RSD"), "RSD")}`;
+}
+
+async function populateDailyCashShiftOptions() {
+  const { shift } = dailyCashElements();
+  if (!shift || shift.dataset.ready) return;
+  shift.dataset.ready = "true";
+  try {
+    const shifts = await window.DrRosaApi.getCodebooks("shift");
+    shift.innerHTML = `<option value="">Sve smene</option>${shifts.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`).join("")}`;
+  } catch (error) {
+    console.error("Daily cash shift load error:", error);
+  }
+}
+
+function renderDailyCashReport(report) {
+  currentDailyCashReport = report;
+  const elements = dailyCashElements();
+  if (!report || !elements.autoTable) return;
+
+  if (elements.cashIn) elements.cashIn.textContent = formatDailyPair(report.totals.cashIn);
+  if (elements.cashOut) elements.cashOut.textContent = formatDailyPair(report.totals.manualOutflow);
+  if (elements.remaining) elements.remaining.textContent = formatDailyPair(report.totals.remaining);
+
+  const manualOutflowRows = report.manualLines
+    .filter(line => line.lineType === "outflow")
+    .map(line => `
+      <tr class="daily-cash-outflow-row">
+        <td>${escapeHtml(line.itemLabel)}</td>
+        <td>${formatDailyAmount(amountFor(line.amounts, "EUR"), "EUR")}</td>
+        <td>${formatDailyAmount(amountFor(line.amounts, "RSD"), "RSD")}</td>
+        <td>Oduzima se od kase</td>
+      </tr>
+    `).join("");
+
+  elements.autoTable.innerHTML = `
+    <tr class="daily-cash-primary-row">
+      <td>Pazar</td>
+      <td>${formatDailyAmount(amountFor(report.totals.totalRevenue, "EUR"), "EUR")}</td>
+      <td>${formatDailyAmount(amountFor(report.totals.totalRevenue, "RSD"), "RSD")}</td>
+      <td>Ukupno kucano i kes iz novog unosa</td>
+    </tr>
+    <tr>
+      <td>Kucano</td>
+      <td>${formatDailyAmount(remainingDailyAmount(report.totals.totalRevenue, report.totals.cashIn, "EUR"), "EUR")}</td>
+      <td>${formatDailyAmount(remainingDailyAmount(report.totals.totalRevenue, report.totals.cashIn, "RSD"), "RSD")}</td>
+      <td>Kartice i ostale bezgotovinske uplate</td>
+    </tr>
+    <tr>
+      <td>Kes</td>
+      <td>${formatDailyAmount(amountFor(report.totals.cashIn, "EUR"), "EUR")}</td>
+      <td>${formatDailyAmount(amountFor(report.totals.cashIn, "RSD"), "RSD")}</td>
+      <td>Fizicka gotovina u kasi</td>
+    </tr>
+    ${manualOutflowRows}
+    <tr>
+      <td>Ukupno izlazi</td>
+      <td>${formatDailyAmount(amountFor(report.totals.manualOutflow, "EUR"), "EUR")}</td>
+      <td>${formatDailyAmount(amountFor(report.totals.manualOutflow, "RSD"), "RSD")}</td>
+      <td>Zbir ručnih stavki iznad</td>
+    </tr>
+    <tr class="daily-cash-total-row">
+      <td>Ostatak</td>
+      <td>${formatDailyAmount(amountFor(report.totals.remaining, "EUR"), "EUR")}</td>
+      <td>${formatDailyAmount(amountFor(report.totals.remaining, "RSD"), "RSD")}</td>
+      <td>Kes minus izlazi</td>
+    </tr>
+  `;
+
+  elements.linesTable.innerHTML = report.manualLines.length ? report.manualLines.map(line => `
+    <tr data-item-value="${escapeHtml(line.itemValue)}">
+      <td>${escapeHtml(line.itemLabel)}</td>
+      <td><input class="daily-cash-line-amount" data-currency="EUR" type="number" min="0" step="0.01" value="${amountFor(line.amounts, "EUR") || ""}" /></td>
+      <td><input class="daily-cash-line-amount" data-currency="RSD" type="number" min="0" step="0.01" value="${amountFor(line.amounts, "RSD") || ""}" /></td>
+    </tr>
+  `).join("") : `<tr><td colspan="3" class="empty-row">Nema stavki kase. Dodajte Kurir, Materijal ili Tehnicar u šifarniku Stavke kase.</td></tr>`;
+
+  elements.debtsTable.innerHTML = report.debts.length ? report.debts.map(debt => `
+    <tr>
+      <td>${escapeHtml(debt.patient)}</td>
+      <td>${escapeHtml(debt.procedure || "-")}</td>
+      <td>${debt.currency === "EUR" ? formatDailyAmount(debt.amount, "EUR") : "-"}</td>
+      <td>${debt.currency === "RSD" ? formatDailyAmount(debt.amount, "RSD") : "-"}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="4" class="empty-row">Nema dugovanja za izabrani dan.</td></tr>`;
+
+  const exportRows = [
+    ["Pazar", amountFor(report.totals.totalRevenue, "EUR").toFixed(2), amountFor(report.totals.totalRevenue, "RSD").toFixed(2), "Ukupno kucano i kes iz novog unosa"],
+    ["Kucano", remainingDailyAmount(report.totals.totalRevenue, report.totals.cashIn, "EUR").toFixed(2), remainingDailyAmount(report.totals.totalRevenue, report.totals.cashIn, "RSD").toFixed(2), "Kartice i ostale bezgotovinske uplate"],
+    ["Kes", amountFor(report.totals.cashIn, "EUR").toFixed(2), amountFor(report.totals.cashIn, "RSD").toFixed(2), "Fizicka gotovina u kasi"],
+    ...report.manualLines
+      .filter(line => line.lineType === "outflow")
+      .map(line => [line.itemLabel, amountFor(line.amounts, "EUR").toFixed(2), amountFor(line.amounts, "RSD").toFixed(2), "Oduzima se od kase"]),
+    ["Ukupno izlazi", amountFor(report.totals.manualOutflow, "EUR").toFixed(2), amountFor(report.totals.manualOutflow, "RSD").toFixed(2), "Zbir ručnih stavki"],
+    ["Ostatak", amountFor(report.totals.remaining, "EUR").toFixed(2), amountFor(report.totals.remaining, "RSD").toFixed(2), "Kes minus izlazi"]
+  ];
+
+  currentReportExport = {
+    title: `Dnevna kasa ${report.reportDate}${report.shift ? ` - ${report.shift}` : ""}`,
+    headers: ["Stavka", "EUR", "RSD", "Napomena"],
+    rows: exportRows
+  };
+}
+
+async function loadDailyCashReport() {
+  const elements = dailyCashElements();
+  if (!elements.date) return;
+  await populateDailyCashShiftOptions();
+  if (!elements.date.value) elements.date.value = todayIsoDate();
+  showDailyCashMessage("Učitavam dnevnu kasu...");
+  try {
+    const report = await window.DrRosaApi.getDailyCashReport({
+      date: elements.date.value,
+      shift: elements.shift.value
+    });
+    renderDailyCashReport(report);
+    showDailyCashMessage("");
+  } catch (error) {
+    showDailyCashMessage(error.message || "Dnevna kasa nije učitana.", true);
+  }
+}
+
+async function saveDailyCashReport() {
+  const elements = dailyCashElements();
+  if (!currentDailyCashReport) return loadDailyCashReport();
+  const lines = Array.from(elements.linesTable.querySelectorAll("tr[data-item-value]")).map(row => {
+    const amounts = {};
+    row.querySelectorAll(".daily-cash-line-amount").forEach(input => {
+      amounts[input.dataset.currency] = Number(input.value || 0);
+    });
+    return {
+      itemValue: row.dataset.itemValue,
+      amounts
+    };
+  });
+
+  showDailyCashMessage("Cuvam rucne stavke...");
+  try {
+    const report = await window.DrRosaApi.saveDailyCashReport({
+      date: elements.date.value,
+      shift: elements.shift.value,
+      lines
+    });
+    renderDailyCashReport(report);
+    showDailyCashMessage("Dnevna kasa je sačuvana.");
+  } catch (error) {
+    showDailyCashMessage(error.message || "Dnevna kasa nije sačuvana.", true);
+  }
+}
+
+function initializeDailyCashReport() {
+  const elements = dailyCashElements();
+  if (!elements.load || elements.load.dataset.ready) return;
+  elements.load.dataset.ready = "true";
+  if (elements.date && !elements.date.value) elements.date.value = todayIsoDate();
+  setDailyCashManualVisible(localStorage.getItem("drrosa-daily-cash-manual-visible") === "1");
+  elements.load.addEventListener("click", loadDailyCashReport);
+  elements.save?.addEventListener("click", saveDailyCashReport);
+  elements.toggleManual?.addEventListener("click", () => {
+    setDailyCashManualVisible(elements.manualPanel?.hidden !== false);
+  });
+}
+
 (async function init() {
   if (!await checkDirectorAccess()) return;
   await procedureCatalog.loadFromApi?.();
@@ -1532,6 +1798,7 @@ async function downloadBackup(backupId, filename) {
   initializeReportNavigation();
   initializeExportActions();
   initializeCodebookAdmin();
+  initializeDailyCashReport();
   initializePublicBookingSettings();
   initializeGoogleCalendarSettings();
   initializeBackupSecurity();

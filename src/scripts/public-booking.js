@@ -74,7 +74,7 @@
     select.innerHTML = state.slots.length
       ? state.slots.map(slot => {
         const starts = new Date(slot.startsAt);
-        const label = `${starts.toLocaleTimeString("hr-HR", { hour: "2-digit", minute: "2-digit" })} - ${slot.doctorName}`;
+        const label = `${window.DrRosaDateUtils.formatTime(starts)} - ${slot.doctorName}`;
         return `<option value="${escapeHtml(slot.startsAt)}" data-chair="${slot.chairId}" data-doctor="${slot.doctorId}" data-duration="${slot.durationMinutes}">${escapeHtml(label)}</option>`;
       }).join("")
       : `<option value="">Nema slobodnih termina</option>`;

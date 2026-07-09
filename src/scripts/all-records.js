@@ -47,7 +47,7 @@ if (urlParams.get("filter") === "debtors" && paymentFilter) {
 
 function formatDate(dateString) {
   if (!dateString) return "-";
-  return new Date(dateString).toLocaleDateString("hr-HR", { year: "numeric", month: "2-digit", day: "2-digit" });
+  return window.DrRosaDateUtils.formatDate(dateString);
 }
 
 function isDebt(record) {

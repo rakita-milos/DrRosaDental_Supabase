@@ -223,6 +223,123 @@
         </div>
       </section>
 
+      <section class="list-section report-content" id="daily-cash-report">
+        <button class="secondary-btn back-to-reports" type="button">← Nazad na izveštaje</button>
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Dnevna kasa</p>
+            <h2>Izveštaj fizičkog novca</h2>
+          </div>
+        </div>
+
+        <div class="daily-cash-overview" aria-label="Sažetak dnevne kase">
+          <article class="daily-cash-summary-card daily-cash-summary-card-in">
+            <span>Keš u kasi</span>
+            <strong id="daily-cash-in">0.00 EUR / 0.00 RSD</strong>
+            <small>Gotovina evidentirana kroz naplatu</small>
+          </article>
+          <article class="daily-cash-summary-card daily-cash-summary-card-out">
+            <span>Ukupno izlazi</span>
+            <strong id="daily-cash-out">0.00 EUR / 0.00 RSD</strong>
+            <small>Ručne stavke koje umanjuju kasu</small>
+          </article>
+          <article class="daily-cash-summary-card daily-cash-summary-card-total">
+            <span>Ostatak</span>
+            <strong id="daily-cash-remaining">0.00 EUR / 0.00 RSD</strong>
+            <small>Stanje za predaju smene</small>
+          </article>
+        </div>
+
+        <div class="daily-cash-toolbar">
+          <div class="daily-cash-filter-group">
+            <label>
+              <span>Datum</span>
+              <input id="daily-cash-date" type="date" />
+            </label>
+            <label>
+              <span>Smena</span>
+              <select id="daily-cash-shift">
+                <option value="">Sve smene</option>
+              </select>
+            </label>
+          </div>
+          <div class="daily-cash-actions">
+            <button class="primary-btn" id="daily-cash-load" type="button">Daj izveštaj</button>
+            <button class="secondary-btn" id="daily-cash-toggle-manual" type="button" aria-expanded="false">Prikaži ručne stavke</button>
+          </div>
+        </div>
+
+        <p id="daily-cash-message" class="form-alert" role="status"></p>
+
+        <section class="daily-cash-panel daily-cash-manual-panel" id="daily-cash-manual-panel" hidden>
+          <div class="section-header compact-header">
+            <div>
+              <p class="eyebrow">Unos</p>
+              <h2>Ručne stavke kase</h2>
+            </div>
+            <button class="secondary-btn" id="daily-cash-save" type="button">Sačuvaj ručne stavke</button>
+          </div>
+          <p class="daily-cash-panel-note">Unesi samo iznose koji treba da se oduzmu od gotovine u kasi za izabrani dan i smenu.</p>
+          <div class="table-wrap">
+            <table class="daily-cash-table">
+              <thead>
+                <tr>
+                  <th>Stavka</th>
+                  <th>EUR</th>
+                  <th>RSD</th>
+                </tr>
+              </thead>
+              <tbody id="daily-cash-lines-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="daily-cash-panel">
+          <div class="section-header compact-header">
+            <div>
+              <p class="eyebrow">Izveštaj</p>
+              <h2>Zbir dnevne kase</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="daily-cash-table daily-cash-result-table">
+              <thead>
+                <tr>
+                  <th>Stavka</th>
+                  <th>EUR</th>
+                  <th>RSD</th>
+                  <th>Napomena</th>
+                </tr>
+              </thead>
+              <tbody id="daily-cash-auto-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="daily-cash-panel">
+          <div class="section-header compact-header">
+            <div>
+              <p class="eyebrow">Dugovanja</p>
+              <h2>Dug ne ulazi u kasu za tekući dan</h2>
+            </div>
+          </div>
+          <p class="daily-cash-panel-note">Pregled stavki koje su evidentirane kao dugovanje i ne ulaze u predaju gotovine.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pacijent</th>
+                  <th>Postupak</th>
+                  <th>EUR</th>
+                  <th>RSD</th>
+                </tr>
+              </thead>
+              <tbody id="daily-cash-debts-table"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
       <section class="list-section report-content" id="admin-codebooks-report">
         <button class="secondary-btn back-to-reports" type="button">← Nazad na izveštaje</button>
         <div class="section-header">
@@ -330,6 +447,26 @@
                 </label>
               </div>
               <button class="secondary-btn" id="fetch-currency-rate" type="button">Povuci trenutni kurs</button>
+            </div>
+            <div id="payment-method-fields" class="shift-fields">
+              <label class="checkbox-row">
+                <input id="payment-method-revenue" type="checkbox" checked />
+                Ulazi u promet/pazar
+              </label>
+              <label class="checkbox-row">
+                <input id="payment-method-cash-register" type="checkbox" />
+                Ulazi u fizičku kasu
+              </label>
+            </div>
+            <div id="cash-report-item-fields" class="shift-fields">
+              <label>
+                Tip stavke
+                <select id="cash-report-line-type">
+                  <option value="outflow">Izlaz iz kase</option>
+                  <option value="inflow">Ulaz u kasu</option>
+                  <option value="info">Informativno</option>
+                </select>
+              </label>
             </div>
             <label class="checkbox-row">
               <input id="codebook-active" type="checkbox" checked />
@@ -620,6 +757,7 @@
   </div>
 
   <script src="../scripts/api.js"></script>
+  <script src="../scripts/date-utils.js?v=picker-format-20260708"></script>
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/export-utils.js"></script>
   <script src="../scripts/procedure-catalog.js"></script>

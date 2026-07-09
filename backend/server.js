@@ -261,6 +261,7 @@ async function seedDatabase() {
   }
 
   seedCodebooks();
+  ensureDefaultOperationalCodebooks();
   await rotateDefaultPasswords();
 }
 
@@ -306,6 +307,10 @@ function applyMigrations() {
   runMigration('2026-07-03-payment-parts', () => {
     ensurePaymentPartsTable();
     backfillPaymentParts();
+  });
+  runMigration('2026-07-07-daily-cash-report', () => {
+    ensureDailyCashReportTables();
+    ensureDefaultOperationalCodebooks();
   });
 }
 
@@ -357,10 +362,45 @@ function ensurePaymentPartsTable() {
   `);
 }
 
+function ensureDailyCashReportTables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily_cash_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_date TEXT NOT NULL,
+      shift TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'locked')),
+      notes TEXT,
+      locked_by INTEGER REFERENCES users(id),
+      locked_at TEXT,
+      created_by INTEGER REFERENCES users(id),
+      updated_by INTEGER REFERENCES users(id),
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(report_date, shift)
+    );
+    CREATE TABLE IF NOT EXISTS daily_cash_report_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER NOT NULL REFERENCES daily_cash_reports(id) ON DELETE CASCADE,
+      item_value TEXT NOT NULL,
+      item_label TEXT NOT NULL,
+      line_type TEXT NOT NULL DEFAULT 'outflow' CHECK (line_type IN ('inflow', 'outflow', 'info')),
+      currency TEXT NOT NULL DEFAULT 'RSD',
+      amount REAL NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(report_id, item_value, currency)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_cash_reports_date_shift ON daily_cash_reports(report_date, shift);
+    CREATE INDEX IF NOT EXISTS idx_daily_cash_lines_report ON daily_cash_report_lines(report_id);
+  `);
+}
+
 function backfillPaymentParts() {
   const rows = db.prepare(`
-    SELECT p.*
+    SELECT p.*, vr.visit_date
     FROM payments p
+    JOIN visit_records vr ON vr.id = p.visit_record_id
     LEFT JOIN payment_parts pp ON pp.payment_id = p.id
     WHERE COALESCE(p.amount_paid, 0) > 0
     GROUP BY p.id
@@ -376,7 +416,7 @@ function backfillPaymentParts() {
     const currency = normalizeCurrency(row.currency);
     const amount = money(row.amount_paid);
     const rate = exchangeRateToRsd(currency);
-    insert.run(row.id, row.visit_record_id, row.patient_id, amount, currency, rate, amount * rate, row.payment_method || '', row.payment_date || todayIsoDate(), 'Migrirano iz starog placenog iznosa');
+    insert.run(row.id, row.visit_record_id, row.patient_id, amount, currency, rate, amount * rate, row.payment_method || '', row.payment_date || row.visit_date || todayIsoDate(), 'Migrirano iz starog placenog iznosa');
   });
 }
 
@@ -961,6 +1001,75 @@ function seedCodebooks() {
   ].forEach(([item, metadata], index) => add('currency', item, item, null, 0, index + 1, metadata));
   add('shift', 'Prva smena', 'Prva smena', null, 0, 1, { timeFrom: '08:00', timeTo: '14:00', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] });
   add('shift', 'Druga smena', 'Druga smena', null, 0, 2, { timeFrom: '14:00', timeTo: '20:00', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] });
+}
+
+function ensureCodebookItem({ type, value, label = value, groupName = null, price = 0, sortOrder = 0, metadata = null }) {
+  ensureCodebookTable();
+  const existing = db.prepare('SELECT id FROM codebook_items WHERE type = ? AND value = ? AND COALESCE(group_name, \'\') = COALESCE(?, \'\')').get(type, value, groupName);
+  if (existing) return;
+  db.prepare(`
+    INSERT INTO codebook_items (type, value, label, group_name, metadata, price, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(type, value, label, groupName, metadata ? JSON.stringify(metadata) : null, price, sortOrder);
+}
+
+function ensureDefaultOperationalCodebooks() {
+  ensureCodebookItem({
+    type: 'payment_method',
+    value: 'Gotovina',
+    label: 'Gotovina',
+    sortOrder: 1,
+    metadata: { countsAsRevenue: true, countsInCashRegister: true }
+  });
+  ensureCodebookItem({
+    type: 'payment_method',
+    value: 'Kartica',
+    label: 'Kartica',
+    sortOrder: 2,
+    metadata: { countsAsRevenue: true, countsInCashRegister: false }
+  });
+  ensureCodebookItem({
+    type: 'payment_method',
+    value: 'Virman',
+    label: 'Virman',
+    sortOrder: 3,
+    metadata: { countsAsRevenue: true, countsInCashRegister: false }
+  });
+  ensureCodebookItem({
+    type: 'payment_method',
+    value: 'Avans',
+    label: 'Avans',
+    sortOrder: 4,
+    metadata: { countsAsRevenue: true, countsInCashRegister: true }
+  });
+  ensureCodebookItem({
+    type: 'cash_report_item',
+    value: 'Kurir',
+    label: 'Kurir',
+    sortOrder: 1,
+    metadata: { lineType: 'outflow' }
+  });
+  ensureCodebookItem({
+    type: 'cash_report_item',
+    value: 'Materijal',
+    label: 'Materijal',
+    sortOrder: 2,
+    metadata: { lineType: 'outflow' }
+  });
+  ensureCodebookItem({
+    type: 'cash_report_item',
+    value: 'Tehnicar',
+    label: 'Tehnicar',
+    sortOrder: 3,
+    metadata: { lineType: 'outflow' }
+  });
+  ensureCodebookItem({
+    type: 'cash_report_item',
+    value: 'Ostalo',
+    label: 'Ostalo',
+    sortOrder: 99,
+    metadata: { lineType: 'outflow' }
+  });
 }
 
 function isStrongInitialPassword(value) {
@@ -5194,7 +5303,7 @@ app.get('/api/doctors', authenticateToken, requirePermission('calendar:read'), (
 
 // ============ DIRECTOR ADMIN CODEBOOKS ============
 
-const CODEBOOK_TYPES = new Set(['activity', 'procedure', 'visit_status', 'payment_status', 'currency', 'shift']);
+const CODEBOOK_TYPES = new Set(['activity', 'procedure', 'visit_status', 'payment_status', 'currency', 'shift', 'payment_method', 'cash_report_item']);
 
 function normalizeCodebookType(value) {
   const type = cleanText(value, { max: 40, required: true });
@@ -5233,6 +5342,18 @@ function normalizeCodebookMetadata(type, metadata) {
       rateCurrency: cleanText(input.rateCurrency, { max: 10 }) || null,
       rateSource: cleanText(input.rateSource, { max: 80 }) || null,
       autoUpdatedAt: cleanText(input.autoUpdatedAt, { max: 20 }) || null
+    };
+  }
+  if (type === 'payment_method') {
+    return {
+      countsAsRevenue: input.countsAsRevenue !== false,
+      countsInCashRegister: input.countsInCashRegister === true,
+      cashFlow: ['inflow', 'outflow', 'neutral'].includes(input.cashFlow) ? input.cashFlow : 'inflow'
+    };
+  }
+  if (type === 'cash_report_item') {
+    return {
+      lineType: ['inflow', 'outflow', 'info'].includes(input.lineType) ? input.lineType : 'outflow'
     };
   }
   if (type !== 'shift') return {};
@@ -5431,6 +5552,242 @@ app.delete('/api/director/codebooks/:id', authenticateToken, requireDirector, (r
   } catch (error) {
     console.error('Delete codebook error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============ DIRECTOR DAILY CASH REPORT ============
+
+function normalizeReportDate(value) {
+  const text = cleanText(value || todayIsoDate(), { max: 20, required: true });
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : todayIsoDate();
+}
+
+function reportCurrencies() {
+  const rows = db.prepare("SELECT value FROM codebook_items WHERE type = 'currency' AND is_active = 1 ORDER BY sort_order, label").all();
+  const values = rows.map(row => normalizeCurrency(row.value)).filter(Boolean);
+  return Array.from(new Set([...values, 'EUR', 'RSD']));
+}
+
+function zeroCurrencyMap(currencies = reportCurrencies()) {
+  return currencies.reduce((acc, currency) => {
+    acc[currency] = 0;
+    return acc;
+  }, {});
+}
+
+function currencyTotals(rows, currencies = reportCurrencies()) {
+  const totals = zeroCurrencyMap(currencies);
+  rows.forEach(row => {
+    const currency = normalizeCurrency(row.currency);
+    totals[currency] = roundMoney((totals[currency] || 0) + Number(row.amount || 0));
+  });
+  return totals;
+}
+
+function paymentMethodCashMap() {
+  const rows = db.prepare("SELECT value, metadata FROM codebook_items WHERE type = 'payment_method' AND is_active = 1").all();
+  const map = new Map();
+  rows.forEach(row => {
+    const metadata = safeJsonParse(row.metadata, {});
+    map.set(row.value, {
+      countsAsRevenue: metadata.countsAsRevenue !== false,
+      countsInCashRegister: metadata.countsInCashRegister === true
+    });
+  });
+  if (!map.size) {
+    map.set('Gotovina', { countsAsRevenue: true, countsInCashRegister: true });
+  }
+  return map;
+}
+
+function cashReportItems() {
+  return db.prepare(`
+    SELECT * FROM codebook_items
+    WHERE type = 'cash_report_item' AND is_active = 1
+    ORDER BY sort_order, label
+  `).all().map(serializeCodebookItem);
+}
+
+function ensureDailyCashReport({ reportDate, shift, userId }) {
+  const existing = db.prepare('SELECT * FROM daily_cash_reports WHERE report_date = ? AND shift = ?').get(reportDate, shift);
+  if (existing) return existing;
+  const result = db.prepare(`
+    INSERT INTO daily_cash_reports (report_date, shift, created_by, updated_by)
+    VALUES (?, ?, ?, ?)
+  `).run(reportDate, shift, userId, userId);
+  return db.prepare('SELECT * FROM daily_cash_reports WHERE id = ?').get(result.lastInsertRowid);
+}
+
+function loadDailyCashReportLines(reportId) {
+  return db.prepare('SELECT * FROM daily_cash_report_lines WHERE report_id = ? ORDER BY item_label, currency').all(reportId);
+}
+
+function buildManualLineRows({ report, currencies }) {
+  const items = cashReportItems();
+  const existing = loadDailyCashReportLines(report.id);
+  const byKey = new Map(existing.map(row => [`${row.item_value}|||${row.currency}`, row]));
+  return items.map(item => {
+    const metadata = item.metadata || {};
+    const lineType = ['inflow', 'outflow', 'info'].includes(metadata.lineType) ? metadata.lineType : 'outflow';
+    const amounts = zeroCurrencyMap(currencies);
+    const notes = {};
+    currencies.forEach(currency => {
+      const row = byKey.get(`${item.value}|||${currency}`);
+      if (row) {
+        amounts[currency] = Number(row.amount || 0);
+        if (row.notes) notes[currency] = row.notes;
+      }
+    });
+    return {
+      itemValue: item.value,
+      itemLabel: item.label,
+      lineType,
+      amounts,
+      notes
+    };
+  });
+}
+
+function dailyCashAutoRows({ reportDate, shift }) {
+  const params = [reportDate];
+  const shiftClause = shift ? 'AND vr.shift = ?' : '';
+  if (shift) params.push(shift);
+  return db.prepare(`
+    SELECT pp.amount, pp.currency, COALESCE(NULLIF(pp.payment_method, ''), 'Gotovina') AS payment_method
+    FROM payment_parts pp
+    JOIN visit_records vr ON vr.id = pp.visit_record_id
+    WHERE vr.visit_date = ?
+      ${shiftClause}
+  `).all(...params);
+}
+
+function buildDailyCashReport({ reportDate, shift, userId }) {
+  const currencies = reportCurrencies();
+  const report = ensureDailyCashReport({ reportDate, shift, userId });
+  const methods = paymentMethodCashMap();
+  const paymentRows = dailyCashAutoRows({ reportDate, shift });
+  const cashRows = paymentRows.filter(row => methods.get(row.payment_method)?.countsInCashRegister === true);
+  const revenueRows = paymentRows.filter(row => methods.get(row.payment_method)?.countsAsRevenue !== false);
+  const manualLines = buildManualLineRows({ report, currencies });
+  const manualOutflow = zeroCurrencyMap(currencies);
+  const manualInflow = zeroCurrencyMap(currencies);
+
+  manualLines.forEach(line => {
+    Object.entries(line.amounts).forEach(([currency, amount]) => {
+      if (line.lineType === 'outflow') manualOutflow[currency] = roundMoney((manualOutflow[currency] || 0) + Number(amount || 0));
+      if (line.lineType === 'inflow') manualInflow[currency] = roundMoney((manualInflow[currency] || 0) + Number(amount || 0));
+    });
+  });
+
+  const cashIn = currencyTotals(cashRows, currencies);
+  const totalRevenue = currencyTotals(revenueRows, currencies);
+  const remaining = zeroCurrencyMap(currencies);
+  currencies.forEach(currency => {
+    remaining[currency] = roundMoney((cashIn[currency] || 0) + (manualInflow[currency] || 0) - (manualOutflow[currency] || 0));
+  });
+
+  const debts = db.prepare(`
+    SELECT
+      p.first_name || ' ' || p.last_name AS patient,
+      vr.procedure,
+      vr.shift,
+      pay.amount AS amount,
+      pay.currency AS currency
+    FROM payments pay
+    JOIN visit_records vr ON vr.id = pay.visit_record_id
+    JOIN patients p ON p.id = pay.patient_id
+    WHERE vr.visit_date = ?
+      ${shift ? 'AND vr.shift = ?' : ''}
+      AND COALESCE(pay.amount, 0) > 0
+    ORDER BY patient, vr.procedure
+  `).all(...(shift ? [reportDate, shift] : [reportDate])).map(row => ({
+    patient: row.patient,
+    procedure: row.procedure,
+    shift: row.shift,
+    amount: Number(row.amount || 0),
+    currency: row.currency || 'EUR'
+  }));
+
+  return {
+    id: report.id,
+    reportDate: report.report_date,
+    shift: report.shift,
+    status: report.status,
+    notes: report.notes || '',
+    currencies,
+    totals: {
+      cashIn,
+      totalRevenue,
+      manualInflow,
+      manualOutflow,
+      remaining
+    },
+    manualLines,
+    debts
+  };
+}
+
+app.get('/api/director/daily-cash-report', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const reportDate = normalizeReportDate(req.query.date);
+    const shift = cleanText(req.query.shift, { max: 80 }) || '';
+    res.json(buildDailyCashReport({ reportDate, shift, userId: req.user.id }));
+  } catch (error) {
+    console.error('Daily cash report error:', error);
+    res.status(500).json({ error: 'Dnevna kasa nije učitana.' });
+  }
+});
+
+app.put('/api/director/daily-cash-report', authenticateToken, requireDirector, (req, res) => {
+  try {
+    const reportDate = normalizeReportDate(req.body.date || req.body.reportDate);
+    const shift = cleanText(req.body.shift, { max: 80 }) || '';
+    const report = ensureDailyCashReport({ reportDate, shift, userId: req.user.id });
+    if (report.status === 'locked') {
+      return res.status(409).json({ error: 'Dnevna kasa je zaključana.' });
+    }
+
+    const currencies = reportCurrencies();
+    const allowedItems = new Map(cashReportItems().map(item => [item.value, item]));
+    const lines = Array.isArray(req.body.lines) ? req.body.lines : [];
+    const upsert = db.prepare(`
+      INSERT INTO daily_cash_report_lines (report_id, item_value, item_label, line_type, currency, amount, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(report_id, item_value, currency) DO UPDATE SET
+        item_label = excluded.item_label,
+        line_type = excluded.line_type,
+        amount = excluded.amount,
+        notes = excluded.notes,
+        updated_at = CURRENT_TIMESTAMP
+    `);
+
+    db.exec('BEGIN');
+    try {
+      lines.forEach(line => {
+        const itemValue = cleanText(line.itemValue || line.item_value, { max: 120, required: true });
+        const item = allowedItems.get(itemValue);
+        if (!item) return;
+        const metadata = item.metadata || {};
+        const lineType = ['inflow', 'outflow', 'info'].includes(metadata.lineType) ? metadata.lineType : 'outflow';
+        const amounts = line.amounts && typeof line.amounts === 'object' ? line.amounts : {};
+        currencies.forEach(currency => {
+          const amount = roundMoney(money(amounts[currency]));
+          const notes = cleanText(line.notes?.[currency] || line.notes || '', { max: 1000 });
+          upsert.run(report.id, item.value, item.label, lineType, currency, amount, notes);
+        });
+      });
+      db.prepare('UPDATE daily_cash_reports SET notes = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(cleanText(req.body.notes, { max: 2000 }), req.user.id, report.id);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+
+    res.json(buildDailyCashReport({ reportDate, shift, userId: req.user.id }));
+  } catch (error) {
+    console.error('Save daily cash report error:', error);
+    res.status(500).json({ error: 'Dnevna kasa nije sačuvana.' });
   }
 });
 

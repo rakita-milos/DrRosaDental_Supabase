@@ -305,6 +305,35 @@ CREATE TABLE IF NOT EXISTS payment_parts (
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS daily_cash_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  report_date TEXT NOT NULL,
+  shift TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'locked')),
+  notes TEXT,
+  locked_by INTEGER REFERENCES users(id),
+  locked_at TEXT,
+  created_by INTEGER REFERENCES users(id),
+  updated_by INTEGER REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(report_date, shift)
+);
+
+CREATE TABLE IF NOT EXISTS daily_cash_report_lines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  report_id INTEGER NOT NULL REFERENCES daily_cash_reports(id) ON DELETE CASCADE,
+  item_value TEXT NOT NULL,
+  item_label TEXT NOT NULL,
+  line_type TEXT NOT NULL DEFAULT 'outflow' CHECK (line_type IN ('inflow', 'outflow', 'info')),
+  currency TEXT NOT NULL DEFAULT 'RSD',
+  amount REAL NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(report_id, item_value, currency)
+);
+
 CREATE TABLE IF NOT EXISTS public_booking_requests (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   patient_id INTEGER REFERENCES patients(id) ON DELETE SET NULL,
@@ -544,6 +573,8 @@ CREATE INDEX IF NOT EXISTS idx_visit_records_date ON visit_records(visit_date);
 CREATE INDEX IF NOT EXISTS idx_payments_patient ON payments(patient_id);
 CREATE INDEX IF NOT EXISTS idx_payment_parts_payment ON payment_parts(payment_id);
 CREATE INDEX IF NOT EXISTS idx_payment_parts_visit ON payment_parts(visit_record_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_cash_reports_date_shift ON daily_cash_reports(report_date, shift);
+CREATE INDEX IF NOT EXISTS idx_daily_cash_lines_report ON daily_cash_report_lines(report_id);
 CREATE INDEX IF NOT EXISTS idx_treatments_visit ON treatments(visit_record_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_codebook_items_unique ON codebook_items(type, value, COALESCE(group_name, ''));
 CREATE INDEX IF NOT EXISTS idx_codebook_items_type ON codebook_items(type, is_active, sort_order);

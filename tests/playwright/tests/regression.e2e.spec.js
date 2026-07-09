@@ -1,7 +1,7 @@
 const { test, expect } = require("@playwright/test");
 const { authenticate } = require("../utils/auth");
 const { cleanupRegressionData } = require("../utils/cleanup");
-const { createCodebookItem, createPatient, createPatientWithRecord, updateCodebookItem } = require("../utils/api");
+const { apiGet, apiPut, createCodebookItem, createPatient, createPatientWithRecord, createRecord, updateCodebookItem } = require("../utils/api");
 const { NewEntryPage } = require("../pages/NewEntryPage");
 const { AllRecordsPage } = require("../pages/AllRecordsPage");
 const { PatientDashboardPage } = require("../pages/PatientDashboardPage");
@@ -353,4 +353,49 @@ test("regression: split payment without total amount shows actionable error", as
   await expect(page.locator(".form-alert")).toContainText(/Ukupno za naplatu/i);
   await updateCodebookItem(request, baseURL, procedureItem.id, { ...procedureItem, isActive: false });
   await updateCodebookItem(request, baseURL, activityItem.id, { ...activityItem, isActive: false });
+});
+
+test("regression: daily cash report counts only physical cash and manual outflows", async ({ request, baseURL }) => {
+  const stamp = Date.now();
+  const reportDate = `2026-07-${String(10 + (stamp % 18)).padStart(2, "0")}`;
+  const reportShift = "Prva smena";
+  const patient = {
+    firstName: `${TEST_PREFIX}Cash${stamp}`,
+    lastName: "Patient",
+    email: `e2e.cash.${stamp}@example.com`
+  };
+  const created = await createPatient(request, baseURL, patient, "staff");
+
+  await createRecord(request, baseURL, {
+    patientId: created.id,
+    visitDate: reportDate,
+    shift: reportShift,
+    procedure: "Kontrola",
+    totalAmount: 17000,
+    amount: 0,
+    currency: "RSD",
+    paymentStatus: "Placeno",
+    paymentParts: [
+      { amount: 12000, currency: "RSD", paymentMethod: "Gotovina", paymentDate: reportDate },
+      { amount: 5000, currency: "RSD", paymentMethod: "Kartica", paymentDate: reportDate }
+    ],
+    note: `${TEST_PREFIX} daily cash ${stamp}`
+  }, "staff");
+
+  let report = await apiGet(request, baseURL, `/api/director/daily-cash-report?date=${reportDate}&shift=${encodeURIComponent(reportShift)}`, "director");
+  expect(report.totals.cashIn.RSD).toBe(12000);
+  expect(report.totals.totalRevenue.RSD).toBe(17000);
+  expect(report.totals.remaining.RSD).toBe(12000);
+
+  await apiPut(request, baseURL, "/api/director/daily-cash-report", {
+    date: reportDate,
+    shift: reportShift,
+    lines: [
+      { itemValue: "Kurir", amounts: { RSD: 800, EUR: 0 } }
+    ]
+  }, "director");
+
+  report = await apiGet(request, baseURL, `/api/director/daily-cash-report?date=${reportDate}&shift=${encodeURIComponent(reportShift)}`, "director");
+  expect(report.totals.manualOutflow.RSD).toBe(800);
+  expect(report.totals.remaining.RSD).toBe(11200);
 });

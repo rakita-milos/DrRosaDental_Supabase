@@ -651,6 +651,21 @@
     return request(`/director/exchange-rate?base=${encodeURIComponent(base)}&currency=${encodeURIComponent(currency)}`);
   }
 
+  async function getDailyCashReport(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") query.set(key, value);
+    });
+    return request(`/director/daily-cash-report${query.toString() ? `?${query}` : ""}`);
+  }
+
+  async function saveDailyCashReport(payload) {
+    return request("/director/daily-cash-report", {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    });
+  }
+
   async function getBackupStatus() {
     return request("/director/backups/status");
   }
@@ -818,6 +833,8 @@
     updateDocumentImaging,
     analyzeDocumentImaging,
     getExchangeRate,
+    getDailyCashReport,
+    saveDailyCashReport,
     getBackupStatus,
     getBackups,
     createBackup,
