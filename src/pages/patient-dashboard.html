@@ -66,6 +66,7 @@
         </div>
         <div class="patient-tabs" role="tablist" aria-label="Karton pacijenta">
           <button class="patient-tab active" type="button" data-patient-tab="medical-card">Karton</button>
+          <button class="patient-tab" type="button" data-patient-tab="initial-condition-card">Zateceno stanje</button>
           <button class="patient-tab" type="button" data-patient-tab="clinical-chart-card">Zubni status</button>
           <button class="patient-tab" type="button" data-patient-tab="clinical-notes-card">Klinicke beleske</button>
           <button class="patient-tab" type="button" data-patient-tab="consents-card">Saglasnosti</button>
@@ -129,6 +130,10 @@
             </div>
             <p id="medical-profile-message" class="form-alert" role="status"></p>
           </form>
+        </div>
+
+        <div class="patient-tab-panel" id="initial-condition-card">
+          <div id="patient-initial-condition-editor"></div>
         </div>
 
         <div class="patient-tab-panel" id="clinical-chart-card">
@@ -581,6 +586,7 @@
   <script src="../scripts/api.js"></script>
   <script src="../scripts/date-utils.js?v=picker-format-20260708"></script>
   <script src="../scripts/currency-utils.js"></script>
+  <script src="../scripts/tooth-condition-editor.js"></script>
   <script src="../scripts/treatment-history.js"></script>
   <script src="../scripts/patient-dashboard.js"></script>
 </body>

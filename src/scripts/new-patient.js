@@ -26,6 +26,7 @@ async function requireAccess() {
 const form = document.getElementById("patient-form");
 const cancelBtn = document.getElementById("cancel-btn");
 const patientId = new URLSearchParams(window.location.search).get("patient");
+let initialConditionEditor;
 
 function patientFullName(patient) {
   return `${patient.firstName || patient.first_name || ""} ${patient.lastName || patient.last_name || ""}`.trim();
@@ -53,8 +54,22 @@ async function loadPatientForEdit() {
     setValue("email", patient.email);
     setValue("emergency-contact", patient.emergencyContact || patient.emergency_contact);
     setValue("medical-history", patient.medicalHistory || patient.medical_history);
+    const chartEntries = await window.DrRosaApi.getClinicalChart(patientId);
+    initialConditionEditor?.setEntries(window.DrRosaToothCondition.initialConditionsFromEntries(chartEntries));
   } catch (error) {
     alert(error.message || "Pacijent nije učitan.");
+  }
+}
+
+async function saveInitialConditionsForPatient(savedPatientId) {
+  if (!initialConditionEditor) return;
+  const entries = initialConditionEditor.getEntries();
+  for (const entry of entries) {
+    if (entry.id) continue;
+    await window.DrRosaApi.createClinicalChartEntry(
+      savedPatientId,
+      window.DrRosaToothCondition.payloadFromEntry(entry)
+    );
   }
 }
 
@@ -83,9 +98,11 @@ form.addEventListener("submit", async (event) => {
       window.location.href = `patient-dashboard.html?patientId=${encodeURIComponent(savedPatient.id || patientId)}`;
       return;
     }
-    await window.DrRosaApi.createPatient(patient);
+    const savedPatient = await window.DrRosaApi.createPatient(patient);
+    await saveInitialConditionsForPatient(savedPatient.id);
     alert("Pacijent sačuvan!");
     form.reset();
+    initialConditionEditor?.clear();
   } catch (error) {
     alert(error.message || "Pacijent nije sačuvan. Proverite vezu sa serverom.");
   }
@@ -99,5 +116,21 @@ cancelBtn.addEventListener("click", () => {
 
 (async function init() {
   if (!await requireAccess()) return;
+  const editorRoot = document.getElementById("initial-condition-editor");
+  if (editorRoot && window.DrRosaToothCondition) {
+    initialConditionEditor = window.DrRosaToothCondition.createEditor(editorRoot, {
+      title: "Zateceno stanje zuba",
+      emptyMessage: "Zateceno stanje mozete uneti odmah ili kasnije iz kartona pacijenta.",
+      onAdd: patientId
+        ? payload => window.DrRosaApi.createClinicalChartEntry(patientId, payload)
+        : null,
+      onUpdate: patientId
+        ? (entryId, payload) => window.DrRosaApi.updateClinicalChartEntry(entryId, payload)
+        : null,
+      onRemove: patientId
+        ? entry => window.DrRosaApi.deleteClinicalChartEntry(entry.id)
+        : null
+    });
+  }
   await loadPatientForEdit();
 })();

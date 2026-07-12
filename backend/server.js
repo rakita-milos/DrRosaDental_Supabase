@@ -283,6 +283,7 @@ function applyMigrations() {
   ensureColumn('clinical_chart_entries', 'currency', "TEXT NOT NULL DEFAULT 'EUR'");
   ensureColumn('clinical_chart_entries', 'price_rsd', "REAL NOT NULL DEFAULT 0");
   ensureColumn('clinical_chart_entries', 'exchange_rate_to_rsd', "REAL NOT NULL DEFAULT 0");
+  ensureColumn('clinical_chart_entries', 'entry_type', "TEXT NOT NULL DEFAULT 'clinical'");
   ensureColumn('patient_consents', 'updated_at', 'TEXT');
   ensureCodebookTable();
   ensureColumn('codebook_items', 'metadata', "TEXT");
@@ -311,6 +312,9 @@ function applyMigrations() {
   runMigration('2026-07-07-daily-cash-report', () => {
     ensureDailyCashReportTables();
     ensureDefaultOperationalCodebooks();
+  });
+  runMigration('2026-07-10-initial-tooth-condition', () => {
+    ensureColumn('clinical_chart_entries', 'entry_type', "TEXT NOT NULL DEFAULT 'clinical'");
   });
 }
 
@@ -461,6 +465,7 @@ function ensureClinicalWorkflowTables() {
       ada_code TEXT,
       diagnosis TEXT,
       procedure_code TEXT,
+      entry_type TEXT NOT NULL DEFAULT 'clinical',
       status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'in_progress', 'completed', 'watch', 'referred')),
       phase INTEGER NOT NULL DEFAULT 1,
       price REAL NOT NULL DEFAULT 0,
@@ -3826,6 +3831,7 @@ function serializeClinicalChart(row) {
     adaCode: row.ada_code || '',
     diagnosis: row.diagnosis || '',
     procedureCode: row.procedure_code || '',
+    entryType: row.entry_type || 'clinical',
     status: row.status,
     phase: Number(row.phase || 1),
     price: Number(row.price || 0),
@@ -3836,6 +3842,22 @@ function serializeClinicalChart(row) {
     notes: row.notes || '',
     createdAt: row.created_at,
     updatedAt: row.updated_at
+  };
+}
+
+function normalizeClinicalEntryType(value) {
+  return value === 'initial_condition' ? 'initial_condition' : 'clinical';
+}
+
+function clinicalPriceFields(entryType, body, fallback = {}) {
+  if (entryType === 'initial_condition') {
+    return { price: 0, currency: 'EUR', priceRsd: 0, exchangeRateToRsd: 0 };
+  }
+  return {
+    price: money(body.price ?? fallback.price),
+    currency: normalizeCurrency(body.currency || fallback.currency),
+    priceRsd: money(body.priceRsd ?? body.price_rsd ?? fallback.price_rsd),
+    exchangeRateToRsd: money(body.exchangeRateToRsd ?? body.exchange_rate_to_rsd ?? fallback.exchange_rate_to_rsd)
   };
 }
 
@@ -3882,11 +3904,13 @@ app.post('/api/patients/:id/clinical-chart', authenticateToken, requirePermissio
     if (!patientId || !rowExists('patients', patientId)) return res.status(404).json({ error: 'Patient not found' });
     const surfaces = Array.isArray(req.body.surfaces) ? req.body.surfaces.map(surface => cleanText(surface, { max: 20 })).filter(Boolean) : [];
     const status = ['planned', 'in_progress', 'completed', 'watch', 'referred'].includes(req.body.status) ? req.body.status : 'planned';
+    const entryType = normalizeClinicalEntryType(req.body.entryType || req.body.entry_type);
+    const priceFields = clinicalPriceFields(entryType, req.body);
     const result = db.prepare(`
       INSERT INTO clinical_chart_entries (
         patient_id, visit_record_id, tooth_number, surfaces, cdt_code, ada_code, diagnosis,
-        procedure_code, status, phase, price, currency, price_rsd, exchange_rate_to_rsd, provider_id, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        procedure_code, entry_type, status, phase, price, currency, price_rsd, exchange_rate_to_rsd, provider_id, notes, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       patientId,
       positiveInteger(req.body.visitRecordId || req.body.visit_record_id),
@@ -3896,12 +3920,13 @@ app.post('/api/patients/:id/clinical-chart', authenticateToken, requirePermissio
       cleanText(req.body.adaCode || req.body.ada_code, { max: 40 }),
       cleanText(req.body.diagnosis, { max: 1000 }),
       cleanText(req.body.procedureCode || req.body.procedure_code, { max: 80 }),
+      entryType,
       status,
       Math.max(1, Number(req.body.phase || 1)),
-      money(req.body.price),
-      normalizeCurrency(req.body.currency),
-      money(req.body.priceRsd || req.body.price_rsd),
-      money(req.body.exchangeRateToRsd || req.body.exchange_rate_to_rsd),
+      priceFields.price,
+      priceFields.currency,
+      priceFields.priceRsd,
+      priceFields.exchangeRateToRsd,
       positiveInteger(req.body.providerId || req.body.provider_id),
       cleanText(req.body.notes, { max: 2000 }),
       req.user.id
@@ -3925,10 +3950,12 @@ app.put('/api/clinical-chart/:id', authenticateToken, requirePermission('clinica
     const status = ['planned', 'in_progress', 'completed', 'watch', 'referred'].includes(req.body.status)
       ? req.body.status
       : existing.status;
+    const entryType = normalizeClinicalEntryType(req.body.entryType || req.body.entry_type || existing.entry_type);
+    const priceFields = clinicalPriceFields(entryType, req.body, existing);
     db.prepare(`
       UPDATE clinical_chart_entries
       SET tooth_number = ?, surfaces = ?, cdt_code = ?, ada_code = ?, diagnosis = ?,
-          procedure_code = ?, status = ?, phase = ?, price = ?, currency = ?, price_rsd = ?,
+          procedure_code = ?, entry_type = ?, status = ?, phase = ?, price = ?, currency = ?, price_rsd = ?,
           exchange_rate_to_rsd = ?, provider_id = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
@@ -3938,12 +3965,13 @@ app.put('/api/clinical-chart/:id', authenticateToken, requirePermission('clinica
       cleanText(req.body.adaCode || req.body.ada_code || existing.ada_code, { max: 40 }),
       cleanText(req.body.diagnosis ?? existing.diagnosis, { max: 1000 }),
       cleanText(req.body.procedureCode || req.body.procedure_code || existing.procedure_code, { max: 80 }),
+      entryType,
       status,
       Math.max(1, Number(req.body.phase || existing.phase || 1)),
-      money(req.body.price ?? existing.price),
-      normalizeCurrency(req.body.currency || existing.currency),
-      money(req.body.priceRsd ?? req.body.price_rsd ?? existing.price_rsd),
-      money(req.body.exchangeRateToRsd ?? req.body.exchange_rate_to_rsd ?? existing.exchange_rate_to_rsd),
+      priceFields.price,
+      priceFields.currency,
+      priceFields.priceRsd,
+      priceFields.exchangeRateToRsd,
       positiveInteger(req.body.providerId || req.body.provider_id || existing.provider_id),
       cleanText(req.body.notes ?? existing.notes, { max: 2000 }),
       chartId

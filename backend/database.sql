@@ -415,6 +415,7 @@ CREATE TABLE IF NOT EXISTS clinical_chart_entries (
   ada_code TEXT,
   diagnosis TEXT,
   procedure_code TEXT,
+  entry_type TEXT NOT NULL DEFAULT 'clinical' CHECK (entry_type IN ('clinical', 'initial_condition')),
   status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'in_progress', 'completed', 'watch', 'referred')),
   phase INTEGER NOT NULL DEFAULT 1,
   price REAL NOT NULL DEFAULT 0,

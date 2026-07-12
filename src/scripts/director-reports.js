@@ -1722,7 +1722,18 @@ function renderDailyCashReport(report) {
       .filter(line => line.lineType === "outflow")
       .map(line => [line.itemLabel, amountFor(line.amounts, "EUR").toFixed(2), amountFor(line.amounts, "RSD").toFixed(2), "Oduzima se od kase"]),
     ["Ukupno izlazi", amountFor(report.totals.manualOutflow, "EUR").toFixed(2), amountFor(report.totals.manualOutflow, "RSD").toFixed(2), "Zbir ručnih stavki"],
-    ["Ostatak", amountFor(report.totals.remaining, "EUR").toFixed(2), amountFor(report.totals.remaining, "RSD").toFixed(2), "Kes minus izlazi"]
+    ["Ostatak", amountFor(report.totals.remaining, "EUR").toFixed(2), amountFor(report.totals.remaining, "RSD").toFixed(2), "Kes minus izlazi"],
+    ["", "", "", ""],
+    ["DUŽNICI", "", "", ""],
+    ["Pacijent", "Procedura", "EUR", "RSD"],
+    ...(report.debts.length
+      ? report.debts.map(debt => [
+        debt.patient,
+        debt.procedure || "-",
+        debt.currency === "EUR" ? Number(debt.amount || 0).toFixed(2) : "-",
+        debt.currency === "RSD" ? Number(debt.amount || 0).toFixed(2) : "-"
+      ])
+      : [["Nema dugovanja za izabrani dan.", "", "", ""]])
   ];
 
   currentReportExport = {

@@ -132,6 +132,7 @@ let perioMeasurementsDraft = [];
 let invoiceItemsDraft = [];
 let loadedDocuments = [];
 let loadedClinicalChartEntries = [];
+let initialConditionEditor;
 let loadedClinicalNotes = [];
 let loadedPatientConsents = [];
 let currencyItems = [];
@@ -883,8 +884,8 @@ function renderInsuranceClaims(claims) {
 }
 
 function renderClinicalChart(entries) {
-  loadedClinicalChartEntries = entries;
-  document.getElementById("clinical-chart-body").innerHTML = entries.length ? entries.map(entry => `
+  loadedClinicalChartEntries = entries.filter(entry => entry.entryType !== "initial_condition");
+  document.getElementById("clinical-chart-body").innerHTML = loadedClinicalChartEntries.length ? loadedClinicalChartEntries.map(entry => `
     <tr>
       <td>${escapeHtml(entry.toothNumber)}<br><small>${escapeHtml((entry.surfaces || []).join(", ") || "-")}</small></td>
       <td>${escapeHtml([entry.cdtCode, entry.adaCode].filter(Boolean).join(" / ") || "-")}</td>
@@ -1045,7 +1046,9 @@ function fillConsentForm(consent) {
 
 async function initializeClinicalWorkflows(patientId) {
   async function refreshClinicalChart() {
-    renderClinicalChart(await window.DrRosaApi.getClinicalChart(patientId));
+    const entries = await window.DrRosaApi.getClinicalChart(patientId);
+    initialConditionEditor?.setEntries(window.DrRosaToothCondition.initialConditionsFromEntries(entries));
+    renderClinicalChart(entries);
   }
   async function refreshClinicalNotes() {
     renderClinicalNotes(await window.DrRosaApi.getClinicalNotes(patientId));
@@ -1206,6 +1209,17 @@ async function initializeClinicalWorkflows(patientId) {
     setMessage("consent-message", "Saglasnost je obrisana.");
     await refreshConsents();
   });
+
+  const initialConditionRoot = document.getElementById("patient-initial-condition-editor");
+  if (initialConditionRoot && window.DrRosaToothCondition) {
+    initialConditionEditor = window.DrRosaToothCondition.createEditor(initialConditionRoot, {
+      title: "Zateceno stanje zuba",
+      emptyMessage: "Nema unetog zatecenog stanja za ovog pacijenta.",
+      onAdd: payload => window.DrRosaApi.createClinicalChartEntry(patientId, payload),
+      onUpdate: (entryId, payload) => window.DrRosaApi.updateClinicalChartEntry(entryId, payload),
+      onRemove: entry => window.DrRosaApi.deleteClinicalChartEntry(entry.id)
+    });
+  }
 
   await Promise.all([refreshClinicalChart(), refreshClinicalNotes(), refreshConsents()]);
 }

@@ -68,6 +68,7 @@ let doctors = [];
 let allRecords = [];
 let teethTreatments = {};
 let selectedTeeth = new Set();
+let initialConditionEntries = [];
 let paymentParts = [];
 let paymentMethodItems = [
   { value: "Gotovina", label: "Gotovina" },
@@ -356,6 +357,8 @@ const treatmentDiscountType = document.getElementById("treatment-discount-type")
 const treatmentPrice = document.getElementById("treatment-price");
 const treatmentTotalPrice = document.getElementById("treatment-total-price");
 const teethSummary = document.getElementById("teeth-summary");
+const initialConditionSummary = document.getElementById("initial-condition-summary");
+const showInitialConditionBtn = document.getElementById("show-initial-condition");
 const toothNodes = document.querySelectorAll(".tooth-node");
 let toothHistoryCollapsed = false;
 
@@ -849,6 +852,8 @@ inputs.addPaymentPart?.addEventListener("click", () => {
   updatePreview();
 });
 
+showInitialConditionBtn?.addEventListener("click", loadInitialConditionForCurrentPatient);
+
 inputs.procedureActivity.addEventListener("change", () => {
   populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
   syncTotalAmountFromSelection({ force: !totalAmountTouched });
@@ -962,6 +967,7 @@ function getPatientToothHistory(name) {
 function updateToothHighlights() {
   const history = getPatientToothHistory(inputs.patient.value.trim());
   const highlightedTeeth = new Set([...Object.keys(teethTreatments), ...history.map(item => item.tooth)]);
+  const initialConditionTeeth = new Set(initialConditionEntries.map(item => item.toothNumber));
   const isExtraction = treatment => String(treatment?.type || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("vad");
   const isImplant = treatment => String(treatment?.type || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("implant");
   const extractedTeeth = new Set(history.filter(isExtraction).map(item => item.tooth));
@@ -971,19 +977,62 @@ function updateToothHighlights() {
     const toothNumber = tooth.dataset.tooth;
     const currentTreatments = treatmentListForTooth(toothNumber);
     tooth.classList.toggle("treated", highlightedTeeth.has(toothNumber));
+    tooth.classList.toggle("initial-condition", initialConditionTeeth.has(toothNumber));
     tooth.classList.toggle("selected", selectedTeeth.has(toothNumber));
     tooth.classList.toggle("extracted", extractedTeeth.has(toothNumber) || currentTreatments.some(isExtraction));
     tooth.classList.toggle("implant", implantTeeth.has(toothNumber) || currentTreatments.some(isImplant));
   });
 }
 
+function renderInitialConditionSummary() {
+  if (!initialConditionSummary) return;
+  if (!initialConditionEntries.length) {
+    initialConditionSummary.innerHTML = "";
+    updateToothHighlights();
+    return;
+  }
+  initialConditionSummary.innerHTML = `
+    <h4>Zateceno stanje</h4>
+    ${initialConditionEntries.map(entry => `
+      <div class="condition-entry readonly">
+        <div>
+          <strong>Zub ${escapeHtml(entry.toothNumber)}</strong>
+          ${entry.notes ? `<p>${escapeHtml(entry.notes)}</p>` : ""}
+        </div>
+      </div>
+    `).join("")}
+  `;
+  updateToothHighlights();
+}
+
+async function loadInitialConditionForCurrentPatient() {
+  const patientNameValue = inputs.patient.value.trim();
+  const patient = findPatientByName(patientNameValue);
+  if (!patient) {
+    showAlert("Prvo odaberite postojeceg pacijenta da bi se prikazalo zateceno stanje.", "error", { persist: true, scroll: true });
+    return;
+  }
+  try {
+    const entries = await window.DrRosaApi.getClinicalChart(patient.id);
+    initialConditionEntries = window.DrRosaToothCondition.initialConditionsFromEntries(entries);
+    renderInitialConditionSummary();
+    showAlert(initialConditionEntries.length ? "Zateceno stanje je prikazano ispod mape zuba." : "Pacijent nema uneto zateceno stanje.", "info");
+  } catch (error) {
+    showAlert(error.message || "Zateceno stanje nije ucitano.", "error", { persist: true, scroll: true });
+  }
+}
+
 inputs.patient.addEventListener("change", () => {
+  initialConditionEntries = [];
+  renderInitialConditionSummary();
   updateTeethSummary();
   updateToothHighlights();
 });
 
 inputs.patient.addEventListener("input", () => {
   inputs.patient.value = inputs.patient.value.replace(/\s+/g, " ");
+  initialConditionEntries = [];
+  renderInitialConditionSummary();
   renderPatientSuggestions();
   updateTeethSummary();
   updateToothHighlights();

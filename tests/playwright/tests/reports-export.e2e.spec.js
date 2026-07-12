@@ -85,3 +85,24 @@ test("director Excel-style report export includes monthly Pazari values", async 
   await expectPdfPopupContains(popup, ["PAZARI", "432,00"]);
   await popup.close();
 });
+
+test("director daily cash export includes debtor details", async ({ page, request, baseURL }) => {
+  const { fullName } = await createExportFixture(request, baseURL);
+
+  await authenticate(page, "director");
+  const directorPanel = new DirectorPanelPage(page);
+  await directorPanel.goto();
+  await directorPanel.openReport("daily-cash-report", "#daily-cash-auto-table");
+  await page.locator("#daily-cash-date").evaluate((input, value) => {
+    input.value = value;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, "2026-05-11");
+  await page.locator("#daily-cash-shift").selectOption("Prva smena");
+  await page.locator("#daily-cash-load").click();
+  await expect(page.locator("#daily-cash-debts-table")).toContainText(fullName);
+
+  const { download, popup } = await directorPanel.exportCurrentReport("daily-cash-report", { closePopup: false });
+  await expectDownloadedExcelContains(download, ["DUŽNICI", fullName, "Kontrola", "432.00"]);
+  await expectPdfPopupContains(popup, ["DUŽNICI", fullName, "Kontrola", "432.00"]);
+  await popup.close();
+});

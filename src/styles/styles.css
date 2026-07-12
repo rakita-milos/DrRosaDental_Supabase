@@ -2666,6 +2666,21 @@ td:nth-child(5) {
   stroke-width: 2.4;
 }
 
+.tooth-node.initial-condition .tooth-surface {
+  fill: #e8f4ff;
+  stroke: #1891f0;
+  stroke-width: 3.4;
+}
+
+.tooth-node.initial-condition .tooth-number {
+  fill: #1b3c75;
+  font-weight: 900;
+}
+
+.tooth-node.initial-condition .tooth-groove {
+  stroke: #1891f0;
+}
+
 .tooth-node.selected .tooth-surface {
   stroke: #f59e0b;
   stroke-width: 4.2;
@@ -2848,6 +2863,215 @@ td:nth-child(5) {
 .teeth-summary h4 {
   color: #1b3c75;
   margin: 0 0 12px;
+}
+
+.initial-condition-section {
+  border-top: 1px solid #dbe7ef;
+  margin-top: 24px;
+  padding-top: 24px;
+}
+
+.condition-editor {
+  background: #f8fbff;
+  border: 1px solid #d7e0eb;
+  border-radius: 18px;
+  padding: 24px;
+}
+
+.condition-header {
+  margin-bottom: 16px;
+}
+
+.condition-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.condition-map {
+  display: block;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+
+.condition-map .ortomapa-container {
+  margin: 0;
+}
+
+.condition-map .ortomapa {
+  max-width: 1040px;
+}
+
+.condition-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 320px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: end;
+}
+
+.condition-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: #243145;
+  font-weight: 600;
+}
+
+.condition-form input,
+.condition-form select,
+.condition-form textarea {
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid #d7e0eb;
+  border-radius: 20px;
+  background: #ffffff;
+  color: #17212b;
+  font: inherit;
+}
+
+.condition-form textarea {
+  min-height: 112px;
+}
+
+.condition-form label:has(.condition-notes) {
+  grid-column: 1 / -1;
+}
+
+.condition-quick-notes {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.condition-note-chip {
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 0.86rem;
+}
+
+.condition-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
+.condition-teeth-row {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(34px, 1fr));
+  gap: 8px;
+}
+
+.condition-tooth-btn {
+  min-height: 40px;
+  border: 1px solid #c9d8e4;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1b3c75;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.condition-tooth-btn:hover,
+.condition-tooth-btn:focus-visible {
+  border-color: #1891f0;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(24, 145, 240, 0.14);
+}
+
+.condition-tooth-btn.conditioned {
+  background: rgba(24, 145, 240, 0.1);
+  border-color: #1891f0;
+  color: #1b3c75;
+}
+
+.condition-tooth-btn.selected {
+  background: #1b3c75;
+  border-color: #1b3c75;
+  color: #ffffff;
+}
+
+.condition-list {
+  margin-top: 18px;
+}
+
+.condition-table-wrap {
+  margin-top: 0;
+}
+
+.condition-table th:first-child,
+.condition-table td:first-child {
+  width: 92px;
+}
+
+.condition-table th:last-child,
+.condition-table td:last-child {
+  width: 190px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.condition-table .secondary-btn,
+.condition-table .danger-btn {
+  min-height: 34px;
+  padding: 8px 12px;
+  margin: 2px;
+}
+
+.condition-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  background: #f8fbff;
+  border: 1px solid #dfe8f1;
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+
+.condition-entry span {
+  display: inline-block;
+  margin-left: 8px;
+  color: #1b3c75;
+  font-weight: 800;
+}
+
+.condition-entry p {
+  margin: 6px 0 0;
+  color: #4b5f70;
+}
+
+.condition-entry-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.condition-empty {
+  background: #f8fbff;
+  border: 1px dashed #c9d8e4;
+  border-radius: 16px;
+  color: #5b6c7d;
+  padding: 14px;
+}
+
+.condition-readonly-summary {
+  background: linear-gradient(180deg, rgba(99, 183, 58, 0.1), rgba(255, 255, 255, 0.9));
+}
+
+@media (max-width: 860px) {
+  .condition-form {
+    grid-template-columns: 1fr;
+  }
+
+  .condition-teeth-row {
+    grid-template-columns: repeat(4, minmax(42px, 1fr));
+  }
 }
 
 .treatment-history-header {
