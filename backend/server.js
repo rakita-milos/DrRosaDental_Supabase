@@ -1,9 +1,10 @@
 // Dr Rosa Dental Clinic - Backend API Server
-require('dotenv').config();
-
+const path = require('path');
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config({ path: path.join(__dirname, '.env') });
+}
 const fs = require('fs');
 const fsp = fs.promises;
-const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -108,6 +109,7 @@ const runtimeSettings = createRuntimeSettingsRepository({ pgPool });
 const startupSeed = createStartupSeedRepository({ pgPool });
 
 let server;
+let runtimeReadyPromise;
 
 function closePostgresPool() {
   if (!pgPool) return;
@@ -261,6 +263,26 @@ async function seedDatabase() {
   await ensureDefaultOperationalCodebooksPostgres();
   await rotateDefaultPasswords();
 }
+
+async function ensureRuntimeReady() {
+  if (!runtimeReadyPromise) {
+    runtimeReadyPromise = (async () => {
+      await initializePostgresSchema(pgPool);
+      await seedDatabase();
+    })();
+  }
+  return runtimeReadyPromise;
+}
+
+app.use('/api', async (_req, res, next) => {
+  try {
+    await ensureRuntimeReady();
+    next();
+  } catch (error) {
+    console.error('Runtime initialization error:', error);
+    res.status(503).json({ error: 'Service initialization failed.' });
+  }
+});
 
 async function appSetting(key, fallback = '') {
   return (await runtimeSettings.appSetting(key))?.value ?? fallback;
@@ -4420,8 +4442,7 @@ app.use((_req, res) => {
 
 async function startServer() {
   try {
-    await initializePostgresSchema(pgPool);
-    await seedDatabase();
+    await ensureRuntimeReady();
 
     server = app.listen(PORT, () => {
       console.log(`Dr Rosa Backend API running on http://localhost:${PORT}`);
@@ -4469,6 +4490,8 @@ function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-startServer();
+if (require.main === module) {
+  startServer();
+}
 
-module.exports = { app, get server() { return server; }, startServer };
+module.exports = { app, ensureRuntimeReady, get server() { return server; }, startServer };
