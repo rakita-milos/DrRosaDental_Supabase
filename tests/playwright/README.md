@@ -84,7 +84,7 @@ npm install
 npm test
 ```
 
-By default the suite starts its own backend on `http://localhost:3010` with isolated SQLite, backup, upload and scanner directories.
+By default the suite starts its own backend on `http://localhost:3010` and uses `DATABASE_URL` for a PostgreSQL test database.
 
 Samo smoke testovi:
 

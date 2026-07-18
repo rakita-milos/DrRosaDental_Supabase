@@ -1340,6 +1340,20 @@ async function loadBackupsPanel() {
     const warning = document.getElementById("backup-warning");
     warning.textContent = status.warningMessage || "";
     warning.style.display = status.warning ? "block" : "none";
+    const createButton = document.getElementById("create-backup-btn");
+    if (createButton && status.mode === "supabase_postgres") {
+      createButton.textContent = "Backup se radi u Supabase";
+      createButton.disabled = true;
+      createButton.title = status.message || "PostgreSQL backup se upravlja van aplikacije.";
+    } else if (createButton) {
+      createButton.textContent = "Napravi rezervnu kopiju sada";
+      createButton.disabled = false;
+      createButton.removeAttribute("title");
+    }
+    if (status.mode === "supabase_postgres") {
+      document.getElementById("backup-table").innerHTML = `<tr><td colspan="5" class="empty-row">${escapeHtml(status.message || "PostgreSQL backup se upravlja van aplikacije.")}</td></tr>`;
+      return;
+    }
     document.getElementById("backup-table").innerHTML = backups.length ? backups.map(backup => `
       <tr>
         <td>${formatDateTime(backup.createdAt)}</td>
@@ -1572,7 +1586,7 @@ async function downloadBackup(backupId, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = filename || "drrosa-backup.sqlite.enc";
+  link.download = filename || "drrosa-backup.pg-managed";
   document.body.appendChild(link);
   link.click();
   link.remove();

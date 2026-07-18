@@ -7,6 +7,11 @@ const testsDir = path.join(rootDir, "tests/playwright");
 const backendDir = path.join(rootDir, "backend");
 const playwrightCli = require.resolve("@playwright/test/cli");
 const backendEnv = readEnv();
+const databaseUrl = process.env.DATABASE_URL || backendEnv.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error("Set DATABASE_URL to a PostgreSQL test database before running Playwright with the bundled backend.");
+}
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || process.env.APP_BASE_URL || "http://localhost:3010";
 const parsedBaseUrl = new URL(baseURL);
@@ -17,8 +22,8 @@ const serverEnv = {
   ...process.env,
   NODE_ENV: process.env.NODE_ENV || "test",
   PORT: testPort,
-  SQLITE_DB_PATH: process.env.SQLITE_DB_PATH || "../tests/playwright/.backend-data/playwright.sqlite",
-  BACKUP_DIR: process.env.BACKUP_DIR || "../tests/playwright/.backend-backups",
+  DB_CLIENT: "postgres",
+  DATABASE_URL: databaseUrl,
   UPLOAD_DIR: process.env.UPLOAD_DIR || "../tests/playwright/.uploads",
   SCANNER_IMPORT_DIR: process.env.SCANNER_IMPORT_DIR || "../tests/playwright/.scanner-inbox",
   CORS_ORIGIN: process.env.CORS_ORIGIN || `${baseURL},${parsedBaseUrl.origin}`,
@@ -26,7 +31,6 @@ const serverEnv = {
   JWT_SECRET: process.env.JWT_SECRET || backendEnv.JWT_SECRET,
   INITIAL_DIRECTOR_PASSWORD: process.env.INITIAL_DIRECTOR_PASSWORD || backendEnv.INITIAL_DIRECTOR_PASSWORD,
   INITIAL_STAFF_PASSWORD: process.env.INITIAL_STAFF_PASSWORD || backendEnv.INITIAL_STAFF_PASSWORD,
-  BACKUP_ENCRYPTION_KEY: process.env.BACKUP_ENCRYPTION_KEY || "playwright-backup-key-dr-rosa-minimum-32-characters",
   LOGIN_RATE_LIMIT_MAX: process.env.LOGIN_RATE_LIMIT_MAX || "1000"
 };
 

@@ -12,14 +12,13 @@ function runServerImport(extraEnv = {}, removeEnv = []) {
     ...process.env,
     NODE_ENV: 'production',
     PORT: '3999',
-    SQLITE_DB_PATH: path.join(mkdtempSync(path.join(tmpdir(), 'drrosa-config-')), 'config.sqlite'),
-    BACKUP_DIR: path.join(mkdtempSync(path.join(tmpdir(), 'drrosa-backup-')), 'backups'),
+    DB_CLIENT: 'postgres',
+    DATABASE_URL: 'postgres://user:pass@127.0.0.1:1/drrosa_test',
     UPLOAD_DIR: path.join(mkdtempSync(path.join(tmpdir(), 'drrosa-upload-')), 'uploads'),
     SCANNER_IMPORT_DIR: path.join(mkdtempSync(path.join(tmpdir(), 'drrosa-scan-')), 'scanner'),
     CORS_ORIGIN: 'https://drrosa.example.com',
     TRUST_PROXY: 'loopback',
     JWT_SECRET: 'production-config-test-jwt-secret-32-chars',
-    BACKUP_ENCRYPTION_KEY: 'production-config-test-backup-secret-32-chars',
     STAFF_DEFAULT_PERMISSIONS: 'patients:read,records:read'
   };
   Object.assign(env, extraEnv);

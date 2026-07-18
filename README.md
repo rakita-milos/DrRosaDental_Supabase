@@ -34,9 +34,10 @@ A dental clinic management system with role-based access control, patient tracki
 - bcrypt credential hashing
 - Helmet security headers
 - CORS allow-list
-- SQLite prepared statements
+- PostgreSQL prepared statements
+- Supabase PostgreSQL runtime with a private `app` schema target
 - Login rate limiting
-- Encrypted SQLite backup files
+- Supabase/PostgreSQL managed backup workflow
 
 ## Project Structure
 
@@ -46,14 +47,10 @@ DrRosaWebApp/
   README.md
   DIRECTOR_PANEL_GUIDE.md
   BACKEND_SETUP.md
-  database_schema.sql  (legacy reference; active schema is backend/database.sql)
-  sql/
   backend/
     server.js
-    database.sql
+    database.postgres.sql
     package.json
-    data/
-    backups/
     scripts/
     uploads/
   src/
@@ -110,11 +107,10 @@ Create or update the backend environment file. Keep local credentials and runtim
 Required runtime settings include:
 
 ```text
-SQLITE_DB_PATH
-BACKUP_DIR
+DATABASE_URL
+PG_SEARCH_PATH
 UPLOAD_DIR
 SCANNER_IMPORT_DIR
-BACKUP_ENCRYPTION_KEY
 STAFF_DEFAULT_PERMISSIONS
 PORT
 NODE_ENV
@@ -126,7 +122,7 @@ TRUST_PROXY
 
 The initial director and staff login values are also configured through backend environment variables and are used only when the users table is empty.
 
-For production, `NODE_ENV=production` enforces explicit `CORS_ORIGIN`, `UPLOAD_DIR`, `SCANNER_IMPORT_DIR`, `BACKUP_ENCRYPTION_KEY` and `STAFF_DEFAULT_PERMISSIONS`. Production `CORS_ORIGIN` must point to the real HTTPS frontend origin, not localhost.
+For production, `NODE_ENV=production` enforces explicit `CORS_ORIGIN`, `UPLOAD_DIR`, `SCANNER_IMPORT_DIR` and `STAFF_DEFAULT_PERMISSIONS`. Production `CORS_ORIGIN` must point to the real HTTPS frontend origin, not localhost.
 Set `TRUST_PROXY` explicitly for live deployments (`loopback` for a local reverse proxy, a hop count such as `1` for a trusted upstream proxy, or `false` only without a proxy). `REQUIRE_PRODUCTION_READY=true` can be used as an extra guard so production checks run even if `NODE_ENV` is misconfigured.
 
 ### 3. Start the app
@@ -152,8 +148,8 @@ credentials, then run:
 docker compose -f docker-compose.example.yml up --build
 ```
 
-The container healthcheck calls `/api/health`. Keep SQLite data, uploads,
-scanner inbox and encrypted backups on persistent volumes.
+The container healthcheck calls `/api/health`. Keep uploads and scanner inbox
+on persistent volumes; PostgreSQL persistence is handled by Supabase.
 
 ### Optional development server
 
@@ -191,7 +187,7 @@ Get-Process | Where-Object { $_.ProcessName -eq 'node' } | Select-Object Id,Proc
 
 1. User submits login data on `login.html`.
 2. Frontend calls `POST /api/auth/login`.
-3. Backend validates the user in SQLite.
+3. Backend validates the user in PostgreSQL.
 4. Server sets HttpOnly SameSite cookies for browser clients.
 5. Frontend stores only non-secret session display metadata in `localStorage['drrosa-session']`.
 6. Protected pages call `POST /api/auth/verify`.
@@ -199,13 +195,12 @@ Get-Process | Where-Object { $_.ProcessName -eq 'node' } | Select-Object Id,Proc
 
 ## Data Persistence
 
-Primary data is stored in SQLite.
+Primary data is stored in Supabase PostgreSQL.
 
-- Default database: `backend/data/drosa.sqlite`
-- Schema: `backend/database.sql`
+- Schema: `backend/database.postgres.sql`
 - Config: backend environment file
 - Uploaded patient files: `backend/uploads`
-- Encrypted backups: `backend/backups`
+- Database backups: Supabase managed backups or an external PostgreSQL maintenance workflow
 
 Browser storage is only used for active auth/session state.
 
@@ -287,7 +282,7 @@ npm run report
 ### Test notes
 
 - `playwright.config.js` uses isolated default base URL `http://localhost:3010`.
-- `npm test` in `tests/playwright` starts `backend/server.js` through `scripts/run-with-server.js` with isolated SQLite, backup, upload and scanner directories, then stops that backend after the run.
+- `npm test` in `tests/playwright` starts `backend/server.js` through `scripts/run-with-server.js` using `DATABASE_URL` for a PostgreSQL test database, then stops that backend after the run.
 - Test login values are read from the backend environment file.
 - Tests use Page Object Model classes from `tests/playwright/pages`.
 - For a different host/port, run tests with `PLAYWRIGHT_BASE_URL`, for example `PLAYWRIGHT_BASE_URL=https://your-server.example npm test`.
@@ -299,10 +294,6 @@ npm run report
 # Backend dependency audit
 cd backend
 npm audit
-
-# Backend SQLite backup
-cd backend
-npm run backup
 
 # Seed demo data
 cd backend
@@ -316,7 +307,7 @@ npm audit
 git status --short
 ```
 
-`npm run backup` creates an encrypted `.sqlite.enc` backup. `BACKUP_DIR` controls the backup directory; `SQLITE_BACKUP_DIR` is supported as a legacy fallback.
+PostgreSQL backups are managed outside the application through Supabase or a `pg_dump`/restore maintenance workflow.
 
 ## Runtime Logs
 
@@ -355,13 +346,11 @@ Recent local checks cover:
 - Vanilla JavaScript
 - Node.js
 - Express
-- SQLite
+- PostgreSQL/Supabase
 - JWT
 - bcrypt
 - Helmet
 - Playwright
-
-Backend runtime requires Node.js 24.x because it uses the built-in `node:sqlite` module.
 
 ## Production Hardening Notes
 
@@ -370,8 +359,7 @@ Backend runtime requires Node.js 24.x because it uses the built-in `node:sqlite`
 - Keep JWT storage in HttpOnly Secure SameSite cookies; do not reintroduce browser localStorage token persistence.
 - Remove inline styles where possible and tighten CSP by removing `style-src 'unsafe-inline'`.
 - Add user-management UI for staff accounts.
-- Add automated database backup scheduling.
-- Set `BACKUP_ENCRYPTION_KEY` separately from `JWT_SECRET`; production startup fails if it is missing or reused.
+- Verify Supabase backup scheduling and restore drills.
 - Verify the `schema_migrations` table after deploy and keep the pre-deploy encrypted backup for rollback.
 
 ## Support
@@ -382,4 +370,4 @@ For director panel documentation, see [DIRECTOR_PANEL_GUIDE.md](DIRECTOR_PANEL_G
 
 **Version:** 2.3  
 **Last Updated:** May 2026  
-**Status:** Demo with backend integration, SQLite persistence, calendar, documents, backup/security, advanced workflow support, export support and Playwright tests; production deployment template and migration ledger are present, but live deployment still requires real secrets, HTTPS reverse proxy configuration, monitored backups and a tested rollback drill.
+**Status:** Demo with backend integration, PostgreSQL persistence, calendar, documents, backup/security, advanced workflow support, export support and Playwright tests; production deployment template is present, but live deployment still requires real secrets, HTTPS reverse proxy configuration, monitored backups and a tested rollback drill.

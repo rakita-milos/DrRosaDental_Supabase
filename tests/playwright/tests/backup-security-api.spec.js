@@ -2,42 +2,29 @@ const { test, expect } = require("@playwright/test");
 const { authHeaders } = require("../utils/api");
 const { authenticate, credentialsFor, signTestToken } = require("../utils/auth");
 
-test("api: director manages encrypted backups and security status", async ({ request, baseURL }) => {
+test("api: director sees PostgreSQL backup status and security status", async ({ request, baseURL }) => {
   const statusResponse = await request.get(`${baseURL}/api/director/backups/status`, {
     headers: authHeaders("director")
   });
   expect(statusResponse.ok()).toBeTruthy();
   const initialStatus = await statusResponse.json();
-  expect(initialStatus).toHaveProperty("warning");
+  expect(initialStatus).toMatchObject({
+    mode: "supabase_postgres",
+    warning: false
+  });
 
   const createResponse = await request.post(`${baseURL}/api/director/backups`, {
     headers: authHeaders("director")
   });
-  expect(createResponse.status()).toBe(201);
-  const backup = await createResponse.json();
-  expect(backup).toMatchObject({ backupType: "manual", encrypted: true, status: "ready" });
-  expect(backup.filename).toContain(".sqlite.enc");
+  expect(createResponse.status()).toBe(501);
+  await expect(createResponse.json()).resolves.toHaveProperty("error", expect.stringContaining("Supabase PostgreSQL backups"));
 
   const listResponse = await request.get(`${baseURL}/api/director/backups`, {
     headers: authHeaders("director")
   });
   expect(listResponse.ok()).toBeTruthy();
   const backups = await listResponse.json();
-  expect(backups.map(item => item.id)).toContain(backup.id);
-
-  const testRestore = await request.post(`${baseURL}/api/director/backups/${backup.id}/test-restore`, {
-    headers: authHeaders("director")
-  });
-  expect(testRestore.status()).toBe(201);
-  const restoreTest = await testRestore.json();
-  expect(["passed", "failed"]).toContain(restoreTest.status);
-  expect(restoreTest.checkedTables).toContain("patients");
-
-  const badRestore = await request.post(`${baseURL}/api/director/backups/${backup.id}/restore`, {
-    headers: authHeaders("director"),
-    data: { confirmation: "NE" }
-  });
-  expect(badRestore.status()).toBe(400);
+  expect(Array.isArray(backups)).toBeTruthy();
 
   const securityResponse = await request.get(`${baseURL}/api/director/security/status`, {
     headers: authHeaders("director")

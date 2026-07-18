@@ -1,6 +1,9 @@
 # Dr Rosa Backend API
 
-Express + SQLite backend for the Dr Rosa dental clinic application.
+Express backend for the Dr Rosa dental clinic application.
+
+The runtime is PostgreSQL-only and is intended for Supabase PostgreSQL using the
+schema in `database.postgres.sql`.
 
 ## Production Environment
 
@@ -14,12 +17,12 @@ PORT
 JWT_SECRET
 CORS_ORIGIN
 TRUST_PROXY
-SQLITE_DB_PATH
-SQLITE_BACKUP_DIR
-BACKUP_DIR
+DB_CLIENT
+DATABASE_URL
+PG_SEARCH_PATH
+PGSSL
 UPLOAD_DIR
 SCANNER_IMPORT_DIR
-BACKUP_ENCRYPTION_KEY
 STAFF_DEFAULT_PERMISSIONS
 ```
 
@@ -31,9 +34,10 @@ Notes:
 - `CORS_ORIGIN` is an allow-list. Use comma-separated origins if needed. In production it must be explicit and must not use localhost origins.
 - `TRUST_PROXY` must be set explicitly for production. Use `loopback` for a local HTTPS reverse proxy, a hop count such as `1` for a trusted upstream proxy, or `false` only when Express is directly exposed.
 - `REQUIRE_PRODUCTION_READY=true` can be used as an extra deployment guard; it enables the production-required startup checks even before `NODE_ENV=production` is set.
-- Relative SQLite paths are resolved from the `backend` directory, so the project can move between computers and servers.
-- `BACKUP_DIR` is used for encrypted application backups. `SQLITE_BACKUP_DIR` is supported as a legacy fallback.
-- `BACKUP_ENCRYPTION_KEY` must be set separately from `JWT_SECRET` in production; startup fails if it is missing or reused.
+- `DB_CLIENT` must be `postgres` if set.
+- `DATABASE_URL` is the Supabase PostgreSQL connection string.
+- `PG_SEARCH_PATH` should be `app,public` for the Supabase schema in this repo.
+- Supabase PostgreSQL backups are managed outside the application by Supabase or a `pg_dump`/restore maintenance workflow.
 - `UPLOAD_DIR`, `SCANNER_IMPORT_DIR` and `STAFF_DEFAULT_PERMISSIONS` are required in production so live deploys do not inherit development defaults.
 - `STAFF_DEFAULT_PERMISSIONS` is a comma-separated allow-list, for example `patients:read,patients:write,records:read,records:write,calendar:read,calendar:write,documents:read,documents:write`.
 
@@ -43,10 +47,10 @@ Notes:
 cd backend
 npm.cmd install
 npm.cmd start
-npm.cmd run backup
+npm.cmd run db:postgres:init
 ```
 
-The backend requires Node.js 24.x because it uses the built-in `node:sqlite` module.
+`npm run db:postgres:init` applies `database.postgres.sql` to the Supabase database configured by `DATABASE_URL`.
 
 ## Auth
 
@@ -83,16 +87,15 @@ Authorization: Bearer <token>
 - Request body size is limited.
 - User input is normalized before storage.
 - SQL queries use prepared statements.
-- Health checks do not expose the SQLite file path.
-- Backup files are encrypted.
-- The `npm run backup` command also writes encrypted `.sqlite.enc` files.
-- Backup restore enters a short maintenance window and other API requests return `503` while the active SQLite file is being replaced.
+- Supabase PostgreSQL target schema uses a private `app` schema instead of exposed `public` tables.
+- Health checks do not expose database connection details.
+- Application backup/restore endpoints report that Supabase PostgreSQL backups are managed outside the application.
 - Legal export is paginated by a `limit` query parameter with a production safety cap; the response includes `meta.counts` and `meta.truncated`.
 
 ## Delete Rules
 
 - Patient delete returns `409 Conflict` when the patient has linked visit history or payments.
-- Visit record delete removes the selected history entry and its owned payment/treatment rows through SQLite foreign keys.
+- Visit record delete removes the selected history entry and its owned payment/treatment rows through PostgreSQL foreign keys.
 - Document delete is soft-delete.
 - The UI asks for confirmation before every exposed delete action.
 

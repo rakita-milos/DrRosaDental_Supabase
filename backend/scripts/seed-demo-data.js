@@ -1,37 +1,45 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-const fs = require('fs');
-const path = require('path');
-const { DatabaseSinhronizacija } = require('node:sqlite');
-
-const dbPath = path.resolve(__dirname, '..', process.env.SQLITE_DB_PATH || './data/drosa.sqlite');
-fs.mkdirSinhronizacija(path.dirname(dbPath), { recursive: true });
-
-const db = new DatabaseSinhronizacija(dbPath);
-db.exec('PRAGMA foreign_keys = ON');
-
-function ensureColumn(table, column, definition) {
-  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
-  if (columns.some(existing => existing.name === column)) return;
-  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-}
-
-ensureColumn('visit_records', 'shift', "TEXT NOT NULL DEFAULT 'Prva smena'");
-ensureColumn('payments', 'currency', "TEXT NOT NULL DEFAULT 'EUR'");
-
-const doctors = db.prepare('SELECT id, name FROM doctors ORDER BY id').all();
-if (doctors.length === 0) {
-  throw new Error('No doctors found. Start the backend once before seeding demo data.');
-}
+const { createPool, initializePostgresSchema } = require('../db/postgres');
 
 const marker = 'DEMO-SEED-2026-05';
-db.exec('BEGIN');
 
-try {
-  const demoVisits = db.prepare('SELECT id FROM visit_records WHERE notes LIKE ?').all(`%${marker}%`);
-  const deleteVisit = db.prepare('DELETE FROM visit_records WHERE id = ?');
-  demoVisits.forEach(visit => deleteVisit.run(visit.id));
-  db.prepare('DELETE FROM patients WHERE email LIKE ?').run('demo.seed.%@drosa.test');
+async function main() {
+  if (!process.env.DATABASE_URL) {
+    throw new Error('Set DATABASE_URL to the Supabase PostgreSQL connection string before running this command.');
+  }
+
+  const pool = createPool();
+
+  try {
+    await initializePostgresSchema(pool);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await seedDemoData(client);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } finally {
+    await pool.end();
+  }
+}
+
+async function seedDemoData(client) {
+  const doctors = (await client.query('SELECT id, name FROM doctors ORDER BY id')).rows;
+  if (doctors.length === 0) {
+    throw new Error('No doctors found. Start the backend once before seeding demo data.');
+  }
+
+  const demoVisits = await client.query('SELECT id FROM visit_records WHERE notes LIKE $1', [`%${marker}%`]);
+  for (const visit of demoVisits.rows) {
+    await client.query('DELETE FROM visit_records WHERE id = $1', [visit.id]);
+  }
+  await client.query('DELETE FROM patients WHERE email LIKE $1', ['demo.seed.%@drosa.test']);
 
   const patients = [
     ['Mina', 'Jovanovic', '1991-03-12', 'Z', '+381601110001', 'Kralja Petra 12, Beograd'],
@@ -46,13 +54,14 @@ try {
     ['Marko', 'Lukic', '1995-08-24', 'M', '+381601110010', 'Dunavska 7, Novi Sad']
   ];
 
-  const insertPatient = db.prepare(`
-    INSERT INTO patients (first_name, last_name, date_of_birth, gender, email, phone, address, emergency_contact, medical_history)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const patientIds = patients.map((patient, index) => {
-    const result = insertPatient.run(
+  const patientIds = [];
+  for (let index = 0; index < patients.length; index += 1) {
+    const patient = patients[index];
+    const result = await client.query(`
+      INSERT INTO patients (first_name, last_name, date_of_birth, gender, email, phone, address, emergency_contact, medical_history)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING id
+    `, [
       patient[0],
       patient[1],
       patient[2],
@@ -61,39 +70,15 @@ try {
       patient[4],
       patient[5],
       '+381601119999',
-      'Demo pacijent za testiranje izveštaja'
-    );
-    return Number(result.lastInsertRowid);
-  });
+      'Demo pacijent za testiranje izvestaja'
+    ]);
+    patientIds.push(Number(result.rows[0].id));
+  }
 
-  const procedures = [
-    'Kontrola i ciscenje',
-    'Plomba',
-    'Endodontija',
-    'Krunica',
-    'Most',
-    'Implant',
-    'Vadjenje',
-    'Ortodontija',
-    'Izbeljivanje',
-    'Parodontologija'
-  ];
-  const statuses = ['Zakazano', 'U toku', 'Završeno', 'Završeno', 'Završeno', 'U toku'];
-  const paymentStatuses = ['Plaćeno', 'Plaćeno', 'Plaćeno', 'Delimično', 'Dugovanje'];
+  const procedures = ['Kontrola i ciscenje', 'Plomba', 'Endodontija', 'Krunica', 'Most', 'Implant', 'Vadjenje', 'Ortodontija', 'Izbeljivanje', 'Parodontologija'];
+  const statuses = ['Zakazano', 'U toku', 'Zavrseno', 'Zavrseno', 'Zavrseno', 'U toku'];
+  const paymentStatuses = ['Placeno', 'Placeno', 'Placeno', 'Delimicno', 'Dugovanje'];
   const teeth = ['11', '12', '14', '16', '21', '24', '26', '31', '36', '41', '44', '46'];
-
-  const insertVisit = db.prepare(`
-    INSERT INTO visit_records (patient_id, doctor_id, visit_date, procedure, status, shift, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertPayment = db.prepare(`
-    INSERT INTO payments (visit_record_id, patient_id, amount, currency, payment_status, payment_method, payment_date, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertTreatment = db.prepare(`
-    INSERT INTO treatments (visit_record_id, tooth_number, treatment_type, status, notes)
-    VALUES (?, ?, ?, ?, ?)
-  `);
 
   for (let index = 0; index < 50; index += 1) {
     const patientId = patientIds[index % patientIds.length];
@@ -105,46 +90,30 @@ try {
     const paymentStatus = paymentStatuses[index % paymentStatuses.length];
     const day = String((index % 28) + 1).padStart(2, '0');
     const month = String(1 + (index % 5)).padStart(2, '0');
-    const amount = currency === 'RSD'
-      ? 3500 + (index % 8) * 1200
-      : 35 + (index % 8) * 18;
+    const amount = currency === 'RSD' ? 3500 + (index % 8) * 1200 : 35 + (index % 8) * 18;
 
-    const visit = insertVisit.run(
-      patientId,
-      doctor.id,
-      `2026-${month}-${day}`,
-      procedure,
-      status,
-      shift,
-      `${marker}; ${shift}; valuta ${currency}; doktor ${doctor.name}`
-    );
-    const visitId = Number(visit.lastInsertRowid);
+    const visit = await client.query(`
+      INSERT INTO visit_records (patient_id, doctor_id, visit_date, procedure, status, shift, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id
+    `, [patientId, doctor.id, `2026-${month}-${day}`, procedure, status, shift, `${marker}; ${shift}; valuta ${currency}; doktor ${doctor.name}`]);
+    const visitId = Number(visit.rows[0].id);
 
-    insertPayment.run(
-      visitId,
-      patientId,
-      amount,
-      currency,
-      paymentStatus,
-      index % 3 === 0 ? 'Kartica' : 'Gotovina',
-      `2026-${month}-${day}`,
-      `${marker}; ${paymentStatus}`
-    );
+    await client.query(`
+      INSERT INTO payments (visit_record_id, patient_id, amount, currency, payment_status, payment_method, payment_date, notes)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [visitId, patientId, amount, currency, paymentStatus, index % 3 === 0 ? 'Kartica' : 'Gotovina', `2026-${month}-${day}`, `${marker}; ${paymentStatus}`]);
 
-    insertTreatment.run(
-      visitId,
-      teeth[index % teeth.length],
-      procedure,
-      status === 'Završeno' ? 'Završeno' : 'Planirano',
-      `${marker}; demo tretman`
-    );
+    await client.query(`
+      INSERT INTO treatments (visit_record_id, tooth_number, treatment_type, status, notes)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [visitId, teeth[index % teeth.length], procedure, status === 'Zavrseno' ? 'Zavrseno' : 'Planirano', `${marker}; demo tretman`]);
   }
 
-  db.exec('COMMIT');
   console.log('Demo data seeded: 10 patients, 50 records, 25 RSD, 25 EUR, 17 first shift, 33 second shift.');
-} catch (error) {
-  db.exec('ROLLBACK');
-  throw error;
-} finally {
-  db.close();
 }
+
+main().catch(error => {
+  console.error(error.message);
+  process.exit(1);
+});
