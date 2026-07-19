@@ -1,5 +1,5 @@
 (function () {
-  const state = { doctors: [], procedures: [], slots: [] };
+  const state = { doctors: [], procedures: [], slots: [], captcha: { required: false, siteKey: null, token: "" } };
 
   function today() {
     return new Date().toISOString().slice(0, 10);
@@ -80,6 +80,54 @@
       : `<option value="">Nema slobodnih termina</option>`;
   }
 
+  function loadTurnstileScript() {
+    return new Promise((resolve, reject) => {
+      if (window.turnstile) {
+        resolve();
+        return;
+      }
+      const existing = document.querySelector('script[data-drrosa-turnstile="true"]');
+      if (existing) {
+        existing.addEventListener("load", resolve, { once: true });
+        existing.addEventListener("error", reject, { once: true });
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.dataset.drrosaTurnstile = "true";
+      script.addEventListener("load", resolve, { once: true });
+      script.addEventListener("error", reject, { once: true });
+      document.head.appendChild(script);
+    });
+  }
+
+  async function initializeCaptcha() {
+    const status = await window.DrRosaApi.getPublicBookingStatus();
+    state.captcha.required = Boolean(status.captcha?.required);
+    state.captcha.siteKey = status.captcha?.siteKey || "";
+    if (!state.captcha.required) return;
+
+    const container = document.getElementById("booking-captcha");
+    if (!container || !state.captcha.siteKey) {
+      throw new Error("Captcha nije konfigurisana.");
+    }
+    await loadTurnstileScript();
+    window.turnstile.render(container, {
+      sitekey: state.captcha.siteKey,
+      callback(token) {
+        state.captcha.token = token;
+      },
+      "expired-callback"() {
+        state.captcha.token = "";
+      },
+      "error-callback"() {
+        state.captcha.token = "";
+      }
+    });
+  }
+
   async function loadSlots() {
     const date = document.getElementById("booking-date").value;
     const doctorId = document.getElementById("booking-doctor").value;
@@ -101,6 +149,7 @@
 
   async function init() {
     document.getElementById("booking-date").value = today();
+    await initializeCaptcha();
     const options = await window.DrRosaApi.getPublicBookingOptions();
     state.doctors = options.doctors || [];
     state.procedures = options.procedures || [];
@@ -133,6 +182,10 @@
         message("Izaberite slobodan termin.", true);
         return;
       }
+      if (state.captcha.required && !state.captcha.token) {
+        message("Potvrdite da niste robot.", true);
+        return;
+      }
       try {
         await window.DrRosaApi.createPublicBooking({
           firstName: document.getElementById("booking-first-name").value,
@@ -145,9 +198,12 @@
           procedureName: procedure?.dataset.name || procedure?.textContent || "Kontrola",
           startsAt: slot.value,
           durationMinutes: Number(slot.dataset.duration || 30),
-          notes: document.getElementById("booking-notes").value
+          notes: document.getElementById("booking-notes").value,
+          turnstileToken: state.captcha.token
         });
         event.target.reset();
+        state.captcha.token = "";
+        if (state.captcha.required && window.turnstile) window.turnstile.reset();
         document.getElementById("booking-date").value = today();
         await loadSlots();
         message("Termin je zakazan. Ordinacija ce vas kontaktirati za potvrdu.");

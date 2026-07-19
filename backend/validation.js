@@ -140,7 +140,9 @@ const publicBookingSchema = Joi.object({
   startsAt: Joi.string().max(40).optional(),
   starts_at: Joi.string().max(40).optional(),
   durationMinutes: Joi.number().integer().min(15).max(180).optional(),
-  duration_minutes: Joi.number().integer().min(15).max(180).optional()
+  duration_minutes: Joi.number().integer().min(15).max(180).optional(),
+  turnstileToken: Joi.string().max(4096).optional().allow('', null),
+  captchaToken: Joi.string().max(4096).optional().allow('', null)
 }).or('firstName', 'first_name')
   .or('lastName', 'last_name')
   .or('doctorId', 'doctor_id')

@@ -290,10 +290,10 @@
     return request("/director/google-calendar/settings");
   }
 
-  async function updateGoogleCalendarSettings(settings) {
+  async function updateGoogleCalendarSettings(settings, directorPassword) {
     return request("/director/google-calendar/settings", {
       method: "PUT",
-      body: JSON.stringify(settings)
+      body: JSON.stringify({ ...settings, directorPassword })
     });
   }
 
@@ -709,25 +709,27 @@
     return request(`/director/security/sessions/${sessionId}`, { method: "DELETE" });
   }
 
-  async function updateUserPermissions(userId, permissions) {
+  async function updateUserPermissions(userId, permissions, directorPassword) {
     return request(`/director/security/users/${userId}/permissions`, {
       method: "PUT",
-      body: JSON.stringify({ permissions })
+      body: JSON.stringify({ permissions, directorPassword })
     });
   }
 
-  async function getLegalExport() {
-    return request("/director/legal-export");
+  async function getLegalExport(directorPassword) {
+    return request("/director/legal-export", {
+      headers: { "X-DrRosa-Director-Password": directorPassword || "" }
+    });
   }
 
   async function unlockUser(userId) {
     return request(`/director/security/users/${userId}/unlock`, { method: "POST" });
   }
 
-  async function resetUserPassword(userId, newPassword) {
+  async function resetUserPassword(userId, newPassword, directorPassword) {
     return request(`/director/security/users/${userId}/reset-password`, {
       method: "POST",
-      body: JSON.stringify({ newPassword })
+      body: JSON.stringify({ newPassword, directorPassword })
     });
   }
 

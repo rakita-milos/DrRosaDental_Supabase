@@ -1232,7 +1232,9 @@ async function loadGoogleCalendarSettings() {
     document.getElementById("google-calendar-id").value = settings.calendarId || "";
     document.getElementById("google-calendar-name").value = settings.calendarName || "";
     document.getElementById("google-client-id").value = settings.clientId || "";
-    document.getElementById("google-client-secret").value = settings.clientSecret || "";
+    const secretInput = document.getElementById("google-client-secret");
+    secretInput.value = "";
+    secretInput.placeholder = settings.clientSecretConfigured ? "Secret je sacuvan. Unesite samo ako ga menjate." : "Google OAuth client secret";
     document.getElementById("google-redirect-uri").value = settings.redirectUri || `${window.location.origin}${window.location.pathname}`;
     document.getElementById("google-sync-enabled").checked = Boolean(settings.syncEnabled);
     document.getElementById("google-sync-direction").value = settings.syncDirection || "app_to_google";
@@ -1249,6 +1251,8 @@ function initializeGoogleCalendarSettings() {
   form.addEventListener("submit", async event => {
     event.preventDefault();
     try {
+      const directorPassword = requestDirectorPassword();
+      if (!directorPassword) return;
       await window.DrRosaApi.updateGoogleCalendarSettings({
         connectedEmail: document.getElementById("google-connected-email").value,
         calendarId: document.getElementById("google-calendar-id").value,
@@ -1259,7 +1263,7 @@ function initializeGoogleCalendarSettings() {
         syncEnabled: document.getElementById("google-sync-enabled").checked,
         syncDirection: document.getElementById("google-sync-direction").value,
         defaultReminderMinutes: Number(document.getElementById("google-reminder-minutes").value)
-      });
+      }, directorPassword);
       showGoogleMessage("Google Calendar podešavanja su sačuvana.");
       await loadGoogleCalendarSettings();
     } catch (error) {
@@ -1323,6 +1327,10 @@ function showSystemMessage(id, message, isError = false) {
   if (!element) return;
   element.textContent = message || "";
   element.className = `form-alert ${isError ? "alert-error" : "alert-success"}`;
+}
+
+function requestDirectorPassword() {
+  return window.prompt("Unesite direktor lozinku za potvrdu ove akcije.");
 }
 
 async function loadBackupSecurity() {
@@ -1480,16 +1488,21 @@ function initializeBackupSecurity() {
       if (reset) {
         const newPassword = window.prompt("Unesite novu lozinku, najmanje 12 karaktera.");
         if (!newPassword) return;
-        await window.DrRosaApi.resetUserPassword(reset.dataset.resetUserPassword, newPassword);
+        const directorPassword = requestDirectorPassword();
+        if (!directorPassword) return;
+        await window.DrRosaApi.resetUserPassword(reset.dataset.resetUserPassword, newPassword, directorPassword);
         showSystemMessage("security-message", "Lozinka je resetovana.");
       }
       if (permissions) {
         const current = permissions.dataset.permissions || "";
         const raw = window.prompt("Dozvole odvojene zarezom (* za sve):", current);
         if (raw === null) return;
+        const directorPassword = requestDirectorPassword();
+        if (!directorPassword) return;
         await window.DrRosaApi.updateUserPermissions(
           permissions.dataset.editUserPermissions,
-          raw.split(",").map(item => item.trim()).filter(Boolean)
+          raw.split(",").map(item => item.trim()).filter(Boolean),
+          directorPassword
         );
         showSystemMessage("security-message", "Dozvole su sačuvane.");
       }
@@ -1513,7 +1526,9 @@ function initializeBackupSecurity() {
 
   document.getElementById("legal-export-btn")?.addEventListener("click", async () => {
     try {
-      const payload = await window.DrRosaApi.getPravnoExport();
+      const directorPassword = requestDirectorPassword();
+      if (!directorPassword) return;
+      const payload = await window.DrRosaApi.getLegalExport(directorPassword);
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");

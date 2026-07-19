@@ -135,13 +135,14 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:'],
-      connectSrc: ["'self'", ...allowedCorsOrigins()],
+      connectSrc: ["'self'", 'https://challenges.cloudflare.com', ...allowedCorsOrigins()],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
-      frameAncestors: ["'none'"]
+      frameAncestors: ["'none'"],
+      frameSrc: ['https://challenges.cloudflare.com']
     }
   },
   hsts: isProduction
@@ -1160,7 +1161,7 @@ function publicGoogleSettings(settings) {
     calendarId: settings.calendar_id,
     calendarName: settings.calendar_name,
     clientId: settings.client_id,
-    clientSecret: settings.client_secret,
+    clientSecretConfigured: Boolean(settings.client_secret),
     redirectUri: settings.redirect_uri,
     oauthConnected: Boolean(settings.oauth_refresh_token || settings.oauth_access_token),
     oauthTokenExpiresAt: settings.oauth_token_expires_at,
@@ -1604,6 +1605,46 @@ function patientPayloadFromBody(body) {
     emergencyContact: nullable(cleanText(body.emergency_contact, { max: 255 })),
     medicalHistory: nullable(cleanText(body.medical_history, { max: 2000 }))
   };
+}
+
+async function requireDirectorPassword(req, res, next) {
+  try {
+    const password = String(req.body?.directorPassword || req.headers['x-drrosa-director-password'] || '');
+    if (!password) {
+      return res.status(403).json({ error: 'Director password confirmation is required.' });
+    }
+    const user = await authSessions.findUserById(req.user.id);
+    if (!user || user.role !== 'director' || !(await bcryptCompare(password, user.password_hash))) {
+      await auditLog({ userId: req.user.id, action: 'fresh_auth_failed', entityType: 'user', entityId: req.user.id, req });
+      return res.status(403).json({ error: 'Director password confirmation failed.' });
+    }
+    return next();
+  } catch (error) {
+    console.error('Fresh director auth error:', error);
+    return res.status(500).json({ error: 'Server error' });
+  }
+}
+
+function turnstileConfigured() {
+  return Boolean(String(process.env.TURNSTILE_SECRET_KEY || '').trim());
+}
+
+async function verifyTurnstileToken(token, req) {
+  const secret = String(process.env.TURNSTILE_SECRET_KEY || '').trim();
+  if (!secret) return true;
+  if (!token) return false;
+
+  const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      secret,
+      response: token,
+      remoteip: req.ip || ''
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  return Boolean(response.ok && data.success);
 }
 
 function medicalProfilePayloadFromBody(body, updatedBy) {
@@ -2439,7 +2480,13 @@ app.post('/api/appointments/:id/create-visit', authenticateToken, requirePermiss
 
 app.get('/api/public/booking/status', publicBookingReadLimiter, async (_req, res) => {
   try {
-    res.json({ enabled: await isPublicBookingEnabled() });
+    res.json({
+      enabled: await isPublicBookingEnabled(),
+      captcha: {
+        required: turnstileConfigured(),
+        siteKey: String(process.env.TURNSTILE_SITE_KEY || '').trim() || null
+      }
+    });
   } catch (error) {
     console.error('Public booking status error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -2491,6 +2538,10 @@ app.get('/api/public/booking/availability', publicBookingReadLimiter, requirePub
 
 app.post('/api/public/booking', publicBookingWriteLimiter, requirePublicBookingEnabled, validateBody(publicBookingSchema), async (req, res) => {
   try {
+    if (!(await verifyTurnstileToken(req.body.turnstileToken || req.body.captchaToken, req))) {
+      return res.status(403).json({ error: 'Captcha verification failed.' });
+    }
+
     const namePattern = /^[\p{L}][\p{L}\p{N}\s.'-]{0,79}$/u;
     const firstNameResult = validatedText(req.body.firstName || req.body.first_name, { field: 'Ime', max: 80, required: true, pattern: namePattern });
     const lastNameResult = validatedText(req.body.lastName || req.body.last_name, { field: 'Prezime', max: 80, required: true, pattern: namePattern });
@@ -3491,7 +3542,7 @@ app.delete('/api/director/security/sessions/:id', authenticateToken, requireDire
   }
 });
 
-app.put('/api/director/security/users/:id/permissions', authenticateToken, requireDirector, async (req, res) => {
+app.put('/api/director/security/users/:id/permissions', authenticateToken, requireDirector, requireDirectorPassword, async (req, res) => {
   try {
     const userId = positiveInteger(req.params.id);
     const user = await authSessions.findUserById(userId);
@@ -3512,7 +3563,7 @@ app.put('/api/director/security/users/:id/permissions', authenticateToken, requi
   }
 });
 
-app.get('/api/director/legal-export', authenticateToken, requireDirector, async (req, res) => {
+app.get('/api/director/legal-export', authenticateToken, requireDirector, requireDirectorPassword, async (req, res) => {
   try {
     const limit = Math.min(5000, Math.max(1, Number(req.query.limit || 1000)));
     const tables = {
@@ -3611,7 +3662,7 @@ app.post('/api/director/security/users/:id/unlock', authenticateToken, requireDi
   }
 });
 
-app.post('/api/director/security/users/:id/reset-password', authenticateToken, requireDirector, async (req, res) => {
+app.post('/api/director/security/users/:id/reset-password', authenticateToken, requireDirector, requireDirectorPassword, async (req, res) => {
   try {
     const userId = positiveInteger(req.params.id);
     const newPassword = String(req.body.newPassword || '');
@@ -3751,7 +3802,7 @@ app.get('/api/director/google-calendar/settings', authenticateToken, requireDire
   }
 });
 
-app.put('/api/director/google-calendar/settings', authenticateToken, requireDirector, async (req, res) => {
+app.put('/api/director/google-calendar/settings', authenticateToken, requireDirector, requireDirectorPassword, async (req, res) => {
   try {
     const current = await calendarRepo.googleSettings();
     const connectedEmail = cleanText(req.body.connectedEmail ?? req.body.connected_email, { max: 255 });
