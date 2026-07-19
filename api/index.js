@@ -1,7 +1,15 @@
-const { app, ensureRuntimeReady } = require('../backend/server');
+let serverModule;
+
+function loadServer() {
+  if (!serverModule) {
+    serverModule = require('../backend/server');
+  }
+  return serverModule;
+}
 
 module.exports = async function handler(req, res) {
   try {
+    const { app, ensureRuntimeReady } = loadServer();
     await ensureRuntimeReady();
     return app(req, res);
   } catch (error) {
