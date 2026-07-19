@@ -65,7 +65,7 @@
       .map(doctor => `<option value="${doctor.id}">${escapeHtml(doctor.name)}</option>`)
       .join("");
     document.getElementById("booking-procedure").innerHTML = state.procedures
-      .map(item => `<option value="${item.id}" data-name="${escapeHtml(item.label || item.value)}">${escapeHtml(item.label || item.value)}${Number(item.price || 0) > 0 ? ` - ${formatMoney(item.price, "EUR")}` : ""}</option>`)
+      .map(item => `<option value="${item.id}" data-name="${escapeHtml(item.label || item.value)}">${escapeHtml(item.label || item.value)}${Number(item.price || 0) > 0 ? ` - ${formatMoney(item.price, item.priceCurrency || "EUR")}` : ""}</option>`)
       .join("");
   }
 

@@ -44,11 +44,11 @@ function createPostgresStartupSeedRepository(pool) {
       return Number(row?.count || 0);
     },
 
-    insertCodebookItem({ type, value, label, groupName = null, metadata = null, price = 0, sortOrder = 0 }) {
+    insertCodebookItem({ type, value, label, groupName = null, metadata = null, price = 0, priceCurrency = 'EUR', sortOrder = 0 }) {
       return execute(pool, `
-        INSERT INTO codebook_items (type, value, label, group_name, metadata, price, sort_order)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [type, value, label, groupName, metadata ? JSON.stringify(metadata) : null, price, sortOrder]);
+        INSERT INTO codebook_items (type, value, label, group_name, metadata, price, price_currency, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [type, value, label, groupName, metadata ? JSON.stringify(metadata) : null, price, priceCurrency, sortOrder]);
     },
 
     async ensureCodebookItem(item) {

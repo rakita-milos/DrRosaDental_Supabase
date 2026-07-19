@@ -91,6 +91,7 @@
     "Monoblok": 180,
     "Ostalo": 0
   };
+  let priceCurrencies = Object.fromEntries(Object.keys(prices).map(procedure => [procedure, "EUR"]));
 
   function fold(value) {
     return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -110,6 +111,17 @@
 
   function getPrice(procedure) {
     return prices[procedure] || 0;
+  }
+
+  function getPriceCurrency(procedure) {
+    return priceCurrencies[procedure] || "EUR";
+  }
+
+  function getPriceInfo(procedure) {
+    return {
+      amount: getPrice(procedure),
+      currency: getPriceCurrency(procedure)
+    };
   }
 
   function findActivityForProcedure(procedure) {
@@ -142,6 +154,7 @@
       const activeItems = items.filter(item => item.isActive !== false);
       const nextActivities = {};
       const nextPrices = {};
+      const nextPriceCurrencies = {};
 
       activeItems
         .filter(item => item.type === "activity")
@@ -158,11 +171,13 @@
           if (!nextActivities[group]) nextActivities[group] = [];
           nextActivities[group].push(item.value);
           nextPrices[item.value] = Number(item.price || 0);
+          nextPriceCurrencies[item.value] = item.priceCurrency || item.price_currency || "EUR";
         });
 
       if (Object.keys(nextActivities).length > 0) {
         activities = nextActivities;
         prices = nextPrices;
+        priceCurrencies = nextPriceCurrencies;
         window.DrRosaProcedureCatalog.activities = activities;
       }
     } catch (error) {
@@ -176,6 +191,8 @@
     getProcedures,
     getAllProcedures,
     getPrice,
+    getPriceCurrency,
+    getPriceInfo,
     findActivityForProcedure,
     matchesActivity,
     loadFromApi

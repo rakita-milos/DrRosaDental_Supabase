@@ -48,8 +48,8 @@ function createPostgresDirectorAdminRepository(pool) {
 
     async createCodebookItem(item) {
       const id = await insertReturningId(pool, `
-        INSERT INTO codebook_items (type, value, label, group_name, metadata, price, is_active, sort_order)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO codebook_items (type, value, label, group_name, metadata, price, price_currency, is_active, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, codebookParams(item, { postgres: true }));
       return this.findCodebookItem(id);
     },
@@ -61,7 +61,7 @@ function createPostgresDirectorAdminRepository(pool) {
     async updateCodebookItem(id, item) {
       await execute(pool, `
         UPDATE codebook_items
-        SET type = ?, value = ?, label = ?, group_name = ?, metadata = ?, price = ?, is_active = ?, sort_order = ?, updated_at = now()
+        SET type = ?, value = ?, label = ?, group_name = ?, metadata = ?, price = ?, price_currency = ?, is_active = ?, sort_order = ?, updated_at = now()
         WHERE id = ?
       `, [...codebookParams(item, { postgres: true }), id]);
       return this.findCodebookItem(id);
@@ -165,6 +165,7 @@ function codebookParams(item, { postgres = false } = {}) {
     item.groupName,
     item.metadataJson,
     item.price,
+    item.priceCurrency,
     postgres ? Boolean(item.isActive) : item.isActive,
     item.sortOrder
   ];

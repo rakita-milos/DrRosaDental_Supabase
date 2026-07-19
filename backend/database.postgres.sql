@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS codebook_items (
   group_name TEXT,
   metadata TEXT,
   price NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  price_currency TEXT NOT NULL DEFAULT 'EUR',
   is_active BOOLEAN NOT NULL DEFAULT true,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now(),
@@ -258,6 +259,7 @@ CREATE TABLE IF NOT EXISTS treatments (
   status TEXT DEFAULT 'Planirano',
   notes TEXT,
   price NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'EUR',
   discount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   discount_type TEXT NOT NULL DEFAULT 'amount' CHECK (discount_type IN ('amount', 'percent')),
   discount_value NUMERIC(12, 2) NOT NULL DEFAULT 0,
@@ -560,6 +562,12 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   version TEXT PRIMARY KEY,
   applied_at TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE codebook_items
+  ADD COLUMN IF NOT EXISTS price_currency TEXT NOT NULL DEFAULT 'EUR';
+
+ALTER TABLE treatments
+  ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'EUR';
 
 CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(first_name, last_name);
 CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits(reset_at);

@@ -745,9 +745,10 @@ function normalizePaymentStatus(value) {
 }
 
 function normalizeCurrency(value) {
-  const raw = String(value || '').toUpperCase();
+  const raw = String(value || '').trim().toUpperCase();
   if (raw === 'RSD' || raw.includes('DIN')) return 'RSD';
   if (raw === 'USD' || raw.includes('DOL')) return 'USD';
+  if (/^[A-Z]{3,10}$/.test(raw)) return raw;
   return 'EUR';
 }
 
@@ -1084,6 +1085,7 @@ function normalizedTreatments(record) {
         status: normalizeStatus(treatment.status || 'Planirano'),
         note: cleanText(treatment.note, { max: 1000 }),
         price,
+        currency: normalizeCurrency(treatment.currency || treatment.priceCurrency || treatment.price_currency || record.currency),
         discount,
         discountType,
         discountValue
@@ -2119,6 +2121,7 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), as
           status: treatment.status,
           note: treatment.notes,
           price: Number(treatment.price || 0),
+          currency: treatment.currency || record.currency || 'EUR',
           discount: Number(treatment.discount || 0),
           discountType: treatment.discount_type || 'amount',
           discountValue: Number(treatment.discount_value ?? treatment.discount ?? 0)
@@ -3993,6 +3996,7 @@ function serializeCodebookItem(row) {
     groupName: row.group_name,
     metadata,
     price: Number(row.price || 0),
+    priceCurrency: normalizeCurrency(row.price_currency),
     isActive: Boolean(row.is_active),
     sortOrder: Number(row.sort_order || 0)
   };
@@ -4176,6 +4180,7 @@ app.post('/api/director/codebooks', authenticateToken, requireDirector, async (r
     const groupName = cleanText(req.body.groupName || req.body.group_name, { max: 120 });
     const metadata = normalizeCodebookMetadata(type, req.body.metadata);
     const price = Math.max(0, Number(req.body.price || 0));
+    const priceCurrency = type === 'procedure' ? normalizeCurrency(req.body.priceCurrency || req.body.price_currency) : 'EUR';
     const sortOrder = Number.isInteger(Number(req.body.sortOrder)) ? Number(req.body.sortOrder) : 0;
 
     if (!type || !value || !label) return res.status(400).json({ error: 'Type, value and label are required' });
@@ -4187,6 +4192,7 @@ app.post('/api/director/codebooks', authenticateToken, requireDirector, async (r
       groupName,
       metadataJson: JSON.stringify(metadata),
       price,
+      priceCurrency,
       isActive: req.body.isActive === false ? 0 : 1,
       sortOrder
     });
@@ -4214,6 +4220,7 @@ app.put('/api/director/codebooks/:id', authenticateToken, requireDirector, async
     const groupName = cleanText(data.groupName ?? data.group_name, { max: 120 });
     const metadata = normalizeCodebookMetadata(type, data.metadata);
     const price = Math.max(0, Number(data.price || 0));
+    const priceCurrency = type === 'procedure' ? normalizeCurrency(data.priceCurrency || data.price_currency) : 'EUR';
     const isActive = data.isActive === false || data.is_active === 0 ? 0 : 1;
     const sortOrder = Number.isInteger(Number(data.sortOrder ?? data.sort_order)) ? Number(data.sortOrder ?? data.sort_order) : 0;
 
@@ -4226,6 +4233,7 @@ app.put('/api/director/codebooks/:id', authenticateToken, requireDirector, async
       groupName,
       metadataJson: JSON.stringify(metadata),
       price,
+      priceCurrency,
       isActive,
       sortOrder
     });

@@ -216,19 +216,23 @@ function option(value, label = value) {
 }
 
 function procedureOption(procedure) {
-  return `<option value="${escapeHtml(procedure)}" data-price="${Number(procedureCatalog.getPrice(procedure) || 0)}">${escapeHtml(procedure)}</option>`;
+  const priceInfo = procedureCatalog.getPriceInfo?.(procedure) || {
+    amount: procedureCatalog.getPrice(procedure),
+    currency: procedureCatalog.getPriceCurrency?.(procedure) || "EUR"
+  };
+  return `<option value="${escapeHtml(procedure)}" data-price="${Number(priceInfo.amount || 0)}" data-price-currency="${escapeHtml(priceInfo.currency || "EUR")}">${escapeHtml(procedure)}</option>`;
 }
 
 function paymentCurrency() {
   return inputs.currency?.value || "EUR";
 }
 
-function convertFromEur(amount) {
-  return currencyUtils ? currencyUtils.convert(amount, "EUR", paymentCurrency()) : Number(amount || 0);
+function convertToPaymentCurrency(amount, fromCurrency = "EUR") {
+  return currencyUtils ? currencyUtils.convert(amount, fromCurrency, paymentCurrency()) : Number(amount || 0);
 }
 
-function pricePreviewLabel(amountEur) {
-  return currencyUtils ? currencyUtils.conversionLabel(amountEur, "EUR", paymentCurrency()) : formatMoney(amountEur);
+function pricePreviewLabel(amount, fromCurrency = "EUR") {
+  return currencyUtils ? currencyUtils.conversionLabel(amount, fromCurrency, paymentCurrency()) : formatMoney(amount, fromCurrency);
 }
 
 function populateActivitySelect(select, placeholder = "Odaberi delatnost") {
@@ -294,14 +298,19 @@ function normalizeStoredTreatment(treatment, recordCurrency = "EUR") {
   const item = { ...treatment };
   const treatmentCurrency = item.currency || recordCurrency || "EUR";
   const catalogBasePrice = Number(procedureCatalog.getPrice(item.type) || 0);
-  const storedBasePrice = item.basePriceEur ?? item.base_price_eur ?? catalogBasePrice;
+  const catalogBaseCurrency = procedureCatalog.getPriceCurrency?.(item.type) || "EUR";
+  const storedBasePrice = item.basePrice ?? item.base_price ?? item.basePriceEur ?? item.base_price_eur ?? catalogBasePrice;
+  const storedBaseCurrency = item.basePriceCurrency ?? item.base_price_currency ?? (item.basePriceEur || item.base_price_eur ? "EUR" : catalogBaseCurrency);
   item.currency = treatmentCurrency;
-  item.basePriceEur = Number(storedBasePrice || 0);
-  if (!item.basePriceEur && Number(item.price || 0) > 0) {
-    item.basePriceEur = currencyUtils
-      ? currencyUtils.convert(item.price, treatmentCurrency, "EUR")
-      : Number(item.price || 0);
+  item.basePrice = Number(storedBasePrice || 0);
+  item.basePriceCurrency = storedBaseCurrency || treatmentCurrency;
+  if (!item.basePrice && Number(item.price || 0) > 0) {
+    item.basePrice = Number(item.price || 0);
+    item.basePriceCurrency = treatmentCurrency;
   }
+  item.basePriceEur = currencyUtils
+    ? currencyUtils.convert(item.basePrice, item.basePriceCurrency, "EUR")
+    : item.basePriceCurrency === "EUR" ? item.basePrice : 0;
   return item;
 }
 
@@ -481,11 +490,23 @@ function selectedTeethList() {
 }
 
 function selectedTreatmentPrice() {
-  return convertFromEur(selectedTreatmentBasePrice());
+  const priceInfo = selectedTreatmentPriceInfo();
+  return convertToPaymentCurrency(priceInfo.amount, priceInfo.currency);
+}
+
+function selectedTreatmentPriceInfo() {
+  return procedureCatalog.getPriceInfo?.(treatmentType.value) || {
+    amount: Number(procedureCatalog.getPrice(treatmentType.value) || 0),
+    currency: procedureCatalog.getPriceCurrency?.(treatmentType.value) || "EUR"
+  };
 }
 
 function selectedTreatmentBasePrice() {
-  return Number(procedureCatalog.getPrice(treatmentType.value) || 0);
+  return Number(selectedTreatmentPriceInfo().amount || 0);
+}
+
+function selectedTreatmentBaseCurrency() {
+  return selectedTreatmentPriceInfo().currency || "EUR";
 }
 
 function normalizeDiscountType(type) {
@@ -583,7 +604,10 @@ function currentSelectedProcedureTotal() {
     || procedureCatalog.getPrice(inputs.procedure.value)
     || 0
   ));
-  return convertFromEur(basePrice);
+  const baseCurrency = inputs.procedure.selectedOptions[0]?.dataset.priceCurrency
+    || procedureCatalog.getPriceCurrency?.(inputs.procedure.value)
+    || "EUR";
+  return convertToPaymentCurrency(basePrice, baseCurrency);
 }
 
 function currentAutoVisitTotal() {
@@ -683,10 +707,16 @@ function currentTreatmentDescription() {
 function updateTreatmentPricePreview() {
   const price = selectedTreatmentPrice();
   const basePrice = selectedTreatmentBasePrice();
+  const baseCurrency = selectedTreatmentBaseCurrency();
   const discount = calculateTreatmentDiscount(price, treatmentDiscount.value, treatmentDiscountType.value);
   const selectedCount = Math.max(1, selectedTeeth.size);
-  treatmentPrice.textContent = pricePreviewLabel(basePrice);
+  treatmentPrice.textContent = pricePreviewLabel(basePrice, baseCurrency);
   treatmentTotalPrice.textContent = formatMoney((price - discount) * selectedCount);
+}
+
+function updateDiscountCurrencyLabel() {
+  const amountOption = treatmentDiscountType?.querySelector('option[value="amount"]');
+  if (amountOption) amountOption.textContent = paymentCurrency();
 }
 
 function spreadToothMap() {
@@ -766,8 +796,9 @@ saveTreatmentBtn.addEventListener("click", () => {
   }
 
   selectedTeethList().forEach(tooth => {
-    const basePriceEur = selectedTreatmentBasePrice();
-    const price = convertFromEur(basePriceEur);
+    const basePrice = selectedTreatmentBasePrice();
+    const basePriceCurrency = selectedTreatmentBaseCurrency();
+    const price = convertToPaymentCurrency(basePrice, basePriceCurrency);
     const discountType = normalizeDiscountType(treatmentDiscountType.value);
     const discountValue = normalizeDiscountValue(treatmentDiscount.value, discountType);
     const discount = calculateTreatmentDiscount(price, discountValue, discountType);
@@ -777,7 +808,9 @@ saveTreatmentBtn.addEventListener("click", () => {
       type: treatmentType.value,
       note: treatmentNote.value,
       price,
-      basePriceEur,
+      basePrice,
+      basePriceCurrency,
+      basePriceEur: currencyUtils ? currencyUtils.convert(basePrice, basePriceCurrency, "EUR") : basePriceCurrency === "EUR" ? basePrice : 0,
       currency: paymentCurrency(),
       discount,
       discountType,
@@ -810,11 +843,16 @@ inputs.currency.addEventListener("change", () => {
     inputs.amountPaid.value = convertedPaid.toFixed(2);
   }
   inputs.currency.dataset.previousCurrency = nextCurrency;
+  updateDiscountCurrencyLabel();
 
   Object.values(teethTreatments).forEach(treatments => {
     treatmentListForValue(treatments).forEach(treatment => {
-      if (!Number(treatment.basePriceEur || 0)) return;
-      treatment.price = convertFromEur(treatment.basePriceEur);
+      const basePrice = Number(treatment.basePrice ?? treatment.base_price ?? treatment.basePriceEur ?? treatment.base_price_eur ?? 0);
+      const baseCurrency = treatment.basePriceCurrency ?? treatment.base_price_currency ?? (treatment.basePriceEur || treatment.base_price_eur ? "EUR" : treatment.currency || previousCurrency);
+      if (!basePrice) return;
+      treatment.basePrice = basePrice;
+      treatment.basePriceCurrency = baseCurrency;
+      treatment.price = convertToPaymentCurrency(basePrice, baseCurrency);
       treatment.currency = paymentCurrency();
       treatment.discount = calculateTreatmentDiscount(
         treatment.price,
@@ -1208,6 +1246,7 @@ form.addEventListener("submit", async (event) => {
     totalAmountTouched = false;
     populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
     populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
+    updateDiscountCurrencyLabel();
     allRecords = await window.DrRosaApi.getRecords();
     updateTeethSummary();
     updateToothHighlights();

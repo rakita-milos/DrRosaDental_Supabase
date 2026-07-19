@@ -45,7 +45,7 @@ function createPostgresRecordsRepository(pool) {
 
     treatmentsForRecord(visitRecordId) {
       return queryMany(pool, `
-        SELECT tooth_number, treatment_type, status, notes, price, discount, discount_type, discount_value
+        SELECT tooth_number, treatment_type, status, notes, price, currency, discount, discount_type, discount_value
         FROM treatments
         WHERE visit_record_id = ?
       `, [visitRecordId]);
@@ -159,8 +159,8 @@ async function insertTreatmentsPostgres(client, visitId, treatments) {
 
 function treatmentInsertSql() {
   return `
-    INSERT INTO treatments (visit_record_id, tooth_number, treatment_type, status, notes, price, discount, discount_type, discount_value)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO treatments (visit_record_id, tooth_number, treatment_type, status, notes, price, currency, discount, discount_type, discount_value)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
 }
 
@@ -172,6 +172,7 @@ function treatmentParams(visitId, treatment) {
     treatment.status,
     treatment.note,
     treatment.price,
+    treatment.currency,
     treatment.discount,
     treatment.discountType,
     treatment.discountValue

@@ -104,7 +104,7 @@ function createPostgresCalendarRepository(pool) {
     async publicBookingOptions() {
       return {
         doctors: await queryMany(pool, 'SELECT id, name, specialization FROM doctors ORDER BY name'),
-        procedures: await queryMany(pool, "SELECT id, value, label, price FROM codebook_items WHERE type = 'procedure' AND is_active = true ORDER BY sort_order, label")
+        procedures: await queryMany(pool, "SELECT id, value, label, price, price_currency FROM codebook_items WHERE type = 'procedure' AND is_active = true ORDER BY sort_order, label")
       };
     },
 

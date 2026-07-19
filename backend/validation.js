@@ -76,6 +76,8 @@ const treatmentSchema = Joi.object({
   note: Joi.string().max(1000).optional().allow('', null),
   notes: Joi.string().max(1000).optional().allow('', null),
   price: Joi.number().min(0).optional().allow(null),
+  priceCurrency: Joi.string().max(10).optional().allow('', null),
+  price_currency: Joi.string().max(10).optional().allow('', null),
   basePriceEur: Joi.number().min(0).optional().allow(null),
   base_price_eur: Joi.number().min(0).optional().allow(null),
   currency: Joi.string().max(10).optional().allow('', null),

@@ -680,6 +680,7 @@ function codebookFormElements() {
     label: document.getElementById("codebook-label"),
     group: document.getElementById("codebook-group"),
     price: document.getElementById("codebook-price"),
+    priceCurrency: document.getElementById("codebook-price-currency"),
     sort: document.getElementById("codebook-sort"),
     active: document.getElementById("codebook-active"),
     message: document.getElementById("codebook-message"),
@@ -703,6 +704,7 @@ function codebookFormElements() {
     cashReportLineType: document.getElementById("cash-report-line-type"),
     groupField: document.querySelector(".codebook-group-field"),
     priceField: document.querySelector(".codebook-price-field"),
+    priceCurrencyField: document.querySelector(".codebook-price-currency-field"),
     valueField: document.getElementById("codebook-value-field"),
     detailHeader: document.getElementById("codebook-detail-header"),
     priceHeader: document.getElementById("codebook-price-header")
@@ -755,6 +757,7 @@ function updateShiftFieldsVisibility() {
   elements.cashReportItemFields?.classList.toggle("active", activeCodebookType === "cash_report_item");
   elements.groupField?.classList.toggle("hidden", hideGroupField);
   elements.priceField?.classList.toggle("hidden", hidePriceField);
+  elements.priceCurrencyField?.classList.toggle("hidden", hidePriceField);
   elements.valueField?.classList.toggle("hidden", activeCodebookType !== "currency");
   if (elements.priceHeader) {
     elements.priceHeader.hidden = !showPriceColumn;
@@ -773,6 +776,15 @@ function updateShiftFieldsVisibility() {
               ? "Tip"
               : "Detalji";
   }
+}
+
+function activeCurrencyOptions(selected = "EUR") {
+  const currencies = codebookItems
+    .filter(item => item.type === "currency" && item.isActive !== false)
+    .map(item => item.value)
+    .filter(Boolean);
+  const values = Array.from(new Set([...currencies, selected || "EUR", "EUR"]));
+  return values.map(value => `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(value)}</option>`).join("");
 }
 
 function slugifyCodebookValue(label) {
@@ -957,6 +969,7 @@ function resetCodebookForm() {
   elements.label.value = "";
   elements.group.value = "";
   elements.price.value = "0";
+  if (elements.priceCurrency) elements.priceCurrency.innerHTML = activeCurrencyOptions("EUR");
   elements.sort.value = "0";
   elements.active.checked = true;
   clearShiftFields();
@@ -974,6 +987,7 @@ function fillCodebookForm(item) {
   elements.label.value = item.label;
   elements.group.value = item.groupName || "";
   elements.price.value = item.price || 0;
+  if (elements.priceCurrency) elements.priceCurrency.innerHTML = activeCurrencyOptions(item.priceCurrency || "EUR");
   elements.sort.value = item.sortOrder || 0;
   elements.active.checked = item.isActive !== false;
   setShiftFields(item.metadata);
@@ -995,6 +1009,7 @@ function readCodebookForm() {
     label,
     groupName: elements.group.value.trim() || null,
     price: Number(elements.price.value || 0),
+    priceCurrency: elements.priceCurrency?.value || "EUR",
     sortOrder: Number(elements.sort.value || 0),
     isActive: elements.active.checked,
     metadata: activeCodebookType === "shift"
@@ -1034,7 +1049,7 @@ function renderCodebooksAdmin() {
       <td>${escapeHtml(item.value)}</td>
       <td>${escapeHtml(item.label)}</td>
       ${hideDetailColumn ? "" : `<td>${escapeHtml(item.type === "shift" ? formatShiftMetadata(item) : item.type === "currency" ? formatCurrencyMetadata(item) : item.type === "payment_method" ? formatPaymentMethodMetadata(item) : item.type === "cash_report_item" ? formatCashReportItemMetadata(item) : (item.groupName || "-"))}</td>`}
-      ${showPriceColumn ? `<td>${Number(item.price || 0).toFixed(2)}</td>` : ""}
+      ${showPriceColumn ? `<td>${Number(item.price || 0).toFixed(2)} ${escapeHtml(item.priceCurrency || "EUR")}</td>` : ""}
       <td>${item.isActive === false ? "Neaktivno" : "Aktivno"}</td>
       <td>
         <button class="secondary-btn edit-codebook-btn" type="button" data-codebook-id="${item.id}">Uredi</button>

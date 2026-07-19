@@ -3189,6 +3189,7 @@ td:nth-child(5) {
 
 .codebook-group-field.hidden,
 .codebook-price-field.hidden,
+.codebook-price-currency-field.hidden,
 #codebook-value-field.hidden {
   display: none;
 }
