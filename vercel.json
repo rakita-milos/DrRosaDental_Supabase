@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "installCommand": "npm --prefix backend ci --omit=dev",
+  "installCommand": "npm ci --omit=dev",
   "functions": {
     "api/index.js": {
       "maxDuration": 30,
