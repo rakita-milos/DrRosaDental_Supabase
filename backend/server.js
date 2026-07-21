@@ -1288,6 +1288,9 @@ function googleOAuthErrorDetail(data) {
     .map(value => cleanText(value, { max: 300 }))
     .filter(Boolean);
   const unique = Array.from(new Set(parts));
+  if (unique[0] === 'invalid_grant') {
+    return 'Google je odbio OAuth kod (invalid_grant). Generisite novi kod iz istog OAuth Client ID-a i istog Redirect URI-ja koji je sacuvan u podesavanjima, pa ga iskoristite odmah.';
+  }
   if (!unique.length) return 'Google OAuth exchange failed';
   return unique.join(': ');
 }

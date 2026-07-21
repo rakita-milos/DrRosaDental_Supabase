@@ -1374,6 +1374,23 @@ function normalizeGoogleAuthCode(value) {
   return raw;
 }
 
+function googleOAuthAuthorizeUrl() {
+  const clientId = document.getElementById("google-client-id")?.value.trim();
+  const redirectUri = document.getElementById("google-redirect-uri")?.value.trim();
+  if (!clientId || !redirectUri) return "";
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "https://www.googleapis.com/auth/calendar.events",
+    access_type: "offline",
+    prompt: "consent",
+    include_granted_scopes: "true"
+  });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
 function renderGoogleSummary(settings) {
   const summary = document.getElementById("google-sync-summary");
   if (!summary) return;
@@ -1454,6 +1471,16 @@ function initializeGoogleCalendarSettings() {
     } catch (error) {
       showGoogleMessage(error.message || "Google izmene nisu povučene.", true);
     }
+  });
+
+  document.getElementById("google-open-oauth")?.addEventListener("click", () => {
+    const authUrl = googleOAuthAuthorizeUrl();
+    if (!authUrl) {
+      showGoogleMessage("Prvo unesite OAuth Client ID i Redirect URI, pa sacuvajte podesavanja.", true);
+      return;
+    }
+    window.open(authUrl, "_blank", "noopener,noreferrer");
+    showGoogleMessage("Google autorizacija je otvorena. Posle odobrenja kopirajte vrednost parametra code iz callback URL-a.");
   });
 
   document.getElementById("google-connect-oauth")?.addEventListener("click", async () => {
