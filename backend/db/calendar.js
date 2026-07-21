@@ -131,8 +131,8 @@ function createPostgresCalendarRepository(pool) {
         SELECT id FROM doctors
         WHERE is_active = true
           AND (
-            (? IS NOT NULL AND google_color_id = ?)
-            OR (? IS NOT NULL AND lower(calendar_color) = ?)
+            (?::text IS NOT NULL AND google_color_id = ?::text)
+            OR (?::text IS NOT NULL AND lower(calendar_color) = ?::text)
           )
         ORDER BY id
         LIMIT 1

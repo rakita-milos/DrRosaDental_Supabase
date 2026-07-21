@@ -35,6 +35,8 @@ test('Google color mapping is stored on doctors and used for import/export', () 
   assert.match(schemaSource, /calendar_color TEXT/);
   assert.match(schemaSource, /calendar_text_color TEXT/);
   assert.match(calendarRepoSource, /doctorByGoogleColor\(\{ googleColorId = null, calendarColor = null \}\)/);
+  assert.match(calendarRepoSource, /\?::text IS NOT NULL AND google_color_id = \?::text/);
+  assert.match(calendarRepoSource, /\?::text IS NOT NULL AND lower\(calendar_color\) = \?::text/);
   assert.match(calendarRepoSource, /google_color_id, calendar_color, calendar_text_color/);
   assert.match(calendarRepoSource, /d\.google_color_id as doctor_google_color_id/);
   assert.match(serverSource, /function googleEventColor\(event, colorContext = \{\}\)/);
