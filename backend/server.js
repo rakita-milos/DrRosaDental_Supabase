@@ -1222,7 +1222,7 @@ function publicGoogleSettings(settings) {
 
 async function refreshGoogleAccessToken(settings) {
   if (!settings.oauth_refresh_token || !settings.client_id || !settings.client_secret) return null;
-  const response = await fetch('https://oauth2.googleapis.com/token', {
+  const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -1246,10 +1246,23 @@ async function googleAccessToken(settings) {
   return refreshGoogleAccessToken(settings);
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('Google Calendar API request timed out.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function callGoogleCalendar(settings, method, path, payload) {
   const token = await googleAccessToken(settings);
   if (!token) throw new Error('Google OAuth is not connected.');
-  const response = await fetch(`https://www.googleapis.com/calendar/v3${path}`, {
+  const response = await fetchWithTimeout(`https://www.googleapis.com/calendar/v3${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -1410,13 +1423,16 @@ async function updateAppointmentFromGoogleEvent(event) {
   return { action: 'updated', appointmentId };
 }
 
-async function pullGoogleCalendarChanges({ limit = 250, reset = false } = {}) {
+async function pullGoogleCalendarChanges({ limit = 75, reset = false } = {}) {
   const settings = await calendarRepo.googleSettings();
   if (!settings?.sync_enabled) throw new Error('Google Calendar sync is disabled.');
   if (settings.sync_direction !== 'two_way') throw new Error('Two-way sync is not enabled.');
   if (!settings.connected_email || !settings.calendar_id) throw new Error('Google Calendar account or calendar is not configured.');
 
   const calendarId = encodeURIComponent(settings.calendar_id);
+  const batchLimit = Math.max(1, Math.min(100, Number(limit) || 75));
+  const startedAt = Date.now();
+  const timeBudgetMs = 22000;
   const stats = {
     fetched: 0,
     updated: 0,
@@ -1426,19 +1442,22 @@ async function pullGoogleCalendarChanges({ limit = 250, reset = false } = {}) {
     skippedMissingLocal: 0,
     skippedUnsupportedTime: 0,
     skippedConflicts: 0,
-    fullSync: reset || !settings.events_sync_token
+    fullSync: reset || !settings.events_sync_token,
+    partial: false
   };
   let nextSyncToken = null;
   let pageToken = null;
   let usedReset = reset;
+  let pages = 0;
 
   do {
-    const query = new URLSearchParams({ maxResults: String(limit) });
+    const query = new URLSearchParams({ maxResults: String(batchLimit) });
     if (!usedReset && settings.events_sync_token) {
       query.set('syncToken', settings.events_sync_token);
     } else {
       query.set('singleEvents', 'true');
       query.set('showDeleted', 'true');
+      query.set('privateExtendedProperty', 'drrosaSource=drrosa');
       query.set('timeMin', new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString());
     }
     if (pageToken) query.set('pageToken', pageToken);
@@ -1468,9 +1487,14 @@ async function pullGoogleCalendarChanges({ limit = 250, reset = false } = {}) {
 
     pageToken = data.nextPageToken || null;
     nextSyncToken = data.nextSyncToken || nextSyncToken;
+    pages += 1;
+    if (pageToken && (pages >= 4 || Date.now() - startedAt > timeBudgetMs)) {
+      stats.partial = true;
+      break;
+    }
   } while (pageToken);
 
-  if (nextSyncToken) {
+  if (nextSyncToken && !stats.partial) {
     await calendarRepo.markGooglePull({ syncToken: nextSyncToken });
   } else {
     await calendarRepo.markGooglePull({});
@@ -3935,7 +3959,7 @@ app.post('/api/director/google-calendar/oauth/exchange', authenticateToken, requ
       return res.status(400).json({ error: 'Google OAuth client ID, secret and redirect URI are required.' });
     }
 
-    const response = await fetch('https://oauth2.googleapis.com/token', {
+    const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
