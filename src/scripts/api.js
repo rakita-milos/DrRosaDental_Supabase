@@ -242,6 +242,28 @@
     return request("/doctors");
   }
 
+  async function getDirectorDoctors() {
+    return request("/director/doctors");
+  }
+
+  async function createDoctor(doctor) {
+    return request("/director/doctors", {
+      method: "POST",
+      body: JSON.stringify(doctor)
+    });
+  }
+
+  async function updateDoctor(doctorId, doctor) {
+    return request(`/director/doctors/${doctorId}`, {
+      method: "PUT",
+      body: JSON.stringify(doctor)
+    });
+  }
+
+  async function deactivateDoctor(doctorId) {
+    return request(`/director/doctors/${doctorId}`, { method: "DELETE" });
+  }
+
   async function getChairs() {
     return request("/chairs");
   }
@@ -771,6 +793,10 @@
     importPatientScan,
     deleteDocument,
     getDoctors,
+    getDirectorDoctors,
+    createDoctor,
+    updateDoctor,
+    deactivateDoctor,
     getChairs,
     getAppointments,
     createAppointment,

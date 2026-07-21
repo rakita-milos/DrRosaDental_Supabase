@@ -2,6 +2,7 @@ let cachedRecords = [];
 let currentReportExport = { title: "Direktor izveštaj", headers: [], rows: [] };
 let activeExcelSheet = "PAZARI";
 let codebookItems = [];
+let doctorAdminItems = [];
 let currentDailyCashReport = null;
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
 const procedureCatalog = window.DrRosaProcedureCatalog;
@@ -332,6 +333,153 @@ async function loadDoctorsReport() {
       `${Number(row.percentage || 0).toFixed(1)}%`
     ]) : [["Nema podataka", "-", "-", "-"]]
   };
+  await loadDoctorAdmin();
+}
+
+function doctorAdminElements() {
+  return {
+    form: document.getElementById("doctor-admin-form"),
+    id: document.getElementById("doctor-id"),
+    name: document.getElementById("doctor-name"),
+    specialization: document.getElementById("doctor-specialization"),
+    license: document.getElementById("doctor-license"),
+    email: document.getElementById("doctor-email"),
+    phone: document.getElementById("doctor-phone"),
+    active: document.getElementById("doctor-active"),
+    reset: document.getElementById("doctor-reset"),
+    message: document.getElementById("doctor-admin-message"),
+    table: document.getElementById("doctor-admin-table")
+  };
+}
+
+function showDoctorAdminMessage(message, isError = false) {
+  const elements = doctorAdminElements();
+  if (!elements.message) return;
+  elements.message.textContent = message || "";
+  elements.message.classList.toggle("error", Boolean(isError));
+}
+
+function resetDoctorForm() {
+  const elements = doctorAdminElements();
+  if (!elements.form) return;
+  elements.id.value = "";
+  elements.name.value = "";
+  elements.specialization.value = "";
+  elements.license.value = "";
+  elements.email.value = "";
+  elements.phone.value = "";
+  elements.active.checked = true;
+  showDoctorAdminMessage("");
+}
+
+function fillDoctorForm(doctor) {
+  const elements = doctorAdminElements();
+  elements.id.value = doctor.id;
+  elements.name.value = doctor.name || "";
+  elements.specialization.value = doctor.specialization || "";
+  elements.license.value = doctor.licenseNumber || doctor.license_number || "";
+  elements.email.value = doctor.email || "";
+  elements.phone.value = doctor.phone || "";
+  elements.active.checked = doctor.isActive !== false;
+  showDoctorAdminMessage("Izmena postojeceg doktora.");
+}
+
+function readDoctorForm() {
+  const elements = doctorAdminElements();
+  return {
+    name: elements.name.value.trim(),
+    specialization: elements.specialization.value.trim() || null,
+    licenseNumber: elements.license.value.trim() || null,
+    email: elements.email.value.trim() || null,
+    phone: elements.phone.value.trim() || null,
+    isActive: elements.active.checked
+  };
+}
+
+function renderDoctorAdminTable() {
+  const elements = doctorAdminElements();
+  if (!elements.table) return;
+  const rows = [...doctorAdminItems].sort((a, b) => Number(a.isActive === false) - Number(b.isActive === false) || a.name.localeCompare(b.name));
+  elements.table.innerHTML = rows.length ? rows.map(doctor => `
+    <tr>
+      <td>${escapeHtml(doctor.name)}</td>
+      <td>${escapeHtml(doctor.specialization || "-")}</td>
+      <td>${escapeHtml(doctor.licenseNumber || "-")}</td>
+      <td>${escapeHtml([doctor.email, doctor.phone].filter(Boolean).join(" / ") || "-")}</td>
+      <td>${doctor.isActive === false ? "Neaktivno" : "Aktivno"}</td>
+      <td>
+        <button class="secondary-btn edit-doctor-btn" type="button" data-doctor-id="${doctor.id}">Uredi</button>
+        <button class="danger-btn deactivate-doctor-btn" type="button" data-doctor-id="${doctor.id}" ${doctor.isActive === false ? "disabled" : ""}>Deaktiviraj</button>
+      </td>
+    </tr>
+  `).join("") : `<tr><td colspan="6" class="empty-row">Nema doktora za prikaz.</td></tr>`;
+}
+
+async function loadDoctorAdmin() {
+  if (!window.DrRosaApi?.getDirectorDoctors) return;
+  try {
+    doctorAdminItems = await window.DrRosaApi.getDirectorDoctors();
+    renderDoctorAdminTable();
+  } catch (error) {
+    showDoctorAdminMessage(error.message || "Doktori nisu ucitani.", true);
+  }
+}
+
+async function refreshDoctorsAfterAdminChange(message) {
+  if (message) showDoctorAdminMessage(message);
+  await loadDoctorAdmin();
+  await loadDoctorsReport();
+}
+
+async function saveDoctorAdmin(event) {
+  event.preventDefault();
+  const elements = doctorAdminElements();
+  const payload = readDoctorForm();
+  if (!payload.name) {
+    showDoctorAdminMessage("Ime doktora je obavezno.", true);
+    elements.name.focus();
+    return;
+  }
+  try {
+    if (elements.id.value) {
+      await window.DrRosaApi.updateDoctor(elements.id.value, payload);
+      resetDoctorForm();
+      await refreshDoctorsAfterAdminChange("Doktor je sacuvan.");
+    } else {
+      await window.DrRosaApi.createDoctor(payload);
+      resetDoctorForm();
+      await refreshDoctorsAfterAdminChange("Doktor je dodat.");
+    }
+  } catch (error) {
+    showDoctorAdminMessage(error.message || "Doktor nije sacuvan.", true);
+  }
+}
+
+function initializeDoctorAdmin() {
+  const elements = doctorAdminElements();
+  if (!elements.form || elements.form.dataset.ready) return;
+  elements.form.dataset.ready = "true";
+  elements.form.addEventListener("submit", saveDoctorAdmin);
+  elements.reset?.addEventListener("click", resetDoctorForm);
+  elements.table?.addEventListener("click", async event => {
+    const editButton = event.target.closest(".edit-doctor-btn");
+    const deactivateButton = event.target.closest(".deactivate-doctor-btn");
+    if (editButton) {
+      const doctor = doctorAdminItems.find(item => String(item.id) === String(editButton.dataset.doctorId));
+      if (doctor) fillDoctorForm(doctor);
+      return;
+    }
+    if (!deactivateButton) return;
+    const doctor = doctorAdminItems.find(item => String(item.id) === String(deactivateButton.dataset.doctorId));
+    if (!doctor || !confirm(`Deaktivirati doktora ${doctor.name}?`)) return;
+    try {
+      const result = await window.DrRosaApi.deactivateDoctor(doctor.id);
+      resetDoctorForm();
+      await refreshDoctorsAfterAdminChange(result.message || "Doktor je deaktiviran.");
+    } catch (error) {
+      showDoctorAdminMessage(error.message || "Doktor nije deaktiviran.", true);
+    }
+  });
 }
 
 async function loadProceduresReport() {
@@ -1852,6 +2000,7 @@ function initializeDailyCashReport() {
   initializeReports();
   initializeReportNavigation();
   initializeExportActions();
+  initializeDoctorAdmin();
   initializeCodebookAdmin();
   initializeDailyCashReport();
   initializePublicBookingSettings();

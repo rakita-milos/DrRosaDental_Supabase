@@ -92,8 +92,13 @@ function createPostgresDirectorReportsRepository(pool) {
       return { totalVisits: Number(total?.count || 0), rows };
     },
 
-    doctors() {
-      return queryMany(pool, 'SELECT id, name, specialization, email, phone FROM doctors ORDER BY name');
+    doctors({ activeOnly = true } = {}) {
+      return queryMany(pool, `
+        SELECT id, name, specialization, license_number, email, phone, is_active
+        FROM doctors
+        WHERE (? = false OR is_active = true)
+        ORDER BY name
+      `, [activeOnly]);
     }
   };
 }

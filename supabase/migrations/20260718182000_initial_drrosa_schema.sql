@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS doctors (
   license_number TEXT UNIQUE,
   email TEXT,
   phone TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -195,6 +196,10 @@ CREATE TABLE IF NOT EXISTS google_calendar_settings (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+INSERT INTO google_calendar_settings (id)
+VALUES (1)
+ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,

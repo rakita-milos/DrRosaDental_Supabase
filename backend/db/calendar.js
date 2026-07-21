@@ -103,15 +103,15 @@ function createPostgresCalendarRepository(pool) {
 
     async publicBookingOptions() {
       return {
-        doctors: await queryMany(pool, 'SELECT id, name, specialization FROM doctors ORDER BY name'),
+        doctors: await queryMany(pool, 'SELECT id, name, specialization FROM doctors WHERE is_active = true ORDER BY name'),
         procedures: await queryMany(pool, "SELECT id, value, label, price, price_currency FROM codebook_items WHERE type = 'procedure' AND is_active = true ORDER BY sort_order, label")
       };
     },
 
     publicBookingDoctors(doctorId = null) {
       return doctorId
-        ? queryMany(pool, 'SELECT id, name FROM doctors WHERE id = ?', [doctorId])
-        : queryMany(pool, 'SELECT id, name FROM doctors ORDER BY name');
+        ? queryMany(pool, 'SELECT id, name FROM doctors WHERE id = ? AND is_active = true', [doctorId])
+        : queryMany(pool, 'SELECT id, name FROM doctors WHERE is_active = true ORDER BY name');
     },
 
     defaultActiveChair() {
@@ -257,16 +257,23 @@ function createPostgresCalendarRepository(pool) {
 
     updateGoogleSettings(settings) {
       return execute(pool, `
-        UPDATE google_calendar_settings
-        SET connected_email = ?, calendar_id = ?, calendar_name = ?,
-            client_id = COALESCE(?, client_id),
-            client_secret = COALESCE(?, client_secret),
-            redirect_uri = COALESCE(?, redirect_uri),
-            sync_enabled = ?,
-            sync_direction = ?, default_reminder_minutes = ?,
-            events_sync_token = CASE WHEN ? THEN NULL ELSE events_sync_token END,
+        INSERT INTO google_calendar_settings (
+          id, connected_email, calendar_id, calendar_name, client_id, client_secret,
+          redirect_uri, sync_enabled, sync_direction, default_reminder_minutes
+        )
+        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (id) DO UPDATE
+        SET connected_email = EXCLUDED.connected_email,
+            calendar_id = EXCLUDED.calendar_id,
+            calendar_name = EXCLUDED.calendar_name,
+            client_id = COALESCE(EXCLUDED.client_id, google_calendar_settings.client_id),
+            client_secret = COALESCE(EXCLUDED.client_secret, google_calendar_settings.client_secret),
+            redirect_uri = COALESCE(EXCLUDED.redirect_uri, google_calendar_settings.redirect_uri),
+            sync_enabled = EXCLUDED.sync_enabled,
+            sync_direction = EXCLUDED.sync_direction,
+            default_reminder_minutes = EXCLUDED.default_reminder_minutes,
+            events_sync_token = CASE WHEN ? THEN NULL ELSE google_calendar_settings.events_sync_token END,
             updated_at = now()
-        WHERE id = 1
       `, [settings.connectedEmail, settings.calendarId, settings.calendarName, settings.clientId, settings.clientSecret, settings.redirectUri, settings.syncEnabled, settings.syncDirection, settings.defaultReminderMinutes, settings.resetGooglePullToken]);
     },
 

@@ -153,8 +153,66 @@ function createPostgresDirectorAdminRepository(pool) {
         }
         await execute(client, 'UPDATE daily_cash_reports SET notes = ?, updated_by = ?, updated_at = now() WHERE id = ?', [notes, userId, reportId]);
       });
+    },
+
+    doctors({ activeOnly = false } = {}) {
+      return queryMany(pool, `
+        SELECT id, name, specialization, license_number, email, phone, is_active, created_at
+        FROM doctors
+        WHERE (? = false OR is_active = true)
+        ORDER BY name
+      `, [activeOnly]);
+    },
+
+    findDoctor(id) {
+      return queryOne(pool, 'SELECT * FROM doctors WHERE id = ?', [id]);
+    },
+
+    async createDoctor(doctor) {
+      const id = await insertReturningId(pool, `
+        INSERT INTO doctors (name, specialization, license_number, email, phone, is_active)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, doctorParams(doctor));
+      return this.findDoctor(id);
+    },
+
+    async updateDoctor(id, doctor) {
+      await execute(pool, `
+        UPDATE doctors
+        SET name = ?, specialization = ?, license_number = ?, email = ?, phone = ?, is_active = ?
+        WHERE id = ?
+      `, [...doctorParams(doctor), id]);
+      return this.findDoctor(id);
+    },
+
+    async deactivateDoctor(id) {
+      await execute(pool, 'UPDATE doctors SET is_active = false WHERE id = ?', [id]);
+      return this.findDoctor(id);
+    },
+
+    async doctorUsage(id) {
+      const row = await queryOne(pool, `
+        SELECT
+          (SELECT COUNT(*)::int FROM visit_records WHERE doctor_id = ?) AS records,
+          (SELECT COUNT(*)::int FROM appointments WHERE doctor_id = ?) AS appointments
+      `, [id, id]);
+      return {
+        records: Number(row?.records || 0),
+        appointments: Number(row?.appointments || 0)
+      };
     }
   };
+}
+
+function doctorParams(doctor) {
+  return [
+    doctor.name,
+    doctor.specialization,
+    doctor.licenseNumber,
+    doctor.email,
+    doctor.phone,
+    Boolean(doctor.isActive)
+  ];
 }
 
 function codebookParams(item, { postgres = false } = {}) {

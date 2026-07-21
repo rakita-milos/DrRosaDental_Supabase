@@ -11,11 +11,11 @@ function createPostgresStartupSeedRepository(pool) {
       return Number(row?.count || 0);
     },
 
-    insertDoctor({ name, specialization, licenseNumber, email, phone }) {
+    insertDoctor({ name, specialization, licenseNumber, email, phone, isActive = true }) {
       return execute(pool, `
-        INSERT INTO doctors (name, specialization, license_number, email, phone)
-        VALUES (?, ?, ?, ?, ?)
-      `, [name, specialization, licenseNumber, email, phone]);
+        INSERT INTO doctors (name, specialization, license_number, email, phone, is_active)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [name, specialization, licenseNumber, email, phone, Boolean(isActive)]);
     },
 
     async chairsCount() {
@@ -42,6 +42,14 @@ function createPostgresStartupSeedRepository(pool) {
     async codebookCount() {
       const row = await queryOne(pool, 'SELECT COUNT(*)::int as count FROM codebook_items');
       return Number(row?.count || 0);
+    },
+
+    ensureGoogleCalendarSettings() {
+      return execute(pool, `
+        INSERT INTO google_calendar_settings (id)
+        VALUES (1)
+        ON CONFLICT (id) DO NOTHING
+      `);
     },
 
     insertCodebookItem({ type, value, label, groupName = null, metadata = null, price = 0, priceCurrency = 'EUR', sortOrder = 0 }) {

@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS doctors (
   license_number TEXT UNIQUE,
   email TEXT,
   phone TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -195,6 +196,10 @@ CREATE TABLE IF NOT EXISTS google_calendar_settings (
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+INSERT INTO google_calendar_settings (id)
+VALUES (1)
+ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
@@ -568,6 +573,9 @@ ALTER TABLE codebook_items
 
 ALTER TABLE treatments
   ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'EUR';
+
+ALTER TABLE doctors
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 
 CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(first_name, last_name);
 CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits(reset_at);

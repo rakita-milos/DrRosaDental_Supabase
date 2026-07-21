@@ -261,6 +261,7 @@ async function seedDatabase() {
   }
 
   await seedCodebooks();
+  await startupSeed.ensureGoogleCalendarSettings();
   await ensureDefaultOperationalCodebooksPostgres();
   await rotateDefaultPasswords();
 }
@@ -766,6 +767,42 @@ function normalizeStatus(value) {
   return value || 'Zakazano';
 }
 
+function serializeDoctor(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    specialization: row.specialization || '',
+    licenseNumber: row.license_number || '',
+    email: row.email || '',
+    phone: row.phone || '',
+    isActive: row.is_active !== false
+  };
+}
+
+function doctorPayloadFromBody(body, fallback = {}) {
+  return {
+    name: cleanText(body.name ?? fallback.name, { max: 120, required: true }),
+    specialization: cleanText(body.specialization ?? fallback.specialization, { max: 120 }),
+    licenseNumber: cleanText(body.licenseNumber ?? body.license_number ?? fallback.license_number, { max: 80 }),
+    email: cleanText(body.email ?? fallback.email, { max: 120 }),
+    phone: cleanText(body.phone ?? fallback.phone, { max: 50 }),
+    isActive: body.isActive === undefined && body.is_active === undefined
+      ? fallback.is_active !== false
+      : body.isActive !== false && body.is_active !== false
+  };
+}
+
+async function activeDoctorExists(id) {
+  const doctor = await directorAdmin.findDoctor(id);
+  return Boolean(doctor?.is_active);
+}
+
+function doctorPayloadError(payload) {
+  if (!payload.name) return 'Ime doktora je obavezno.';
+  if (payload.email && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(payload.email)) return 'Email doktora nije ispravan.';
+  return null;
+}
+
 async function procedureByInput({ procedureId, procedureName }) {
   if (procedureId) {
     const byId = await directorAdmin.procedureById(procedureId);
@@ -1222,6 +1259,21 @@ async function callGoogleCalendar(settings, method, path, payload) {
     throw error;
   }
   return data;
+}
+
+function googleCalendarRouteStatus(error) {
+  if (error?.status && Number(error.status) >= 400 && Number(error.status) < 500) return Number(error.status);
+  const message = String(error?.message || '');
+  if (
+    message.includes('Google Calendar sync is disabled.')
+    || message.includes('Two-way sync is not enabled.')
+    || message.includes('Google Calendar account or calendar is not configured.')
+    || message.includes('Google OAuth is not connected.')
+    || message.includes('Google token refresh failed')
+  ) {
+    return 400;
+  }
+  return 500;
 }
 
 async function queueCalendarSync(appointmentId, action) {
@@ -2188,7 +2240,7 @@ app.post('/api/records', authenticateToken, requirePermission('records:write'), 
     if (!(await recordsPaymentsRepo.rowExists('patients', patient_id))) {
       return res.status(404).json({ error: 'Patient not found' });
     }
-    if (!(await recordsPaymentsRepo.rowExists('doctors', doctor_id))) {
+    if (!(await activeDoctorExists(doctor_id))) {
       return res.status(404).json({ error: 'Doctor not found' });
     }
 
@@ -2329,7 +2381,7 @@ app.post('/api/appointments', authenticateToken, requirePermission('calendar:wri
     }
     if (appointmentDurationMinutes(startsAt, endsAt) <= 0) return res.status(400).json({ error: 'End time must be after start time' });
     if (!(await calendarRepo.rowExists('patients', patientId))) return res.status(404).json({ error: 'Patient not found' });
-    if (!(await calendarRepo.rowExists('doctors', doctorId))) return res.status(404).json({ error: 'Doctor not found' });
+    if (!(await activeDoctorExists(doctorId))) return res.status(404).json({ error: 'Doctor not found' });
     if (!(await calendarRepo.rowExists('chairs', chairId))) return res.status(404).json({ error: 'Chair not found' });
 
     const conflict = await appointmentConflict({ doctorId, chairId, startsAt, endsAt });
@@ -2387,6 +2439,7 @@ app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:
       return res.status(400).json({ error: 'Pacijent, doktor, stolica, datum i postupak su obavezni.' });
     }
     if (appointmentDurationMinutes(startsAt, endsAt) <= 0) return res.status(400).json({ error: 'End time must be after start time' });
+    if (!(await activeDoctorExists(doctorId))) return res.status(404).json({ error: 'Doctor not found' });
 
     const conflict = await appointmentConflict({ appointmentId: current.id, doctorId, chairId, startsAt, endsAt });
     if (conflict) {
@@ -2498,7 +2551,14 @@ app.get('/api/public/booking/status', publicBookingReadLimiter, async (_req, res
 
 app.get('/api/public/booking/options', publicBookingReadLimiter, requirePublicBookingEnabled, async (_req, res) => {
   try {
-    res.json(await calendarRepo.publicBookingOptions());
+    const options = await calendarRepo.publicBookingOptions();
+    res.json({
+      ...options,
+      procedures: (options.procedures || []).map(item => ({
+        ...item,
+        priceCurrency: normalizeCurrency(item.price_currency)
+      }))
+    });
   } catch (error) {
     console.error('Public booking options error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -2576,7 +2636,7 @@ app.post('/api/public/booking', publicBookingWriteLimiter, requirePublicBookingE
     if (!firstName || !lastName || !phone || !doctorId || !chairId || !procedure || !procedureName || !startsAt || !endsAt) {
       return res.status(400).json({ error: 'Ime, prezime, broj telefona, datum, doktor i postupak su obavezni.' });
     }
-    if (!(await calendarRepo.rowExists('doctors', doctorId))) return res.status(404).json({ error: 'Doktor nije pronadjen.' });
+    if (!(await activeDoctorExists(doctorId))) return res.status(404).json({ error: 'Doktor nije pronadjen.' });
     if (!procedure) return res.status(404).json({ error: 'Postupak nije pronadjen.' });
     const conflict = await appointmentConflict({ doctorId, chairId, startsAt, endsAt });
     if (conflict) return res.status(409).json({ error: 'Termin vise nije slobodan.' });
@@ -3760,7 +3820,7 @@ app.post('/api/director/calendar-sync/pull-google', authenticateToken, requireDi
     res.json(stats);
   } catch (error) {
     console.error('Pull Google Calendar changes error:', error);
-    res.status(500).json({ error: error.message || 'Google Calendar pull failed' });
+    res.status(googleCalendarRouteStatus(error)).json({ error: error.message || 'Google Calendar pull failed' });
   }
 });
 
@@ -3878,7 +3938,7 @@ app.post('/api/director/google-calendar/oauth/exchange', authenticateToken, requ
     res.json({ success: true, expiresAt });
   } catch (error) {
     console.error('Google OAuth exchange error:', error);
-    res.status(500).json({ error: 'Google OAuth exchange failed' });
+    res.status(googleCalendarRouteStatus(error)).json({ error: error.message || 'Google OAuth exchange failed' });
   }
 });
 
@@ -3889,7 +3949,7 @@ app.post('/api/director/google-calendar/test-sync', authenticateToken, requireDi
     res.json({ processed, lastSyncAt: settings.last_sync_at });
   } catch (error) {
     console.error('Google Calendar test sync error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(googleCalendarRouteStatus(error)).json({ error: error.message || 'Google Calendar test sync failed' });
   }
 });
 
@@ -3964,11 +4024,75 @@ app.get('/api/director/reports/procedures', authenticateToken, requireDirector, 
 
 app.get('/api/doctors', authenticateToken, requirePermission('calendar:read'), async (_req, res) => {
   try {
-    const doctors = await directorReports.doctors();
-    res.json(doctors);
+    const doctors = await directorReports.doctors({ activeOnly: true });
+    res.json(doctors.map(serializeDoctor));
   } catch (error) {
     console.error('Get doctors error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/director/doctors', authenticateToken, requireDirector, async (_req, res) => {
+  try {
+    const doctors = await directorAdmin.doctors({ activeOnly: false });
+    res.json(doctors.map(serializeDoctor));
+  } catch (error) {
+    console.error('Get director doctors error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/director/doctors', authenticateToken, requireDirector, async (req, res) => {
+  try {
+    const payload = doctorPayloadFromBody(req.body);
+    const payloadError = doctorPayloadError(payload);
+    if (payloadError) return res.status(400).json({ error: payloadError });
+    const doctor = await directorAdmin.createDoctor(payload);
+    await auditLog({ userId: req.user.id, action: 'doctor_created', entityType: 'doctor', entityId: doctor.id, req });
+    res.status(201).json(serializeDoctor(doctor));
+  } catch (error) {
+    if (isUniqueConstraintError(error)) return res.status(409).json({ error: 'Broj licence vec postoji.' });
+    console.error('Create doctor error:', error);
+    res.status(500).json({ error: 'Doktor nije dodat.' });
+  }
+});
+
+app.put('/api/director/doctors/:id', authenticateToken, requireDirector, async (req, res) => {
+  try {
+    const id = positiveInteger(req.params.id);
+    const current = await directorAdmin.findDoctor(id);
+    if (!current) return res.status(404).json({ error: 'Doktor nije pronadjen.' });
+    const payload = doctorPayloadFromBody(req.body, current);
+    const payloadError = doctorPayloadError(payload);
+    if (payloadError) return res.status(400).json({ error: payloadError });
+    const doctor = await directorAdmin.updateDoctor(id, payload);
+    await auditLog({ userId: req.user.id, action: 'doctor_updated', entityType: 'doctor', entityId: id, req });
+    res.json(serializeDoctor(doctor));
+  } catch (error) {
+    if (isUniqueConstraintError(error)) return res.status(409).json({ error: 'Broj licence vec postoji.' });
+    console.error('Update doctor error:', error);
+    res.status(500).json({ error: 'Doktor nije sacuvan.' });
+  }
+});
+
+app.delete('/api/director/doctors/:id', authenticateToken, requireDirector, async (req, res) => {
+  try {
+    const id = positiveInteger(req.params.id);
+    const current = await directorAdmin.findDoctor(id);
+    if (!current) return res.status(404).json({ error: 'Doktor nije pronadjen.' });
+    const usage = await directorAdmin.doctorUsage(id);
+    const doctor = await directorAdmin.deactivateDoctor(id);
+    await auditLog({ userId: req.user.id, action: 'doctor_deactivated', entityType: 'doctor', entityId: id, req, metadata: usage });
+    res.json({
+      ...serializeDoctor(doctor),
+      usage,
+      message: usage.records || usage.appointments
+        ? 'Doktor je deaktiviran i ostaje u istoriji.'
+        : 'Doktor je deaktiviran.'
+    });
+  } catch (error) {
+    console.error('Deactivate doctor error:', error);
+    res.status(500).json({ error: 'Doktor nije deaktiviran.' });
   }
 });
 
