@@ -160,6 +160,13 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '15mb' }));
 
+app.use('/api', (_req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+
 function allowedCorsOrigins() {
   const configured = process.env.CORS_ORIGIN || process.env.FRONTEND_ORIGIN || (isProduction ? '' : 'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500');
   if (requiresProductionReadiness && /(^|,)\s*https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|,|$)/i.test(configured)) {
@@ -1274,6 +1281,15 @@ function googleCalendarRouteStatus(error) {
     return 400;
   }
   return 500;
+}
+
+function googleOAuthErrorDetail(data) {
+  const parts = [data?.error, data?.error_description]
+    .map(value => cleanText(value, { max: 300 }))
+    .filter(Boolean);
+  const unique = Array.from(new Set(parts));
+  if (!unique.length) return 'Google OAuth exchange failed';
+  return unique.join(': ');
 }
 
 async function queueCalendarSync(appointmentId, action) {
@@ -3929,7 +3945,7 @@ app.post('/api/director/google-calendar/oauth/exchange', authenticateToken, requ
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.access_token) {
-      const detail = data.error_description || data.error || 'Google OAuth exchange failed';
+      const detail = googleOAuthErrorDetail(data);
       return res.status(400).json({ error: detail });
     }
     const expiresAt = new Date(Date.now() + Number(data.expires_in || 3600) * 1000).toISOString();

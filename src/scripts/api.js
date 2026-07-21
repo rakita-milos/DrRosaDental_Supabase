@@ -46,6 +46,7 @@
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
       headers,
+      cache: "no-store",
       credentials: 'include'
     });
 
