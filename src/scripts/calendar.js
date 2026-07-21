@@ -108,6 +108,18 @@
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
+  function hexColor(value, fallback = "") {
+    const text = String(value || "").trim();
+    return /^#[0-9a-fA-F]{6}$/.test(text) ? text : fallback;
+  }
+
+  function appointmentColorStyle(appointment) {
+    const background = hexColor(appointment.doctorCalendarColor);
+    const foreground = hexColor(appointment.doctorCalendarTextColor, "#ffffff");
+    if (!background) return "";
+    return ` style="border-left-color:${background}; background:${background}; color:${foreground};"`;
+  }
+
   function hasCodeLikeContent(value) {
     const text = String(value || "");
     return /[<>`{}]/.test(text)
@@ -235,7 +247,7 @@
   function renderCompactAppointment(appointment) {
     const starts = parseLocalDateTime(appointment.startsAt);
     return `
-      <button class="appointment-compact appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}">
+      <button class="appointment-compact appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
         <span>${pad(starts.getHours())}:${pad(starts.getMinutes())}</span>
         <strong>${window.DrRosaSecurity.escapeHtml(shortPatientName(appointment.patientName))}</strong>
       </button>
@@ -275,7 +287,7 @@
     const starts = parseLocalDateTime(appointment.startsAt);
     const ends = parseLocalDateTime(appointment.endsAt);
     return `
-      <button class="week-appointment appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}">
+      <button class="week-appointment appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
         <span>${pad(starts.getHours())}:${pad(starts.getMinutes())}-${pad(ends.getHours())}:${pad(ends.getMinutes())}</span>
         <strong>${window.DrRosaSecurity.escapeHtml(shortPatientName(appointment.patientName))}</strong>
         ${paymentLine(appointment)}
@@ -296,7 +308,7 @@
     const starts = parseLocalDateTime(appointment.startsAt);
     const ends = parseLocalDateTime(appointment.endsAt);
     return `
-      <button class="agenda-appointment appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}">
+      <button class="agenda-appointment appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
         <span class="appointment-time">${pad(starts.getHours())}:${pad(starts.getMinutes())} - ${pad(ends.getHours())}:${pad(ends.getMinutes())}</span>
         <strong>${window.DrRosaSecurity.escapeHtml(appointment.patientName)}</strong>
         <span>${window.DrRosaSecurity.escapeHtml(appointment.procedureName)}</span>
@@ -317,7 +329,7 @@
     const starts = parseLocalDateTime(appointment.startsAt);
     const ends = parseLocalDateTime(appointment.endsAt);
     return `
-      <button class="appointment-card appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}">
+      <button class="appointment-card appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
         <span class="appointment-time">${pad(starts.getHours())}:${pad(starts.getMinutes())} - ${pad(ends.getHours())}:${pad(ends.getMinutes())}</span>
         <strong>${window.DrRosaSecurity.escapeHtml(appointment.patientName)}</strong>
         <span>${window.DrRosaSecurity.escapeHtml(appointment.procedureName)}</span>

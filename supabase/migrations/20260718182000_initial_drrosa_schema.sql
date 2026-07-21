@@ -96,6 +96,9 @@ CREATE TABLE IF NOT EXISTS doctors (
   email TEXT,
   phone TEXT,
   is_active BOOLEAN NOT NULL DEFAULT true,
+  google_color_id TEXT,
+  calendar_color TEXT,
+  calendar_text_color TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

@@ -94,7 +94,8 @@ function createPostgresDirectorReportsRepository(pool) {
 
     doctors({ activeOnly = true } = {}) {
       return queryMany(pool, `
-        SELECT id, name, specialization, license_number, email, phone, is_active
+        SELECT id, name, specialization, license_number, email, phone, is_active,
+               google_color_id, calendar_color, calendar_text_color
         FROM doctors
         WHERE (? = false OR is_active = true)
         ORDER BY name

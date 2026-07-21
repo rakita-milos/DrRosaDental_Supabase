@@ -18,6 +18,9 @@ function appointmentSelectSql(whereClause) {
       a.*,
       p.first_name || ' ' || p.last_name as patient_name,
       d.name as doctor_name,
+      d.google_color_id as doctor_google_color_id,
+      d.calendar_color as doctor_calendar_color,
+      d.calendar_text_color as doctor_calendar_text_color,
       c.name as chair_name
     FROM appointments a
     JOIN patients p ON a.patient_id = p.id
@@ -110,16 +113,50 @@ function createPostgresCalendarRepository(pool) {
 
     publicBookingDoctors(doctorId = null) {
       return doctorId
-        ? queryMany(pool, 'SELECT id, name FROM doctors WHERE id = ? AND is_active = true', [doctorId])
-        : queryMany(pool, 'SELECT id, name FROM doctors WHERE is_active = true ORDER BY name');
+        ? queryMany(pool, 'SELECT id, name, google_color_id, calendar_color, calendar_text_color FROM doctors WHERE id = ? AND is_active = true', [doctorId])
+        : queryMany(pool, 'SELECT id, name, google_color_id, calendar_color, calendar_text_color FROM doctors WHERE is_active = true ORDER BY name');
     },
 
     defaultActiveChair() {
       return queryOne(pool, 'SELECT id FROM chairs WHERE is_active = true ORDER BY id LIMIT 1');
     },
 
+    defaultActiveDoctor() {
+      return queryOne(pool, 'SELECT id FROM doctors WHERE is_active = true ORDER BY id LIMIT 1');
+    },
+
+    doctorByGoogleColor({ googleColorId = null, calendarColor = null }) {
+      const normalizedCalendarColor = calendarColor ? String(calendarColor).toLowerCase() : null;
+      return queryOne(pool, `
+        SELECT id FROM doctors
+        WHERE is_active = true
+          AND (
+            (? IS NOT NULL AND google_color_id = ?)
+            OR (? IS NOT NULL AND lower(calendar_color) = ?)
+          )
+        ORDER BY id
+        LIMIT 1
+      `, [googleColorId, googleColorId, normalizedCalendarColor, normalizedCalendarColor]);
+    },
+
     findPatientByEmail(email) {
       return queryOne(pool, 'SELECT * FROM patients WHERE lower(email) = lower(?) LIMIT 1', [email]);
+    },
+
+    async ensureGoogleImportPatient() {
+      const existing = await queryOne(pool, `
+        SELECT id FROM patients
+        WHERE first_name = 'Google Calendar' AND last_name = 'Import'
+        ORDER BY id
+        LIMIT 1
+      `);
+      if (existing) return Number(existing.id);
+
+      const id = await insertReturningId(pool, `
+        INSERT INTO patients (first_name, last_name, medical_history)
+        VALUES ('Google Calendar', 'Import', 'Fallback patient for Google Calendar imports without a matched patient.')
+      `);
+      return Number(id);
     },
 
     createPublicBooking({ patient, appointment, booking }) {
@@ -173,10 +210,12 @@ function createPostgresCalendarRepository(pool) {
     pendingSyncQueue(limit) {
       return queryMany(pool, `
         SELECT q.*, a.google_event_id, a.procedure_name, a.starts_at, a.ends_at, a.notes,
-               p.first_name || ' ' || p.last_name as patient_name
+               p.first_name || ' ' || p.last_name as patient_name,
+               d.google_color_id as doctor_google_color_id
         FROM calendar_sync_queue q
         LEFT JOIN appointments a ON q.appointment_id = a.id
         LEFT JOIN patients p ON p.id = a.patient_id
+        LEFT JOIN doctors d ON d.id = a.doctor_id
         WHERE q.status IN ('pending', 'retry')
         ORDER BY q.created_at
         LIMIT ?
@@ -238,6 +277,30 @@ function createPostgresCalendarRepository(pool) {
             google_event_id = ?, google_sync_status = 'synced', status = ?, updated_at = now()
         WHERE id = ?
       `, [startsAt, endsAt, durationMinutes, procedureName, notes, googleEventId, status, id]);
+    },
+
+    async importAppointmentFromGoogle(appointment) {
+      const id = await insertReturningId(pool, `
+        INSERT INTO appointments (
+          patient_id, doctor_id, chair_id, procedure_id, procedure_name,
+          starts_at, ends_at, duration_minutes, status, notes,
+          google_event_id, google_sync_status, created_by, updated_by
+        )
+        VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'synced', NULL, NULL)
+      `, [
+        appointment.patientId,
+        appointment.doctorId,
+        appointment.chairId,
+        appointment.procedureName,
+        appointment.startsAt,
+        appointment.endsAt,
+        appointment.durationMinutes,
+        appointment.status,
+        appointment.notes,
+        appointment.googleEventId
+      ]);
+      await execute(pool, 'INSERT INTO appointment_status_history (appointment_id, old_status, new_status, changed_by) VALUES (?, NULL, ?, NULL)', [id, appointment.status]);
+      return Number(id);
     },
 
     clearGoogleEventsSyncToken() {

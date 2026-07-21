@@ -236,6 +236,36 @@ a.danger-btn {
   white-space: nowrap;
 }
 
+.appointment-compact[style] span,
+.appointment-compact[style] strong,
+.week-appointment[style] span,
+.week-appointment[style] strong,
+.agenda-appointment[style] span,
+.agenda-appointment[style] strong,
+.agenda-appointment[style] small,
+.agenda-appointment[style] em,
+.appointment-card[style] span,
+.appointment-card[style] strong,
+.appointment-card[style] small,
+.appointment-card[style] em,
+.appointment-card[style] .appointment-payment,
+.week-appointment[style] .appointment-payment,
+.agenda-appointment[style] .appointment-payment {
+  color: inherit;
+}
+
+.doctor-color-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  margin-right: 8px;
+}
+
 .more-appointments {
   min-height: 28px;
   padding: 4px 8px;

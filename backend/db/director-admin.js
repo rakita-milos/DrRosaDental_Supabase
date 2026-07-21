@@ -157,7 +157,8 @@ function createPostgresDirectorAdminRepository(pool) {
 
     doctors({ activeOnly = false } = {}) {
       return queryMany(pool, `
-        SELECT id, name, specialization, license_number, email, phone, is_active, created_at
+        SELECT id, name, specialization, license_number, email, phone, is_active,
+               google_color_id, calendar_color, calendar_text_color, created_at
         FROM doctors
         WHERE (? = false OR is_active = true)
         ORDER BY name
@@ -170,8 +171,11 @@ function createPostgresDirectorAdminRepository(pool) {
 
     async createDoctor(doctor) {
       const id = await insertReturningId(pool, `
-        INSERT INTO doctors (name, specialization, license_number, email, phone, is_active)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO doctors (
+          name, specialization, license_number, email, phone, is_active,
+          google_color_id, calendar_color, calendar_text_color
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, doctorParams(doctor));
       return this.findDoctor(id);
     },
@@ -179,7 +183,8 @@ function createPostgresDirectorAdminRepository(pool) {
     async updateDoctor(id, doctor) {
       await execute(pool, `
         UPDATE doctors
-        SET name = ?, specialization = ?, license_number = ?, email = ?, phone = ?, is_active = ?
+        SET name = ?, specialization = ?, license_number = ?, email = ?, phone = ?, is_active = ?,
+            google_color_id = ?, calendar_color = ?, calendar_text_color = ?
         WHERE id = ?
       `, [...doctorParams(doctor), id]);
       return this.findDoctor(id);
@@ -211,7 +216,10 @@ function doctorParams(doctor) {
     doctor.licenseNumber,
     doctor.email,
     doctor.phone,
-    Boolean(doctor.isActive)
+    Boolean(doctor.isActive),
+    doctor.googleColorId,
+    doctor.calendarColor,
+    doctor.calendarTextColor
   ];
 }
 

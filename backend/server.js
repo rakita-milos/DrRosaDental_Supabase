@@ -782,7 +782,10 @@ function serializeDoctor(row) {
     licenseNumber: row.license_number || '',
     email: row.email || '',
     phone: row.phone || '',
-    isActive: row.is_active !== false
+    isActive: row.is_active !== false,
+    googleColorId: row.google_color_id || '',
+    calendarColor: row.calendar_color || '',
+    calendarTextColor: row.calendar_text_color || ''
   };
 }
 
@@ -795,7 +798,10 @@ function doctorPayloadFromBody(body, fallback = {}) {
     phone: cleanText(body.phone ?? fallback.phone, { max: 50 }),
     isActive: body.isActive === undefined && body.is_active === undefined
       ? fallback.is_active !== false
-      : body.isActive !== false && body.is_active !== false
+      : body.isActive !== false && body.is_active !== false,
+    googleColorId: cleanText(body.googleColorId ?? body.google_color_id ?? fallback.google_color_id, { max: 40 }),
+    calendarColor: normalizeHexColor(body.calendarColor ?? body.calendar_color ?? fallback.calendar_color),
+    calendarTextColor: normalizeHexColor(body.calendarTextColor ?? body.calendar_text_color ?? fallback.calendar_text_color)
   };
 }
 
@@ -807,6 +813,8 @@ async function activeDoctorExists(id) {
 function doctorPayloadError(payload) {
   if (!payload.name) return 'Ime doktora je obavezno.';
   if (payload.email && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(payload.email)) return 'Email doktora nije ispravan.';
+  if (payload.calendarColor && !/^#[0-9a-fA-F]{6}$/.test(payload.calendarColor)) return 'Boja doktora mora biti HEX vrednost.';
+  if (payload.calendarTextColor && !/^#[0-9a-fA-F]{6}$/.test(payload.calendarTextColor)) return 'Boja teksta mora biti HEX vrednost.';
   return null;
 }
 
@@ -928,6 +936,12 @@ function cleanText(value, { max = 255, required = false } = {}) {
     .trim()
     .slice(0, max);
   return required ? cleaned : cleaned || null;
+}
+
+function normalizeHexColor(value) {
+  const color = cleanText(value, { max: 7 });
+  if (!color) return null;
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : color;
 }
 
 function normalizeGoogleAuthCode(value) {
@@ -1158,6 +1172,9 @@ function serializeAppointment(row) {
     patientName: row.patient_name,
     doctorId: row.doctor_id,
     doctorName: row.doctor_name,
+    doctorGoogleColorId: row.doctor_google_color_id || '',
+    doctorCalendarColor: row.doctor_calendar_color || '',
+    doctorCalendarTextColor: row.doctor_calendar_text_color || '',
     chairId: row.chair_id,
     chairName: row.chair_name,
     procedureId: row.procedure_id,
@@ -1181,7 +1198,7 @@ function appointmentById(id) {
 
 function googleCalendarEventPayload(appointment, settings) {
   const patient = cleanText(appointment.patient_name || 'Pacijent', { max: 255 }) || 'Pacijent';
-  return {
+  const payload = {
     summary: `${appointment.procedure_name || 'Termin'} - ${patient}`,
     description: appointment.notes || '',
     start: { dateTime: appointment.starts_at },
@@ -1195,10 +1212,14 @@ function googleCalendarEventPayload(appointment, settings) {
     reminders: {
       useDefault: false,
       overrides: Number(settings.default_reminder_minutes || 0) > 0
-        ? [{ method: 'popup', minutes: Number(settings.default_reminder_minutes || 1440) }]
-        : []
+      ? [{ method: 'popup', minutes: Number(settings.default_reminder_minutes || 1440) }]
+      : []
     }
   };
+  const googleColorId = cleanText(appointment.doctor_google_color_id, { max: 80 });
+  if (/^\d+$/.test(googleColorId || '')) payload.colorId = googleColorId;
+  if (googleColorId && !payload.colorId) payload.eventLabelId = googleColorId;
+  return payload;
 }
 
 function publicGoogleSettings(settings) {
@@ -1308,6 +1329,31 @@ function googleOAuthErrorDetail(data) {
   return unique.join(': ');
 }
 
+async function googleCalendarColorContext(settings, calendarId) {
+  const [colors, calendar] = await Promise.all([
+    callGoogleCalendar(settings, 'GET', '/colors').catch(() => null),
+    callGoogleCalendar(settings, 'GET', `/calendars/${calendarId}?eventLabelVersion=1`).catch(() => null)
+  ]);
+  return {
+    eventColors: colors?.event || {},
+    eventLabels: calendar?.labelProperties?.eventLabels || []
+  };
+}
+
+function googleEventColor(event, colorContext = {}) {
+  const eventLabelId = cleanText(event?.eventLabelId, { max: 80 });
+  const colorId = cleanText(event?.colorId, { max: 40 });
+  const label = eventLabelId
+    ? (colorContext.eventLabels || []).find(item => item?.id === eventLabelId)
+    : null;
+  const color = colorId ? colorContext.eventColors?.[colorId] : null;
+  return {
+    googleColorId: eventLabelId || colorId || null,
+    background: cleanText(label?.backgroundColor || color?.background, { max: 20 }),
+    foreground: cleanText(color?.foreground, { max: 20 })
+  };
+}
+
 async function queueCalendarSync(appointmentId, action) {
   await calendarRepo.queueCalendarSync({ appointmentId, action });
 }
@@ -1326,14 +1372,15 @@ async function processCalendarSyncRed({ limit = 10 } = {}) {
 
       const calendarId = encodeURIComponent(settings.calendar_id);
       const eventPayload = googleCalendarEventPayload(item, settings);
+      const labelQuery = eventPayload.eventLabelId ? '?eventLabelVersion=1' : '';
       let googleEventId = item.google_event_id;
       if (item.action === 'create_google_event' || !googleEventId) {
-        const event = await callGoogleCalendar(settings, 'POST', `/calendars/${calendarId}/events`, eventPayload);
+        const event = await callGoogleCalendar(settings, 'POST', `/calendars/${calendarId}/events${labelQuery}`, eventPayload);
         googleEventId = event.id;
       } else if (item.action === 'delete_google_event' || item.action === 'cancel_google_event') {
         await callGoogleCalendar(settings, 'DELETE', `/calendars/${calendarId}/events/${encodeURIComponent(googleEventId)}`);
       } else {
-        const event = await callGoogleCalendar(settings, 'PATCH', `/calendars/${calendarId}/events/${encodeURIComponent(googleEventId)}`, eventPayload);
+        const event = await callGoogleCalendar(settings, 'PATCH', `/calendars/${calendarId}/events/${encodeURIComponent(googleEventId)}${labelQuery}`, eventPayload);
         googleEventId = event.id || googleEventId;
       }
       await calendarRepo.markSyncDone({ queueId: item.id, appointmentId: item.appointment_id, googleEventId });
@@ -1368,13 +1415,73 @@ function googleEventTimes(event) {
 function googleEventProcedureName(event, fallback) {
   const summary = cleanText(event?.summary, { max: 255 });
   if (!summary) return fallback;
-  const [procedure] = summary.split(' - ');
-  return cleanText(procedure, { max: 255 }) || fallback;
+  if (event?.extendedProperties?.private?.drrosaSource === 'drrosa') {
+    const [procedure] = summary.split(' - ');
+    return cleanText(procedure, { max: 255 }) || fallback;
+  }
+  return summary;
 }
 
-async function updateAppointmentFromGoogleEvent(event) {
+function googleImportNotes(event) {
+  const parts = [
+    'Uvezeno iz Google Calendar-a. Pacijent nije povezan sa kartonom u aplikaciji.',
+    `Google naslov: ${cleanText(event?.summary, { max: 255 }) || 'Bez naslova'}`
+  ];
+  const description = cleanText(event?.description, { max: 1500 });
+  if (description) parts.push(`Google opis: ${description}`);
+  const location = cleanText(event?.location, { max: 255 });
+  if (location) parts.push(`Google lokacija: ${location}`);
+  return cleanText(parts.join('\n'), { max: 2000 });
+}
+
+async function importAppointmentFromGoogleEvent(event, times, colorContext) {
+  if (event.status === 'cancelled') return { action: 'skipped_missing_local' };
+
+  const patientId = await calendarRepo.ensureGoogleImportPatient();
+  const googleColor = googleEventColor(event, colorContext);
+  const doctor = googleColor.googleColorId || googleColor.background
+    ? await calendarRepo.doctorByGoogleColor({
+      googleColorId: googleColor.googleColorId,
+      calendarColor: googleColor.background
+    }) || await calendarRepo.defaultActiveDoctor()
+    : await calendarRepo.defaultActiveDoctor();
+  const chair = await calendarRepo.defaultActiveChair();
+  if (!doctor?.id || !chair?.id) return { action: 'skipped_missing_local' };
+
+  const procedureName = cleanText(event.summary, { max: 255 }) || 'Google Calendar termin';
+  const conflict = await appointmentConflict({
+    doctorId: doctor.id,
+    chairId: chair.id,
+    startsAt: times.startsAt,
+    endsAt: times.endsAt
+  });
+  const conflictNote = conflict
+    ? `Upozorenje: moguci konflikt sa terminom #${conflict.id} (${conflict.patient_name || 'nepoznat pacijent'}).\n`
+    : '';
+  const notes = cleanText(`${conflictNote}${googleImportNotes(event)}`, { max: 2000 });
+  const appointmentId = await calendarRepo.importAppointmentFromGoogle({
+    patientId,
+    doctorId: doctor.id,
+    chairId: chair.id,
+    procedureName,
+    startsAt: times.startsAt,
+    endsAt: times.endsAt,
+    durationMinutes: appointmentDurationMinutes(times.startsAt, times.endsAt),
+    status: 'scheduled',
+    notes,
+    googleEventId: cleanText(event.id, { max: 255 })
+  });
+
+  return { action: conflict ? 'imported_conflict' : 'imported', appointmentId };
+}
+
+async function updateAppointmentFromGoogleEvent(event, colorContext) {
   const appointmentId = await googleEventAppointmentId(event);
-  if (!appointmentId) return { action: 'skipped_external' };
+  if (!appointmentId) {
+    const times = googleEventTimes(event);
+    if (!times) return { action: 'skipped_unsupported_time' };
+    return importAppointmentFromGoogleEvent(event, times, colorContext);
+  }
 
   const current = await appointmentById(appointmentId);
   if (!current) return { action: 'skipped_missing_local', appointmentId };
@@ -1399,8 +1506,11 @@ async function updateAppointmentFromGoogleEvent(event) {
   });
   if (conflict) return { action: 'skipped_conflict', appointmentId, conflictId: conflict.id };
 
+  const isDrRosaEvent = event?.extendedProperties?.private?.drrosaSource === 'drrosa';
   const procedureName = googleEventProcedureName(event, current.procedure_name);
-  const notes = cleanText(event.description, { max: 2000 });
+  const notes = isDrRosaEvent
+    ? cleanText(event.description, { max: 2000 })
+    : googleImportNotes(event);
   const status = normalizeAppointmentStatus(current.status);
   const changed = current.starts_at !== times.startsAt
     || current.ends_at !== times.endsAt
@@ -1430,11 +1540,13 @@ async function pullGoogleCalendarChanges({ limit = 75, reset = false } = {}) {
   if (!settings.connected_email || !settings.calendar_id) throw new Error('Google Calendar account or calendar is not configured.');
 
   const calendarId = encodeURIComponent(settings.calendar_id);
+  const colorContext = await googleCalendarColorContext(settings, calendarId);
   const batchLimit = Math.max(1, Math.min(100, Number(limit) || 75));
   const startedAt = Date.now();
   const timeBudgetMs = 22000;
   const stats = {
     fetched: 0,
+    imported: 0,
     updated: 0,
     cancelled: 0,
     unchanged: 0,
@@ -1451,13 +1563,12 @@ async function pullGoogleCalendarChanges({ limit = 75, reset = false } = {}) {
   let pages = 0;
 
   do {
-    const query = new URLSearchParams({ maxResults: String(batchLimit) });
+    const query = new URLSearchParams({ maxResults: String(batchLimit), eventLabelVersion: '1' });
     if (!usedReset && settings.events_sync_token) {
       query.set('syncToken', settings.events_sync_token);
     } else {
       query.set('singleEvents', 'true');
       query.set('showDeleted', 'true');
-      query.set('privateExtendedProperty', 'drrosaSource=drrosa');
       query.set('timeMin', new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString());
     }
     if (pageToken) query.set('pageToken', pageToken);
@@ -1475,7 +1586,12 @@ async function pullGoogleCalendarChanges({ limit = 75, reset = false } = {}) {
 
     for (const event of data.items || []) {
       stats.fetched += 1;
-      const result = await updateAppointmentFromGoogleEvent(event);
+      const result = await updateAppointmentFromGoogleEvent(event, colorContext);
+      if (result.action === 'imported') stats.imported += 1;
+      if (result.action === 'imported_conflict') {
+        stats.imported += 1;
+        stats.skippedConflicts += 1;
+      }
       if (result.action === 'updated') stats.updated += 1;
       if (result.action === 'cancelled') stats.cancelled += 1;
       if (result.action === 'unchanged') stats.unchanged += 1;

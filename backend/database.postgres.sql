@@ -96,6 +96,9 @@ CREATE TABLE IF NOT EXISTS doctors (
   email TEXT,
   phone TEXT,
   is_active BOOLEAN NOT NULL DEFAULT true,
+  google_color_id TEXT,
+  calendar_color TEXT,
+  calendar_text_color TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -576,6 +579,15 @@ ALTER TABLE treatments
 
 ALTER TABLE doctors
   ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+
+ALTER TABLE doctors
+  ADD COLUMN IF NOT EXISTS google_color_id TEXT;
+
+ALTER TABLE doctors
+  ADD COLUMN IF NOT EXISTS calendar_color TEXT;
+
+ALTER TABLE doctors
+  ADD COLUMN IF NOT EXISTS calendar_text_color TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(first_name, last_name);
 CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits(reset_at);

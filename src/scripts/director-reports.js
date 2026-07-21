@@ -345,6 +345,9 @@ function doctorAdminElements() {
     license: document.getElementById("doctor-license"),
     email: document.getElementById("doctor-email"),
     phone: document.getElementById("doctor-phone"),
+    googleColorId: document.getElementById("doctor-google-color-id"),
+    calendarColor: document.getElementById("doctor-calendar-color"),
+    calendarTextColor: document.getElementById("doctor-calendar-text-color"),
     active: document.getElementById("doctor-active"),
     reset: document.getElementById("doctor-reset"),
     message: document.getElementById("doctor-admin-message"),
@@ -368,6 +371,9 @@ function resetDoctorForm() {
   elements.license.value = "";
   elements.email.value = "";
   elements.phone.value = "";
+  elements.googleColorId.value = "";
+  elements.calendarColor.value = "#1891f0";
+  elements.calendarTextColor.value = "#ffffff";
   elements.active.checked = true;
   showDoctorAdminMessage("");
 }
@@ -380,6 +386,9 @@ function fillDoctorForm(doctor) {
   elements.license.value = doctor.licenseNumber || doctor.license_number || "";
   elements.email.value = doctor.email || "";
   elements.phone.value = doctor.phone || "";
+  elements.googleColorId.value = doctor.googleColorId || doctor.google_color_id || "";
+  elements.calendarColor.value = doctor.calendarColor || doctor.calendar_color || "#1891f0";
+  elements.calendarTextColor.value = doctor.calendarTextColor || doctor.calendar_text_color || "#ffffff";
   elements.active.checked = doctor.isActive !== false;
   showDoctorAdminMessage("Izmena postojeceg doktora.");
 }
@@ -392,6 +401,9 @@ function readDoctorForm() {
     licenseNumber: elements.license.value.trim() || null,
     email: elements.email.value.trim() || null,
     phone: elements.phone.value.trim() || null,
+    googleColorId: elements.googleColorId.value.trim() || null,
+    calendarColor: elements.calendarColor.value || null,
+    calendarTextColor: elements.calendarTextColor.value || null,
     isActive: elements.active.checked
   };
 }
@@ -406,13 +418,14 @@ function renderDoctorAdminTable() {
       <td>${escapeHtml(doctor.specialization || "-")}</td>
       <td>${escapeHtml(doctor.licenseNumber || "-")}</td>
       <td>${escapeHtml([doctor.email, doctor.phone].filter(Boolean).join(" / ") || "-")}</td>
+      <td><span class="doctor-color-swatch" style="background:${escapeHtml(doctor.calendarColor || "#1891f0")}; color:${escapeHtml(doctor.calendarTextColor || "#ffffff")};">Aa</span> ${escapeHtml(doctor.googleColorId || "-")}</td>
       <td>${doctor.isActive === false ? "Neaktivno" : "Aktivno"}</td>
       <td>
         <button class="secondary-btn edit-doctor-btn" type="button" data-doctor-id="${doctor.id}">Uredi</button>
         <button class="danger-btn deactivate-doctor-btn" type="button" data-doctor-id="${doctor.id}" ${doctor.isActive === false ? "disabled" : ""}>Deaktiviraj</button>
       </td>
     </tr>
-  `).join("") : `<tr><td colspan="6" class="empty-row">Nema doktora za prikaz.</td></tr>`;
+  `).join("") : `<tr><td colspan="7" class="empty-row">Nema doktora za prikaz.</td></tr>`;
 }
 
 async function loadDoctorAdmin() {
@@ -1463,9 +1476,9 @@ function initializeGoogleCalendarSettings() {
 
   document.getElementById("google-pull-changes")?.addEventListener("click", async () => {
     try {
-      const result = await window.DrRosaApi.pullGoogleCalendarChanges();
+      const result = await window.DrRosaApi.pullGoogleCalendarChanges({ reset: true });
       showGoogleMessage(
-        `Preuzimanje iz Google-a je završeno. Pročitano: ${result.fetched || 0}, ažurirano: ${result.updated || 0}, otkazano: ${result.cancelled || 0}, preskočeno: ${Number(result.skippedExternal || 0) + Number(result.skippedMissingLocal || 0) + Number(result.skippedUnsupportedTime || 0) + Number(result.skippedConflicts || 0)}.`
+        `Preuzimanje iz Google-a je završeno. Pročitano: ${result.fetched || 0}, uvezeno: ${result.imported || 0}, ažurirano: ${result.updated || 0}, otkazano: ${result.cancelled || 0}, preskočeno: ${Number(result.skippedExternal || 0) + Number(result.skippedMissingLocal || 0) + Number(result.skippedUnsupportedTime || 0) + Number(result.skippedConflicts || 0)}.`
       );
       await loadGoogleCalendarSettings();
     } catch (error) {
