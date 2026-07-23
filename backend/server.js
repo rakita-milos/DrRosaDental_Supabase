@@ -1533,7 +1533,7 @@ async function updateAppointmentFromGoogleEvent(event, colorContext) {
   return { action: 'updated', appointmentId };
 }
 
-async function pullGoogleCalendarChanges({ limit = 75, reset = false } = {}) {
+async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast = 1, daysFuture = 14 } = {}) {
   const settings = await calendarRepo.googleSettings();
   if (!settings?.sync_enabled) throw new Error('Google Calendar sync is disabled.');
   if (settings.sync_direction !== 'two_way') throw new Error('Two-way sync is not enabled.');
@@ -1541,9 +1541,11 @@ async function pullGoogleCalendarChanges({ limit = 75, reset = false } = {}) {
 
   const calendarId = encodeURIComponent(settings.calendar_id);
   const colorContext = await googleCalendarColorContext(settings, calendarId);
-  const batchLimit = Math.max(1, Math.min(100, Number(limit) || 75));
+  const batchLimit = Math.max(1, Math.min(100, Number(limit) || 50));
+  const lookbackDays = Math.max(0, Math.min(30, Number(daysPast) || 1));
+  const lookaheadDays = Math.max(1, Math.min(180, Number(daysFuture) || 14));
   const startedAt = Date.now();
-  const timeBudgetMs = 22000;
+  const timeBudgetMs = 12000;
   const stats = {
     fetched: 0,
     imported: 0,
@@ -1569,7 +1571,8 @@ async function pullGoogleCalendarChanges({ limit = 75, reset = false } = {}) {
     } else {
       query.set('singleEvents', 'true');
       query.set('showDeleted', 'true');
-      query.set('timeMin', new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString());
+      query.set('timeMin', new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString());
+      query.set('timeMax', new Date(Date.now() + lookaheadDays * 24 * 60 * 60 * 1000).toISOString());
     }
     if (pageToken) query.set('pageToken', pageToken);
 
@@ -1604,7 +1607,7 @@ async function pullGoogleCalendarChanges({ limit = 75, reset = false } = {}) {
     pageToken = data.nextPageToken || null;
     nextSyncToken = data.nextSyncToken || nextSyncToken;
     pages += 1;
-    if (pageToken && (pages >= 4 || Date.now() - startedAt > timeBudgetMs)) {
+    if (pageToken && (pages >= 2 || Date.now() - startedAt > timeBudgetMs)) {
       stats.partial = true;
       break;
     }
@@ -3974,7 +3977,12 @@ app.post('/api/director/calendar-sync/retry', authenticateToken, requireDirector
 
 app.post('/api/director/calendar-sync/pull-google', authenticateToken, requireDirector, async (req, res) => {
   try {
-    const stats = await pullGoogleCalendarChanges({ reset: req.body?.reset === true });
+    const stats = await pullGoogleCalendarChanges({
+      reset: req.body?.reset === true,
+      limit: req.body?.limit,
+      daysPast: req.body?.daysPast ?? req.body?.days_past,
+      daysFuture: req.body?.daysFuture ?? req.body?.days_future
+    });
     await auditLog({ userId: req.user.id, action: 'google_calendar_pulled', entityType: 'google_calendar', entityId: 1, req, metadata: stats });
     res.json(stats);
   } catch (error) {

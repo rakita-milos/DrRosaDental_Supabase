@@ -324,10 +324,10 @@
     return request("/director/calendar-sync/retry", { method: "POST" });
   }
 
-  async function pullGoogleCalendarChanges({ reset = false } = {}) {
+  async function pullGoogleCalendarChanges({ reset = false, limit = 50, daysPast = 1, daysFuture = 14 } = {}) {
     return request("/director/calendar-sync/pull-google", {
       method: "POST",
-      body: JSON.stringify({ reset })
+      body: JSON.stringify({ reset, limit, daysPast, daysFuture })
     });
   }
 

@@ -57,3 +57,12 @@ test('Google OAuth verification uses saved tokens without asking for a new code'
   assert.match(directorReportsSource, /codeField\.hidden = !showCode/);
   assert.match(directorReportsSource, /settings\.oauthConnected && !googleOAuthReconnectMode/);
 });
+
+test('Manual Google pull uses a bounded window instead of forcing a full reset', () => {
+  assert.match(serverSource, /async function pullGoogleCalendarChanges\(\{ limit = 50, reset = false, daysPast = 1, daysFuture = 14 \} = \{\}\)/);
+  assert.match(serverSource, /query\.set\('timeMax'/);
+  assert.match(serverSource, /daysPast: req\.body\?\.daysPast/);
+  assert.match(apiSource, /pullGoogleCalendarChanges\(\{ reset = false, limit = 50, daysPast = 1, daysFuture = 14 \} = \{\}\)/);
+  assert.match(directorReportsSource, /pullGoogleCalendarChanges\(\{ reset: false, limit: 50, daysPast: 1, daysFuture: 14 \}\)/);
+  assert.doesNotMatch(directorReportsSource, /pullGoogleCalendarChanges\(\{ reset: true \}\)/);
+});

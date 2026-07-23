@@ -1495,7 +1495,7 @@ function initializeGoogleCalendarSettings() {
 
   document.getElementById("google-pull-changes")?.addEventListener("click", async () => {
     try {
-      const result = await window.DrRosaApi.pullGoogleCalendarChanges({ reset: true });
+      const result = await window.DrRosaApi.pullGoogleCalendarChanges({ reset: false, limit: 50, daysPast: 1, daysFuture: 14 });
       showGoogleMessage(
         `Preuzimanje iz Google-a je završeno. Pročitano: ${result.fetched || 0}, uvezeno: ${result.imported || 0}, ažurirano: ${result.updated || 0}, otkazano: ${result.cancelled || 0}, preskočeno: ${Number(result.skippedExternal || 0) + Number(result.skippedMissingLocal || 0) + Number(result.skippedUnsupportedTime || 0) + Number(result.skippedConflicts || 0)}.`
       );
