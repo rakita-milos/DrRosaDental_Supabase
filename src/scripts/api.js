@@ -342,6 +342,10 @@
     });
   }
 
+  async function verifyGoogleCalendarOAuth() {
+    return request("/director/google-calendar/oauth/verify", { method: "POST" });
+  }
+
   async function getPublicBookingSettings() {
     return request("/director/public-booking/settings");
   }
@@ -821,6 +825,7 @@
     pullGoogleCalendarChanges,
     testGoogleCalendarSync,
     exchangeGoogleCalendarCode,
+    verifyGoogleCalendarOAuth,
     getPublicBookingSettings,
     updatePublicBookingSettings,
     getPublicBookingStatus,

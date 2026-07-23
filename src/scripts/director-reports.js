@@ -4,6 +4,7 @@ let activeExcelSheet = "PAZARI";
 let codebookItems = [];
 let doctorAdminItems = [];
 let currentDailyCashReport = null;
+let googleOAuthReconnectMode = false;
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
 const procedureCatalog = window.DrRosaProcedureCatalog;
 const MONTHS = ["Januar", "Februar", "Mart", "April", "Maj", "Jun", "Jul", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"];
@@ -1418,6 +1419,23 @@ function renderGoogleSummary(settings) {
   `;
 }
 
+function setGoogleOAuthUi(settings, { reconnect = false } = {}) {
+  googleOAuthReconnectMode = reconnect;
+  const connected = Boolean(settings?.oauthConnected);
+  const showCode = !connected || reconnect;
+  const codeField = document.getElementById("google-oauth-code-field");
+  const codeInput = document.getElementById("google-oauth-code");
+  const openButton = document.getElementById("google-open-oauth");
+  const connectButton = document.getElementById("google-connect-oauth");
+  const verifyButton = document.getElementById("google-verify-oauth");
+
+  if (codeField) codeField.hidden = !showCode;
+  if (codeInput && !showCode) codeInput.value = "";
+  if (openButton) openButton.hidden = !showCode;
+  if (connectButton) connectButton.textContent = connected && !showCode ? "Ponovo poveži OAuth" : "Poveži OAuth kod";
+  if (verifyButton) verifyButton.hidden = !connected;
+}
+
 async function loadGoogleCalendarSettings() {
   try {
     const settings = await window.DrRosaApi.getGoogleCalendarSettings();
@@ -1433,6 +1451,7 @@ async function loadGoogleCalendarSettings() {
     document.getElementById("google-sync-direction").value = settings.syncDirection || "app_to_google";
     document.getElementById("google-reminder-minutes").value = String(settings.defaultReminderMinutes || 1440);
     renderGoogleSummary(settings);
+    setGoogleOAuthUi(settings);
   } catch (error) {
     showGoogleMessage(error.message || "Google Calendar podešavanja nisu učitana.", true);
   }
@@ -1496,8 +1515,24 @@ function initializeGoogleCalendarSettings() {
     showGoogleMessage("Google autorizacija je otvorena. Posle odobrenja kopirajte vrednost parametra code iz callback URL-a.");
   });
 
+  document.getElementById("google-verify-oauth")?.addEventListener("click", async () => {
+    try {
+      const result = await window.DrRosaApi.verifyGoogleCalendarOAuth();
+      showGoogleMessage(`OAuth konekcija je ispravna. Kalendar: ${result.calendarName || result.calendarId || "Google Calendar"}.`);
+      await loadGoogleCalendarSettings();
+    } catch (error) {
+      showGoogleMessage(error.message || "OAuth konekcija nije ispravna.", true);
+    }
+  });
+
   document.getElementById("google-connect-oauth")?.addEventListener("click", async () => {
     try {
+      const settings = await window.DrRosaApi.getGoogleCalendarSettings();
+      if (settings.oauthConnected && !googleOAuthReconnectMode) {
+        setGoogleOAuthUi(settings, { reconnect: true });
+        showGoogleMessage("Otvorite Google autorizaciju i unesite novi OAuth kod za ponovno povezivanje.");
+        return;
+      }
       const rawCode = document.getElementById("google-oauth-code").value;
       const code = normalizeGoogleAuthCode(rawCode);
       if (!code) {
@@ -1506,6 +1541,7 @@ function initializeGoogleCalendarSettings() {
       }
       await window.DrRosaApi.exchangeGoogleCalendarCode(code);
       showGoogleMessage("Google OAuth je povezan. Token je sačuvan.");
+      document.getElementById("google-oauth-code").value = "";
       await loadGoogleCalendarSettings();
     } catch (error) {
       showGoogleMessage(error.message || "OAuth povezivanje nije uspelo.", true);

@@ -4101,6 +4101,26 @@ app.post('/api/director/google-calendar/oauth/exchange', authenticateToken, requ
   }
 });
 
+app.post('/api/director/google-calendar/oauth/verify', authenticateToken, requireDirector, async (_req, res) => {
+  try {
+    const settings = await calendarRepo.googleSettings();
+    if (!settings?.calendar_id) {
+      return res.status(400).json({ error: 'Google Calendar ID is required.' });
+    }
+
+    const calendarId = encodeURIComponent(settings.calendar_id);
+    const calendar = await callGoogleCalendar(settings, 'GET', `/calendars/${calendarId}`);
+    res.json({
+      success: true,
+      calendarId: calendar.id || settings.calendar_id,
+      calendarName: calendar.summary || settings.calendar_name || settings.calendar_id
+    });
+  } catch (error) {
+    console.error('Google OAuth verify error:', error);
+    res.status(googleCalendarRouteStatus(error)).json({ error: error.message || 'Google OAuth verification failed' });
+  }
+});
+
 app.post('/api/director/google-calendar/test-sync', authenticateToken, requireDirector, async (_req, res) => {
   try {
     const processed = await processCalendarSyncRed({ limit: 25 });

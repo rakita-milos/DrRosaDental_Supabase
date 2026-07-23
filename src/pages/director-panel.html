@@ -796,7 +796,7 @@
               Redirect URI
               <input id="google-redirect-uri" type="url" placeholder="http://localhost:3000/src/pages/director-panel.html" />
             </label>
-            <label class="full-width">
+            <label class="full-width" id="google-oauth-code-field">
               OAuth kod
               <input id="google-oauth-code" type="text" placeholder="Samo kod, ne ceo URL sa callback-om" />
             </label>
@@ -824,6 +824,7 @@
             <button class="primary-btn" type="submit">Sačuvaj podešavanja</button>
             <button class="secondary-btn" id="google-open-oauth" type="button">Otvori Google autorizaciju</button>
             <button class="secondary-btn" id="google-connect-oauth" type="button">Povezi OAuth kod</button>
+            <button class="secondary-btn" id="google-verify-oauth" type="button">Proveri OAuth konekciju</button>
             <button class="secondary-btn" id="google-test-sync" type="button">Testiraj sinhronizaciju</button>
             <button class="secondary-btn" id="google-pull-changes" type="button">Povuci izmene iz Google-a</button>
           </div>
