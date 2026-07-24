@@ -37,21 +37,21 @@ Pravila:
 ## 2. Instaliraj dependency-je
 
 ```powershell
-cd C:\Users\milos\DrRosaWebApp\backend
+cd C:\Users\milos\Music\CURSOR_ChatGPT_PROJECT\DrRosaDental_Supabase\backend
 npm.cmd install
 ```
 
 ## 3. Inicijalizuj PostgreSQL semu
 
 ```powershell
-cd C:\Users\milos\DrRosaWebApp\backend
+cd C:\Users\milos\Music\CURSOR_ChatGPT_PROJECT\DrRosaDental_Supabase\backend
 npm.cmd run db:postgres:init
 ```
 
 ## 4. Pokreni backend
 
 ```powershell
-cd C:\Users\milos\DrRosaWebApp\backend
+cd C:\Users\milos\Music\CURSOR_ChatGPT_PROJECT\DrRosaDental_Supabase\backend
 npm.cmd start
 ```
 
@@ -63,7 +63,36 @@ Prvi login koristi:
 
 Backup i restore PostgreSQL baze se rade van aplikacije: Supabase managed backups ili dogovoreni `pg_dump`/restore maintenance postupak. Director panel prikazuje da aplikacija ne pravi lokalne database backup fajlove.
 
-## 6. Brzi API test
+## 6. Google Calendar podesavanja
+
+Google Calendar se podesava iz direktor panela, ali backend mora imati ispravnu Supabase vezu i `PG_SEARCH_PATH=app,public`.
+
+U direktor panelu sacuvaj:
+
+- Gmail nalog ordinacije
+- Google Calendar ID
+- OAuth Client ID
+- OAuth Client Secret
+- Redirect URI
+- smer sinhronizacije `two_way` ako treba povlacenje iz Google-a
+
+OAuth kod se ne cuva kao trajno podesavanje. Kod se koristi jednom, backend ga menja za Google access/refresh tokene, a zatim se za proveru koristi dugme `Proveri OAuth konekciju`.
+
+Rucno dugme `Povuci izmene iz Google-a` koristi ogranicen prozor da ne probije Vercel timeout:
+
+- 1 dan unazad
+- 14 dana unapred
+- 50 event-a po pozivu
+
+Za boje doktora tabela `doctors` mora imati:
+
+```sql
+google_color_id text
+calendar_color text
+calendar_text_color text
+```
+
+## 7. Brzi API test
 
 ```powershell
 curl http://localhost:3000/api/health
@@ -71,7 +100,7 @@ curl http://localhost:3000/api/health
 
 Health odgovor treba da vrati `database: "postgres"`.
 
-## 7. Deploy napomene
+## 8. Deploy napomene
 
 - Ne kopiraj lokalne `backend/uploads` foldere u deploy osim ako namerno migriras stvarne fajlove.
 - Pokreni `npm.cmd audit --audit-level=moderate` i testove pre deploy-a.

@@ -1,241 +1,179 @@
-# Director Panel - Korisniški Vodič
+# Director Panel Guide
 
-## 📋 Pregled
+## Pregled
 
-Dr Rosa web aplikacija sada ima **kompletnu director-only sekciju** sa role-based pristupom. Samo direktoristi mogu pristupiti reporting sistemu.
+Director panel je administratorski deo Dr Rosa aplikacije. Dostupan je samo korisniku sa `director` rolom i koristi isti backend, Supabase PostgreSQL bazu i HttpOnly cookie sesiju kao ostatak aplikacije.
 
----
+Panel se otvara na:
 
-## 🔐 Sistem Autentifikacije
-
-### Login Kredencijali
-
-#### Direktor (Director Access)
-- **Email:** `director@drosa.com`
-- **Lozinka:** vrijednost iz `backend/.env` -> `INITIAL_DIRECTOR_PASSWORD`
-- **Pristup:** Director Panel sa svim izvještajima
-
-#### Zaposlenik (Staff Access)
-- **Email:** `staff@drosa.com`
-- **Lozinka:** vrijednost iz `backend/.env` -> `INITIAL_STAFF_PASSWORD`
-- **Pristup:** Samo glavni dashboard, unos novih pacijenata i zapisa
-
-### Kako se Prijatelj
-
-1. Otvorite `login.html` stranicu
-2. Unesite email i lozinku
-3. Odaberite odgovarajuću ulogu:
-   - **Zaposlenik** - Za obične radnike i medicinski ličnjak
-   - **Direktor Ordinacije** - Za direktoriste ordinacije
-4. Kliknite "Prijavi se"
-
----
-
-## 📊 Director Panel - Dostupni Izvještaji
-
-### 1. Finansijski Izvještaj (💰)
-Detaljno finansijsko stanje ordinacije.
-
-**Prikazuje:**
-- ✅ Ukupan prihod (sve procedure)
-- 💸 Ukupno dugovanja (neplaćeni iznosi)
-- 📈 Procenat naplaćenih sredstava
-- 📋 Tabela po pacijentima sa:
-  - Broj pregleda
-  - Ukupan iznos
-  - Plaćeno
-  - Dugovanje
-  - Procenat plaćanja
-
-**Koristit ćete za:**
-- Praćenje cash flow-a
-- Identifikovanje pacijenata sa velikim dugovanjima
-- Analizu profitabilnosti
-
----
-
-### 2. Pacijenti Izvještaj (👥)
-Detaljni pregled pacijentske baze.
-
-**Prikazuje:**
-- 👥 Ukupan broj pacijenata
-- 🔄 Redovni pacijenti (ponovljeni posjeti)
-- ✨ Novi pacijenti (prvi posjeti)
-- 📋 Tabela sa:
-  - Pacijent ime
-  - Broj posjeta
-  - Datum zadnje posjete
-  - Status plaćanja (✅ ili 🔴)
-  - Iznos dugovanja
-
-**Koristit ćete za:**
-- Praćenje rasta pacijentske baze
-- Identifikovanje lojalnih pacijenata
-- Analiziranje retencije pacijenata
-- Planiranje marketinške kampanje
-
----
-
-### 3. Doktori Izvještaj (👨‍⚕️)
-Produktivnost i opterećenje doktora.
-
-**Prikazuje:**
-- 👨‍⚕️ Imena doktora
-- 📊 Broj pregleda po doktoru
-- 👥 Broj pacijenata koje tretira
-- 📈 Procenat od ukupnog rada
-
-**Koristit ćete za:**
-- Praćenje produktivnosti doktora
-- Identifikovanje preopterećenosti
-- Planiranje radnog vremena
-- Evaluacija performansi
-
----
-
-### 4. Postupci Izvještaj (🔧)
-Raspodjela i učestalost različitih procedura.
-
-**Prikazuje:**
-- 🔧 Vrsta postupka/procedure
-- 🔢 Broj izvršenih procedura
-- 📊 Procenat od ukupnog rada
-- 💰 Prosječna naplata po procedure
-
-**Koristit ćete za:**
-- Analiziranje popularne procedure
-- Planiranje opreme i materijala
-- Pricing strategija
-- Specijalizacija ordinacije
-
----
-
-## 🔒 Sigurnosne Mjere
-
-✅ **Implementirane Zaštite:**
-
-1. **Session-based Authentication**
-   - Sesija se čuva u `localStorage`
-   - Automatski logout kada se obrišu kredencijali
-
-2. **Role-Based Access Control**
-   - Zaposlenik NIKAD ne može pristupiti director panelu
-   - Direktan pristup URL-u `director-panel.html` automatski preusmjerava na login
-
-3. **Session Validation**
-   - Sve stranice provjeravaju validnost sesije pri učitavanju
-   - Bez sesije = automatski preusmjerna na login
-
-4. **Logout Dugme**
-   - Dostupno na svim zaposlenima stranicama
-   - Briše sesiju iz localStorage-a
-   - Redirekcija na login stranicu
-
----
-
-## 📱 Funkcionalnosti po Stranici
-
-### Login Stranica (`login.html`)
-- Email/Password unos
-- Role selection (Zaposlenik/Direktor)
-- Demo kredencijali prikazani na stranici
-- Validation poruke za pogrešne kredencijale
-
-### Director Panel (`director-panel.html`)
-- 4 izvještaj kartice sa ikonama
-- "Ulogovani kao" informacija
-- Odjava dugme
-- Interaktivni izvještaji sa povratkom na početak
-
-### Zaposlenike Stranice
-- `index.html` - Dashboard sa statistikom
-- `new-entry.html` - Kreiranje novog zapisa
-- `all-records.html` - Pregled svih pacijenata
-- `patient-dashboard.html` - Individualni pacijent
-- `new-patient.html` - Registracija novog pacijenta
-
----
-
-## 📊 Primjer Podataka
-
-Aplikacija dolazi sa 10 demo zapisa za testiranje:
-
-| Pacijent | Procedure | Doktor | Status | Plaćanje |
-|----------|-----------|--------|--------|----------|
-| Ana Kovač | Kontrola i čišćenje | Dr Rosa | Zakazano | ✅ Plaćeno |
-| Marko Petrović | Plomba | Dr Rosa | Završeno | ✅ Plaćeno |
-| Ivana Babić | Izbeljivanje | Dr Rosa | U tijeku | 🔴 Delimično |
-| Luka Horvat | Most | Dr Novak | Zakazano | ✅ Plaćeno |
-| Petar Jurić | Endodontija | Dr Novak | U tijeku | 🔴 Dugovanje |
-
----
-
-## 🔄 Workflow za Director
-
-### Dnevni Pregled
-1. Prijavite se kao direktor
-2. Pregledate Financial Report za gotovinu situaciju
-3. Provjerite Patients Report za nove pacijente
-4. Analizirate Doctors Report za produktivnost
-5. Gledate Procedures Report za raznolikost usluga
-
-### Nedeljena Analiza
-1. Uporedite prihod sa prethodnom nedelj om
-2. Analizirate redovne vs nove pacijente
-3. Gledate opterećenje doktora
-4. Planira te promociju popularne procedure
-
-### Mesečan Pregled
-1. Totalni prihod i troškovi
-2. Rast pacijentske baze
-3. Performanse doktora
-4. ROI na procedure i oper acije
-
----
-
-## ⚙️ Tehnički Detalji
-
-### Fajlovi Sistema
-- `src/pages/login.html` - Login forma
-- `src/pages/director-panel.html` - Director panel
-- `src/scripts/login.js` - Autentifikacija logika
-- `src/scripts/director-reports.js` - Izvještaji i data processing
-
-### Data Storage
-- Sve sesije: `localStorage['drrosa-session']`
-- Svi zapisi: `localStorage['drrosa-records']`
-- Svi pacijenti: `localStorage['drrosa-patients']`
-
-### Security Checks
-Svaka stranica poziva `checkDirectorAccess()` ili `checkStaffAccess()` pri učitavanju
-
----
-
-## 🚀 Pokretanje Aplikacije
-
-```bash
-# U root foldera aplikacije
-python -m http.server 8000
-
-# Otvorite browser na:
-http://localhost:8000/src/pages/login.html
+```text
+/src/pages/director-panel.html
 ```
 
----
+## Pristup
 
-## 📝 Bilješke za Dalje Razvoja
+Prvi direktor i staff nalog se kreiraju iz backend environment vrednosti samo kada je tabela `users` prazna.
 
-- [ ] Integracija sa pravom bazom podataka umjesto localStorage
-- [ ] PDF export za izvještaje
-- [ ] Email slanje izvještaja
-- [ ] Grafički prikazi izvještaja (charts)
-- [ ] Kalendar pregleda
-- [ ] Integracija sa kasa/billing sistemom
-- [ ] Backup i restore funkcije
-- [ ] Auditlog svih operacija
+- Director email: `director@drosa.com`
+- Staff email: `staff@drosa.com`
+- Lozinke: vrednosti iz `INITIAL_DIRECTOR_PASSWORD` i `INITIAL_STAFF_PASSWORD`
 
----
+Frontend u `localStorage` cuva samo prikazne podatke sesije. Pravi access/refresh tokeni su u HttpOnly cookie-jima koje postavlja backend.
 
-**Verzija:** 1.0  
-**Zadnje ažurirano:** Maj 2026  
-**Stanje:** ✅ Production Ready
+## Glavne Sekcije
+
+Director panel sadrzi:
+
+- finansijski izvestaj
+- izvestaj o pacijentima
+- izvestaj o doktorima
+- izvestaj o postupcima
+- Excel-style tabove: PAZARI, Hirurgija, Protetika, Ortodoncija, Troskovi, Ukupno
+- dnevnu kasu
+- administraciju sifarnika
+- administraciju doktora
+- javno/onlajn zakazivanje
+- Google Calendar integraciju
+- backup/security status, audit log, sesije, 2FA i legal export
+
+## Administracija Doktora
+
+U sekciji `Doktori` direktor moze da dodaje i menja doktore.
+
+Polja za kalendar:
+
+- `Google color ID`: Google Calendar `colorId` ili event label ID koji se koristi za mapiranje Google event-a na doktora.
+- `Boja u kalendaru`: lokalna boja termina za tog doktora.
+- `Boja teksta`: lokalna boja teksta na terminu.
+
+Kalendar aplikacije koristi boju doktora pri prikazu termina. Kada se Google event uvozi u aplikaciju, backend pokusava da prepozna doktora preko Google boje ili label ID-a. Ako ne moze da prepozna doktora, koristi prvog aktivnog doktora kao fallback.
+
+## Google Calendar Integracija
+
+Google Calendar podesavanja su u direktor panelu u sekciji `Google Calendar`.
+
+Obavezna podesavanja:
+
+- Gmail nalog ordinacije
+- Google Calendar ID, npr. `primary` ili konkretan calendar ID
+- OAuth Client ID
+- OAuth Client Secret
+- Redirect URI
+- smer sinhronizacije
+- sync enabled toggle
+
+Za dvosmernu sinhronizaciju smer mora biti:
+
+```text
+two_way
+```
+
+### OAuth Tok
+
+OAuth kod se ne cuva kao trajno podesavanje. On je jednokratan Google authorization code.
+
+Tok je:
+
+1. Sacuvati OAuth Client ID, Client Secret i Redirect URI.
+2. Kliknuti `Otvori Google autorizaciju`.
+3. Google vraca callback URL sa `code=` parametrom.
+4. Uneti taj kod u polje `OAuth kod`.
+5. Kliknuti `Povezi OAuth kod`.
+6. Backend menja kod za Google access/refresh tokene i cuva tokene u `google_calendar_settings`.
+
+Kada je OAuth povezan, polje `OAuth kod` je sakriveno. Dugme prikazuje `Ponovo povezi OAuth`; tek tada se otvara unos novog koda.
+
+Za proveru postojece veze koristi se `Proveri OAuth konekciju`. To dugme ne trazi novi kod; backend koristi sacuvani refresh/access token i poziva Google Calendar API.
+
+### Dugmad Za Sync
+
+`Testiraj sinhronizaciju`
+
+- obradjuje lokalni sync queue iz aplikacije ka Google Calendar-u
+- ako vrati `Obradjeno: 0`, to znaci da trenutno nema lokalnih pending stavki za slanje
+- ne znaci da je Google pull izvrsen
+
+`Povuci izmene iz Google-a`
+
+- povlaci evente iz Google Calendar-a u lokalni kalendar aplikacije
+- koristi ogranicen prozor da ne probije Vercel timeout:
+  - 1 dan unazad
+  - 14 dana unapred
+  - do 50 Google event-a po pozivu
+- ne forsira veliki full reset pri svakom kliku
+- ako treba povuci starije Google evente, backend ruta podrzava `daysPast`, `daysFuture`, `limit` i `reset`, ali to treba koristiti pazljivo zbog Vercel timeout limita
+
+### Import Google Event-a
+
+Ako Google event nema lokalni Dr Rosa appointment ID:
+
+- aplikacija kreira lokalni termin
+- naslov Google event-a postaje naziv termina/procedure
+- pacijent se postavlja na fallback pacijenta `Google Calendar Import`
+- originalni Google naslov, opis i lokacija idu u notes
+- ako postoji konflikt sa doktorom/stolicom, termin se i dalje importuje, ali notes dobija upozorenje o konfliktu
+
+Ovo omogucava da se Google Calendar i lokalni kalendar poravnaju cak i kada pacijent jos nije povezan sa kartonom u aplikaciji.
+
+## Supabase Polja Za Google Calendar
+
+Tabela `doctors` mora imati:
+
+```sql
+google_color_id text
+calendar_color text
+calendar_text_color text
+```
+
+Tabela `google_calendar_settings` cuva:
+
+- OAuth client podesavanja
+- access/refresh tokene
+- sync direction
+- sync enabled status
+- last sync timestamps
+- Google events sync token
+
+Preporuceni search path za backend je:
+
+```text
+PG_SEARCH_PATH=app,public
+```
+
+## Troubleshooting
+
+`Test sinhronizacije je zavrsen. Obradjeno: 0.`
+
+To je normalno ako nema lokalnih pending promena za slanje ka Google-u.
+
+`Povuci izmene iz Google-a` vrati `504 FUNCTION_INVOCATION_TIMEOUT`
+
+Vercel je prekinuo backend funkciju. Najcesci uzrok je prevelik Google pull. Trenutni kod koristi ogranicen prozor od 1 dan unazad do 14 dana unapred da se to izbegne.
+
+`OAuth code is required`
+
+To se javlja samo kada se pokusava novo povezivanje OAuth-a. Za proveru postojece veze treba koristiti `Proveri OAuth konekciju`.
+
+`could not determine data type of parameter $1`
+
+Ovo je bila Postgres greska u mapiranju Google boje na doktora i popravljena je eksplicitnim `text` cast-om u SQL upitu.
+
+## Pre Deploy Provere
+
+Pre deploy-a pokrenuti:
+
+```powershell
+npm.cmd --prefix backend test
+npm.cmd run vercel-build
+```
+
+Za lokalni smoke test backend-a:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing http://localhost:3000/api/health
+```
+
+## Status Dokumenta
+
+Last updated: July 23, 2026
+Status: current for Supabase/PostgreSQL runtime, Google Calendar OAuth, two-way pull and doctor color mapping.

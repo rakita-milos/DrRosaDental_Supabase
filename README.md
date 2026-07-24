@@ -25,7 +25,8 @@ A dental clinic management system with role-based access control, patient tracki
 - Admin area for codebooks: activities, procedures, visit/payment statuses, currencies and shifts
 - Shift codebook stores working time and one or more weekdays
 - Currency codebook stores exchange-rate metadata instead of group/price fields
-- Google Calendar settings and sync status
+- Google Calendar settings, OAuth verification, app-to-Google sync queue and bounded Google-to-app pull
+- Doctor administration with Google color ID and local calendar colors
 - Backup, restore-test, audit-log, sessions, 2FA and legal-export tools
 
 **Security**
@@ -42,7 +43,7 @@ A dental clinic management system with role-based access control, patient tracki
 ## Project Structure
 
 ```text
-DrRosaWebApp/
+DrRosaDental_Supabase/
   index.html
   README.md
   DIRECTOR_PANEL_GUIDE.md
@@ -203,6 +204,32 @@ Primary data is stored in Supabase PostgreSQL.
 - Database backups: Supabase managed backups or an external PostgreSQL maintenance workflow
 
 Browser storage is only used for active auth/session state.
+
+## Google Calendar Sync
+
+Google Calendar integration is configured from the director panel.
+
+- OAuth Client ID, OAuth Client Secret and Redirect URI are saved as settings.
+- The OAuth code is a one-time Google authorization code. It is exchanged for access/refresh tokens and is not stored as a reusable setting.
+- `Proveri OAuth konekciju` verifies the saved token against Google Calendar without asking for a new code.
+- `Testiraj sinhronizaciju` processes the local sync queue from the app to Google Calendar.
+- `Povuci izmene iz Google-a` imports Google Calendar events into the app.
+
+Manual Google pull is bounded for Vercel:
+
+- default range: 1 day in the past through 14 days in the future
+- default limit: 50 events per request
+- no forced full reset on every button click
+
+Google-only events are imported as local appointments. If no local patient can be matched, the fallback patient is `Google Calendar Import`; the original Google title, description and location are stored in appointment notes.
+
+Doctor calendar colors are stored on `doctors`:
+
+```text
+google_color_id
+calendar_color
+calendar_text_color
+```
 
 ## Export Behavior
 
@@ -368,6 +395,6 @@ For director panel documentation, see [DIRECTOR_PANEL_GUIDE.md](DIRECTOR_PANEL_G
 
 ---
 
-**Version:** 2.3  
-**Last Updated:** May 2026  
-**Status:** Demo with backend integration, PostgreSQL persistence, calendar, documents, backup/security, advanced workflow support, export support and Playwright tests; production deployment template is present, but live deployment still requires real secrets, HTTPS reverse proxy configuration, monitored backups and a tested rollback drill.
+**Version:** 2.4
+**Last Updated:** July 23, 2026
+**Status:** Supabase/PostgreSQL application with calendar, documents, backup/security, advanced workflow support, export support, Google Calendar OAuth/two-way sync and Playwright/backend regression tests; live deployment still requires real secrets, HTTPS configuration, monitored backups and a tested rollback drill.

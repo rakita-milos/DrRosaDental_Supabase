@@ -72,7 +72,7 @@ Authorization: Bearer <token>
 - Treatment plans, clinical chart, clinical notes, consents, perio charts, invoices, claims and ledger
 - Director backups: status, list, create, download, restore and test restore
 - Director security: audit log, sessions, permissions, legal export, status, unlock, 2FA setup/verify/disable
-- Director Google Calendar: settings, OAuth exchange, sync status, retry and test sync
+- Director Google Calendar: settings, OAuth exchange, OAuth verification, sync status, retry, test sync and bounded Google pull
 - Director reports: financial, patients, doctors and procedures
 - Codebooks: public codebooks and director codebook CRUD
 - Doctors and health check
@@ -105,3 +105,13 @@ Authorization: Bearer <token>
 - `metadata.days` supports one or more weekday keys: `monday` through `sunday`.
 - Currency codebook items can store `metadata.exchangeRate`, `metadata.rateDate`, `metadata.rateBase` and `metadata.rateSource`.
 - The exchange-rate endpoint uses Frankfurter as a best-effort provider; rates can still be entered manually.
+
+## Google Calendar Notes
+
+- OAuth authorization codes are one-time values. The app exchanges them for saved Google access/refresh tokens and does not reuse the code later.
+- `POST /api/director/google-calendar/oauth/verify` checks the saved OAuth connection by calling Google Calendar with the saved token.
+- `POST /api/director/google-calendar/test-sync` processes local pending sync queue items from the app to Google.
+- `POST /api/director/calendar-sync/pull-google` pulls Google events into the app.
+- Manual pull defaults are bounded for Vercel: `limit=50`, `daysPast=1`, `daysFuture=14`, `reset=false`.
+- Google-only events are imported with fallback patient `Google Calendar Import` and original Google details in appointment notes.
+- Doctor color mapping uses `doctors.google_color_id`, `doctors.calendar_color` and `doctors.calendar_text_color`.

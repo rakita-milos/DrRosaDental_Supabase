@@ -1,13 +1,34 @@
 # Database migrations
 
-Runtime schema upgrades are tracked in the `schema_migrations` table.
+The canonical PostgreSQL schema is `backend/database.postgres.sql`.
+
+Supabase migration files live in:
+
+```text
+supabase/migrations/
+```
+
+Runtime schema compatibility is also guarded by idempotent DDL in `backend/database.postgres.sql`, which is applied during backend initialization.
 
 Production deploy checklist:
 
-1. Run an encrypted backup before deploy.
-2. Deploy to staging with a copy of production data.
-3. Start the app once and verify `/api/health`.
-4. Verify `schema_migrations` contains the expected version.
-5. Keep the pre-deploy backup available for rollback.
+1. Run a Supabase managed backup or agreed `pg_dump` backup before deploy.
+2. Deploy to staging with a copy of production data when possible.
+3. Apply new Supabase migrations or run the backend schema initializer against the target database.
+4. Verify `/api/health`.
+5. Verify required columns exist in the `app` schema, especially new Google Calendar fields.
+6. Keep the pre-deploy backup available for rollback.
 
-Do not add ad hoc `ALTER TABLE` calls outside the migration registry in `server.js`.
+Current Google Calendar doctor color migration:
+
+```text
+supabase/migrations/20260721193000_add_doctor_calendar_colors.sql
+```
+
+Required `doctors` columns:
+
+```sql
+google_color_id text
+calendar_color text
+calendar_text_color text
+```

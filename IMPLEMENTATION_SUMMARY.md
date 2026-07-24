@@ -1,335 +1,139 @@
-# Dr Rosa Web App - Director Panel Implementacija - SUMMARY
+# Dr Rosa Web App - Implementation Summary
 
-## ✅ KOMPLETNO IMPLEMENTIRANO
+## Current State
 
-Direktor panel je sada **potpuno funkcionalan** sa sledećim komponentama:
+Dr Rosa is a Supabase/PostgreSQL-backed dental clinic management app with role-based access, patient records, appointments, public booking, documents, director reports, codebooks, daily cash reporting, security tools and Google Calendar integration.
 
----
+The app is no longer a static localStorage demo. Runtime data is stored in Supabase PostgreSQL, with backend access through Express and a private `app` schema.
 
-## 📦 Novi Fajlovi
+## Runtime
 
-### 1. **Login System**
-- **`src/pages/login.html`** - Moderni login interfejs sa:
-  - Email/password unos
-  - Role selection dropdown
-  - Demo kredencijali prikazani
-  - Error message prikaz
-  - Gradient background dizajn
+- Backend: Node.js + Express
+- Database: Supabase PostgreSQL
+- Primary schema: `app`
+- Recommended search path: `PG_SEARCH_PATH=app,public`
+- Auth: JWT in HttpOnly SameSite cookies
+- Frontend: HTML/CSS/vanilla JavaScript
+- Deployment target: Vercel-compatible Node runtime
 
-- **`src/scripts/login.js`** - Autentifikacija logika sa:
-  - Demo user database
-  - Session storage u localStorage
-  - Role validation
-  - Automatski redirect baziran na ulozi
+## Implemented Areas
 
-### 2. **Director Panel**
-- **`src/pages/director-panel.html`** - Director-only sekcija sa:
-  - Header sa user info i logout dugme
-  - 4 report kartice sa ikonama
-  - Finansijski izvještaj view
-  - Pacijenti izvještaj view
-  - Doktori izvještaj view
-  - Postupci izvještaj view
-  - Nazad dugme na svim izvještajima
+### Authentication And Roles
 
-- **`src/scripts/director-reports.js`** - Kompletan reporting sistem sa:
-  - `checkDirectorAccess()` - Validiraj director pristup
-  - `loadFinancialReport()` - Finansijski podaci i analiza
-  - `loadPatientsReport()` - Pacijentska statistika
-  - `loadDoctorsReport()` - Produktivnost doktora
-  - `loadProceduresReport()` - Raspodjela postupaka
-  - Sve kalkulacije i agregacije podataka
+- Director and staff roles
+- Login, verify, refresh and logout endpoints
+- HttpOnly cookie sessions
+- Production startup checks for secrets, CORS, staff permissions and trust proxy
+- Optional 2FA for director/security flows
 
-### 3. **Documentation**
-- **`DIRECTOR_PANEL_GUIDE.md`** - Detaljni user guide sa:
-  - Kako se koristiti login sistem
-  - Svi 4 izvještaja objašnjeni
-  - Sigurnosne mjere
-  - Primeri podataka
-  - Workflow za direktoriste
-  - Tehnički detalji
+### Patient And Clinical Workflow
 
-- **`README.md`** - AŽURIRAN sa:
-  - Kompletan projekt pregled
-  - Autentifikacione informacije
-  - Sve novo feature-e
-  - Kako pokrenuti aplikaciju
-  - Tehnologije korišćene
+- Patient registration and edit
+- Medical profile
+- Visit records
+- Tooth/treatment workflows
+- Clinical notes
+- Treatment plans
+- Perio charts
+- Consents
+- Invoices, insurance claims and ledger
+- Patient documents and imaging metadata
 
----
+### Calendar
 
-## 🔐 Sigurnost - Implementirane Mjere
+- Local appointment CRUD
+- Chair and doctor assignment
+- Appointment conflict checks
+- Visit creation from an appointment
+- Public booking options and availability
+- Doctor-specific calendar colors
 
-✅ **Session-based Authentication**
-- Sesija se čuva kao JSON objekat u `localStorage['drrosa-session']`
-- Sadrži: email, name, role, loginTime
-- Validira se pri svakom učitavanju stranice
+### Director Panel
 
-✅ **Role-Based Access Control**
-- Direktor može pristupiti `director-panel.html`
-- Zaposlenik NIKAD ne može pristupiti director panelu
-- Direktan URL pristup automatski provjerava role
+- Financial reports
+- Patient reports
+- Doctor productivity reports
+- Procedure reports
+- Excel-style report tabs
+- Daily cash report
+- Codebook administration
+- Doctor administration
+- Public booking toggle
+- Backup/security status
+- Audit log, sessions, legal export and 2FA controls
 
-✅ **Automatski Logout**
-- Logout dugme brišit će sesiju iz localStorage
-- Redirekcija na login stranicu
-- Bez sesije → Automatski preusmjeravanje na login
+### Google Calendar
 
-✅ **Session Validation na Svim Stranicama**
-```javascript
-function checkDirectorAccess() {
-  const session = JSON.parse(localStorage.getItem('drrosa-session') || 'null');
-  if (!session || session.role !== 'director') {
-    window.location.href = 'login.html';
-    return false;
-  }
-  return session;
-}
+- Google Calendar settings in director panel
+- OAuth Client ID, Client Secret and Redirect URI storage
+- OAuth code exchange into saved access/refresh tokens
+- OAuth verification using saved tokens
+- App-to-Google sync queue processing
+- Two-way pull from Google Calendar
+- Import of Google-only events into local appointments
+- Fallback patient `Google Calendar Import` for imported events without a matched patient
+- Original Google title/description/location preserved in appointment notes
+- Doctor color mapping through `google_color_id`, `calendar_color` and `calendar_text_color`
+- Manual Google pull bounded to avoid Vercel function timeout:
+  - default limit: 50 events
+  - default range: 1 day past to 14 days future
+
+## Database Notes
+
+Main schema file:
+
+```text
+backend/database.postgres.sql
 ```
 
----
+Supabase migrations:
 
-## 📊 Director Panel Reports - Detalji
-
-### 1. Finansijski Izvještaj (💰)
-**Prikazuje:**
-- 💰 Ukupan prihod: **1730.00 €** (baziran na svim postupcima)
-- 💸 Ukupno dugovanja: **650.00 €** (samo neplaćeni iznosi)
-- 📈 Procenat naplaće: **62.4%** (plaćeno / total)
-
-**Tabela po pacijentima:**
-- Pacijent ime
-- Broj pregleda (groupovani zapisi)
-- Ukupan iznos (suma svih procedura za pacijenta)
-- Plaćeno (samo Plaćeno status)
-- Dugovanje (Delimično + Dugovanje status)
-- Procenat naplate
-
-**Primer:**
-```
-Pacijent        | Pregledi | Iznos    | Plaćeno  | Dugovanje | %
-Ana Kovač       | 1        | 50.00 €  | 50.00 €  | 0.00 €    | 100%
-Ivana Babić     | 1        | 150.00 € | 0.00 €   | 150.00 €  | 0%
+```text
+supabase/migrations/
 ```
 
-### 2. Pacijenti Izvještaj (👥)
-**Prikazuje:**
-- 👥 Ukupno pacijenata: **9**
-- 🔄 Redovni pacijenti (2+ posjete): **1** (samo Marko)
-- ✨ Novi pacijenti (prvi posjeti): **8**
+Doctor color columns:
 
-**Tabela:**
-- Pacijent
-- Broj posjeta
-- Zadnja posjeta
-- Status (✅ Plaćeno / 🔴 Dugovanje)
-- Iznos dugovanja
-
-### 3. Doktori Izvještaj (👨‍⚕️)
-**Prikazuje:**
-- Dr Rosa: 6 pregleda (60%), 5 pacijenata
-- Dr Novak: 3 pregleda (30%), 3 pacijenta
-- Dr Horvat: 1 pregled (10%), 1 pacijent
-
-**Korisno za:**
-- Identifikovanje preopterećenosti
-- Planiranje radnog vremena
-- Evaluacija performansi
-
-### 4. Postupci Izvještaj (🔧)
-**Prikazuje:**
-- Kontrola i čišćenje: 1 (10%), prosječno 50.00 €
-- Plomba: 1 (10%), prosječno 60.00 €
-- Izbeljivanje: 1 (10%), prosječno 150.00 €
-- ... itd za sve procedure
-
-**Korisno za:**
-- Analiziranje popularnih usluga
-- Pricing strategija
-- Planiranje opreme i materijala
-
----
-
-## 🧪 Testiranje - Rezultati
-
-### Test 1: Director Login ✅
-- Unos: `director@drosa.com` / `director123` / Direktor
-- Rezultat: Uspešna prijava → Director Panel
-- Status: ✅ PROĐENO
-
-### Test 2: Financial Report ✅
-- Prikazuje: 1730.00 € prihod, 650.00 € dugovanja, 62.4% naplaćeno
-- Tabela: 10 redova sa pacijentskom razmedom
-- Status: ✅ PROĐENO
-
-### Test 3: Patients Report ✅
-- Prikazuje: 9 pacijenata, 1 redovni, 8 novih
-- Tabela: Svi pacijenti sa posjete i statusima
-- Status: ✅ PROĐENO
-
-### Test 4: Doctors Report ✅
-- Prikazuje: 3 doktora sa procentima opterećenja
-- Dr Rosa: 60%, Dr Novak: 30%, Dr Horvat: 10%
-- Status: ✅ PROĐENO
-
-### Test 5: Procedures Report ✅
-- Prikazuje: 10 različitih procedura sa distributivnom
-- Prosječna naplata po procedure
-- Status: ✅ PROĐENO
-
-### Test 6: Logout Funkcionalnost ✅
-- Logout dugme briši sesiju
-- Redirekcija na login stranicu
-- Status: ✅ PROĐENO
-
-### Test 7: Staff Access Restriction ✅
-- Login kao staff: `staff@drosa.com` / `staff123` / Zaposlenik
-- Pokušaj pristupa director panelu → Automatski preusmjeravanje
-- Status: ✅ PROĐENO (zaposlenik je preusmeren na dashboard!)
-
-### Test 8: Session Validation ✅
-- Bez sesije → Login stranica
-- Sa staff sesijom → Dashboard
-- Sa director sesijom → Director Panel
-- Status: ✅ PROĐENO
-
----
-
-## 📁 Ažurirane Stranice (Svih 7 + 2 Nova)
-
-### Nove Stranice:
-1. **`src/pages/login.html`** ✅
-2. **`src/pages/director-panel.html`** ✅
-
-### Ažurirane Stranice (sa logout dugmetom):
-3. **`src/pages/index.html`** - Dashboard + Logout
-4. **`src/pages/new-entry.html`** - New Entry Form + Logout
-5. **`src/pages/all-records.html`** - Records List + Logout
-6. **`src/pages/patient-dashboard.html`** - Patient View + Logout
-7. **`src/pages/new-patient.html`** - Registration + Logout
-
-### Ažurirane JS Datoteke (sa `checkStaffAccess()` ili `checkDirectorAccess()`):
-8. **`src/scripts/script.js`** - Dashboard logika + session check
-9. **`src/scripts/new-entry.js`** - Entry form + session check
-10. **`src/scripts/all-records.js`** - Records rendering + session check
-11. **`src/scripts/patient-dashboard.js`** - Patient view + session check
-12. **`src/scripts/new-patient.js`** - Registration form + session check
-13. **`src/scripts/login.js`** ✅ - Nova autentifikaciona logika
-14. **`src/scripts/director-reports.js`** ✅ - Nova reporting logika
-
----
-
-## 🚀 Kako Pokrenuti
-
-### 1. Start Server
-```bash
-cd c:\Users\milos\DrRosaWebApp
-python -m http.server 8000
+```sql
+google_color_id text
+calendar_color text
+calendar_text_color text
 ```
 
-### 2. Login kao Director
-URL: `http://localhost:8000/src/pages/login.html`
+Google Calendar settings are stored in:
 
-**Kredencijali:**
-- Email: `director@drosa.com`
-- Password: `director123`
-- Role: Direktor Ordinacije
+```text
+google_calendar_settings
+```
 
-### 3. Pregledate Izvještaje
-- Kliknite na report karticu (💰, 👥, 👨‍⚕️, ili 🔧)
-- Vidite detaljan izvještaj
-- Kliknite "← Nazad" da se vratite
+OAuth authorization codes are not stored permanently. They are one-time codes exchanged for saved access/refresh tokens.
 
-### 4. Logout
-- Kliknite "Odjava" dugme
-- Vraćeni ste na login stranicu
+## Verification
 
----
+Recent verification commands:
 
-## 📈 Statistika
+```powershell
+npm.cmd --prefix backend test
+npm.cmd run vercel-build
+```
 
-**Linije Koda:**
-- Login sistem: ~100 linija (HTML + JS)
-- Director Panel: ~200 linija HTML + CSS
-- Reporting logika: ~300 linija JavaScript
-- Ukupno novo: ~600 linija koda
+Current backend suite includes regression coverage for:
 
-**Funkcionalnosti:**
-- 2 nova HTML fajla
-- 2 nova JavaScript fajla
-- 5 ažuriranih JavaScript fajlova
-- 5 ažuriranih HTML fajlova
-- 4 kompletan izvještaja
-- 2 demo korisnika
-- 10 demo zapisa
-- 100% test pokrivanje
+- Google import of external calendar events
+- fallback patient behavior
+- doctor color mapping
+- explicit Postgres typing for nullable Google color lookup parameters
+- OAuth verification without a new code
+- bounded manual Google pull without forced full reset
 
----
+## Operational Notes
 
-## 🎯 Realizovani Zahtjevi
+- `Testiraj sinhronizaciju` processes local pending sync queue items from the app to Google.
+- `Povuci izmene iz Google-a` imports/updates Google Calendar events into the app.
+- `Obradjeno: 0` on test sync means there were no local pending items, not that Google pull failed.
+- Vercel `504 FUNCTION_INVOCATION_TIMEOUT` usually means a request is doing too much work in one invocation.
 
-✅ "Kreiraj login sistem sa rolama"
-- Demo users sa email/password
-- Role selection (Zaposlenik/Direktor)
-- Session storage
-- Login validation
+## Status
 
-✅ "Kreiraj director panel HTML"
-- Kompletna HTML stranica
-- Responsive dizajn
-- 4 report kartice
-- User info header
-
-✅ "Kreiraj izvještaje (finansijski, pacijenti, doktori)"
-- 4 kompletan izvještaja
-- Svi prikazuju relevantne podatke
-- Tabelarne prikaze sa formatiranjem
-- Kalkulacije i agregacije
-
-✅ "Dodaj autentifikaciju u postojeće stranice"
-- Session check na svim stranicama
-- Logout dugme na svim stranicama zaposlenika
-- Automatski preusmjeravanje
-- Role validation
-
-✅ "Testiraj sve funkcionalnosti"
-- 8 ključnih test scenarija
-- Svi testovi prođeni ✅
-- Sigurnost verificirana
-- Report akurnost verificirana
-
----
-
-## 📝 Sledeći Koraci (Opciono)
-
-Ako želite da nastavite sa razvojem:
-
-1. **Baza Podataka** - Zameni localStorage sa pravom bazom (PostgreSQL/MongoDB)
-2. **PDF Export** - Dodaj mogućnost download-a izvještaja kao PDF
-3. **Email Reports** - Slanj izvještaje direktorima dnevno/nedeljno
-4. **Charts** - Dodaj grafijske prikaze (Chart.js)
-5. **User Management** - Dodaj više demo korisnika
-6. **Audit Log** - Loguj sve operacije
-7. **Two-Factor Auth** - Pojačaj sigurnost
-8. **Date Range Filter** - Filtriranje izvještaja po datumima
-
----
-
-## ✨ Zaključak
-
-**Director panel je sada potpuno funkcionalan i spreman za upotrebu.**
-
-Svi zahtjevi su implementirani:
-- ✅ Login sistem sa rolama
-- ✅ Director panel sa izvještajima
-- ✅ Autentifikacija na svim stranicama
-- ✅ Zaštita od neopravdanog pristupa
-- ✅ Kompletno testiran
-
-**Status:** 🟢 **PRODUCTION READY**
-
----
-
-**Verzija:** 1.0  
-**Datum:** Maj 2026  
-**Razvojaš:** GitHub Copilot AI Assistant
+Last updated: July 23, 2026
+Status: active Supabase/PostgreSQL application with production-oriented backend checks and Google Calendar two-way sync support.
