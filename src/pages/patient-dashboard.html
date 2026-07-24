@@ -33,19 +33,49 @@
     <main>
       <section class="hero-card patient-hero">
         <div class="patient-hero-copy">
-          <p class="eyebrow">Pacijent</p>
-          <h2 id="patient-summary-title">Detalji i istorija</h2>
-          <p id="patient-summary-description">Pregledajte sve tretmane, naplate i dugovanja ovog pacijenta.</p>
-          <div class="hero-actions">
-            <a id="new-entry-for-patient" href="new-entry.html" class="primary-btn">Novi unos za ovog pacijenta</a>
-            <a id="edit-patient-link" href="new-patient.html" class="secondary-btn">Uredi pacijenta</a>
-            <button id="delete-patient-btn" class="danger-btn" type="button">Obriši pacijenta</button>
+          <div class="patient-hero-heading">
+            <p class="eyebrow">Pacijent</p>
+            <h2 id="patient-summary-title">Detalji i istorija</h2>
+            <p id="patient-summary-description">Pregledajte sve tretmane, naplate i dugovanja ovog pacijenta.</p>
+          </div>
+          <div class="patient-action-toolbar" aria-label="Akcije pacijenta">
+            <a id="new-entry-for-patient" href="new-entry.html" class="primary-btn">Nova poseta</a>
+            <a id="schedule-patient-link" href="calendar.html" class="secondary-btn">Zakazi</a>
+            <button id="quick-document-tab-btn" class="secondary-btn" type="button">Dokument</button>
+            <a id="edit-patient-link" href="new-patient.html" class="secondary-btn">Uredi</a>
+            <button id="delete-patient-btn" class="danger-btn" type="button">Obrisi</button>
           </div>
         </div>
         <div class="hero-stats" id="patient-summary-cards"></div>
       </section>
 
-      <section class="list-section" id="patient-info-section" style="display:none;">
+      <section class="patient-workspace" id="patient-workspace" style="display:none;">
+        <aside class="patient-sidebar">
+          <div class="patient-side-panel">
+            <p class="eyebrow">Kontakt</p>
+            <div id="patient-contact-summary"></div>
+          </div>
+          <div class="patient-side-panel">
+            <p class="eyebrow">Rizici</p>
+            <div id="patient-risk-summary"></div>
+          </div>
+          <div class="patient-side-panel">
+            <p class="eyebrow">Finansije</p>
+            <div id="patient-finance-summary"></div>
+          </div>
+        </aside>
+        <section class="patient-main-panel">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Pregled aktivnosti</p>
+              <h2>Timeline pacijenta</h2>
+            </div>
+          </div>
+          <div id="patient-activity-timeline" class="patient-timeline"></div>
+        </section>
+      </section>
+
+      <section class="list-section legacy-patient-section" id="patient-info-section" hidden>
         <div class="section-header">
           <div>
             <p class="eyebrow">Podaci o pacijentu</p>
@@ -55,7 +85,7 @@
         <div class="info-card" id="patient-info"></div>
       </section>
 
-      <section class="patient-alerts" id="patient-alerts" aria-live="polite"></section>
+      <section class="patient-alerts legacy-patient-section" id="patient-alerts" aria-live="polite" hidden></section>
 
       <section class="list-section patient-tabs-section" id="patient-clinical-section" style="display:none;">
         <div class="section-header">
@@ -64,7 +94,14 @@
             <h2>Karton i dokumenti</h2>
           </div>
         </div>
-        <div class="patient-tabs" role="tablist" aria-label="Karton pacijenta">
+        <div class="patient-tabs patient-group-tabs" role="tablist" aria-label="Grupe kartona pacijenta">
+          <button class="patient-group-tab active" type="button" data-patient-group="clinical">Klinika</button>
+          <button class="patient-group-tab" type="button" data-patient-group="teeth">Zubi</button>
+          <button class="patient-group-tab" type="button" data-patient-group="documents">Dokumenti</button>
+          <button class="patient-group-tab" type="button" data-patient-group="finance">Finansije</button>
+          <button class="patient-group-tab" type="button" data-patient-group="admin">Administracija</button>
+        </div>
+        <div class="patient-tabs patient-tabs-legacy" role="tablist" aria-label="Karton pacijenta">
           <button class="patient-tab active" type="button" data-patient-tab="medical-card">Karton</button>
           <button class="patient-tab" type="button" data-patient-tab="initial-condition-card">Zateceno stanje</button>
           <button class="patient-tab" type="button" data-patient-tab="clinical-chart-card">Zubni status</button>
@@ -77,7 +114,7 @@
           <button class="patient-tab" type="button" data-patient-tab="insurance-card">Osiguranje</button>
         </div>
 
-        <div class="patient-tab-panel active" id="medical-card">
+        <div class="patient-tab-panel active" id="medical-card" data-patient-panel-group="clinical">
           <form id="medical-profile-form" class="admin-codebook-form">
             <div class="input-grid">
               <label>
@@ -132,11 +169,11 @@
           </form>
         </div>
 
-        <div class="patient-tab-panel" id="initial-condition-card">
+        <div class="patient-tab-panel" id="initial-condition-card" data-patient-panel-group="teeth">
           <div id="patient-initial-condition-editor"></div>
         </div>
 
-        <div class="patient-tab-panel" id="clinical-chart-card">
+        <div class="patient-tab-panel" id="clinical-chart-card" data-patient-panel-group="teeth">
           <form id="clinical-chart-form" class="admin-codebook-form">
             <input id="clinical-chart-entry-id" type="hidden" />
             <div class="input-grid">
@@ -194,7 +231,7 @@
           <div class="table-wrap"><table><thead><tr><th>Zub</th><th>Kodovi</th><th>Status</th><th>Dijagnoza</th><th>Akcije</th></tr></thead><tbody id="clinical-chart-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="clinical-notes-card">
+        <div class="patient-tab-panel active" id="clinical-notes-card" data-patient-panel-group="clinical">
           <form id="clinical-note-form" class="admin-codebook-form">
             <input id="clinical-note-id" type="hidden" />
             <div class="input-grid">
@@ -220,7 +257,7 @@
           <div class="table-wrap"><table><thead><tr><th>Beleška</th><th>Potpis</th><th>Datum</th><th>Akcije</th></tr></thead><tbody id="clinical-notes-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="consents-card">
+        <div class="patient-tab-panel active" id="consents-card" data-patient-panel-group="clinical">
           <form id="patient-consent-form" class="admin-codebook-form">
             <input id="consent-id" type="hidden" />
             <div class="input-grid">
@@ -254,7 +291,7 @@
           <div class="table-wrap"><table><thead><tr><th>Saglasnost</th><th>Potpisnik</th><th>Datum</th><th>Akcije</th></tr></thead><tbody id="patient-consents-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="documents-card">
+        <div class="patient-tab-panel" id="documents-card" data-patient-panel-group="documents">
           <form id="document-form" class="admin-codebook-form">
             <input id="document-id" type="hidden" />
             <div class="input-grid">
@@ -375,7 +412,7 @@
           </div>
         </div>
 
-        <div class="patient-tab-panel" id="plans-card">
+        <div class="patient-tab-panel" id="plans-card" data-patient-panel-group="finance">
           <form id="treatment-plan-form" class="admin-codebook-form">
             <input id="plan-id" type="hidden" />
             <div class="input-grid">
@@ -424,7 +461,7 @@
           <div class="table-wrap"><table><thead><tr><th>Plan</th><th>Status</th><th>Ukupno</th><th>Akcije</th></tr></thead><tbody id="treatment-plans-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="perio-card">
+        <div class="patient-tab-panel" id="perio-card" data-patient-panel-group="teeth">
           <form id="perio-form" class="admin-codebook-form">
             <div class="input-grid">
               <label>
@@ -470,7 +507,7 @@
           <div class="table-wrap"><table><thead><tr><th>Datum</th><th>Merenja</th><th>Rizik</th></tr></thead><tbody id="perio-charts-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="invoices-card">
+        <div class="patient-tab-panel" id="invoices-card" data-patient-panel-group="finance">
           <form id="invoice-form" class="admin-codebook-form">
             <div class="input-grid">
               <label>
@@ -501,7 +538,7 @@
           <div class="table-wrap"><table><thead><tr><th>Broj</th><th>Status</th><th>Ukupno</th><th>Plaćeno</th><th>Akcije</th></tr></thead><tbody id="invoices-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="insurance-card">
+        <div class="patient-tab-panel" id="insurance-card" data-patient-panel-group="admin">
           <form id="insurance-form" class="admin-codebook-form">
             <div class="input-grid">
               <label>
@@ -542,7 +579,7 @@
         </div>
       </section>
 
-      <section class="list-section">
+      <section class="list-section legacy-patient-section" hidden>
         <div class="section-header">
           <div>
             <p class="eyebrow">Pregled</p>
@@ -571,7 +608,7 @@
         </div>
       </section>
 
-      <section class="list-section">
+      <section class="list-section legacy-patient-section" hidden>
         <div class="section-header">
           <div>
             <p class="eyebrow">Tretmani zuba</p>

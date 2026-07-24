@@ -8,6 +8,9 @@
     no_show: "Nije došao"
   };
   const DAY_NAMES = ["Pon", "Uto", "Sre", "Cet", "Pet", "Sub", "Ned"];
+  const urlParams = new URLSearchParams(window.location.search);
+  const patientIdParam = urlParams.get("patientId") || urlParams.get("id");
+  const patientNameParam = urlParams.get("patient");
   const state = {
     currentDate: new Date(),
     viewMode: "week",
@@ -342,6 +345,13 @@
 
   function resetForm(date = new Date()) {
     openPanel();
+    const context = document.getElementById("appointment-patient-context");
+    const patientSelect = document.getElementById("appointment-patient");
+    if (context) {
+      context.hidden = true;
+      context.innerHTML = "";
+    }
+    patientSelect?.classList.remove("locked-patient-input");
     document.getElementById("appointment-panel-title").textContent = "Novi termin";
     document.getElementById("appointment-id").value = "";
     document.getElementById("appointment-date").value = dateKey(date);
@@ -353,6 +363,32 @@
     document.getElementById("cancel-appointment-btn").hidden = true;
     document.getElementById("cancel-appointment-btn").disabled = true;
     setAlert("");
+  }
+
+  function applyPatientQueryPreset() {
+    if (!patientIdParam && !patientNameParam) return;
+    const patient = patientIdParam
+      ? state.patients.find(item => String(item.id) === String(patientIdParam))
+      : state.patients.find(item => String(item.fullName || "").toLowerCase() === String(patientNameParam || "").toLowerCase());
+    if (!patient) return;
+    resetForm(new Date());
+    const patientSelect = document.getElementById("appointment-patient");
+    const context = document.getElementById("appointment-patient-context");
+    patientSelect.value = patient.id;
+    patientSelect.classList.add("locked-patient-input");
+    if (context) {
+      context.hidden = false;
+      context.innerHTML = `
+        <div>
+          <span>Zakazivanje za pacijenta</span>
+          <strong>${window.DrRosaSecurity.escapeHtml(patient.fullName)}</strong>
+          <small>${window.DrRosaSecurity.escapeHtml([patient.phone, patient.email].filter(Boolean).join(" / ") || "Kontakt nije unet")}</small>
+        </div>
+        <a class="secondary-btn" href="patient-dashboard.html?patientId=${encodeURIComponent(patient.id)}">Karton</a>
+      `;
+    }
+    document.getElementById("appointment-panel-title").textContent = `Novi termin - ${patient.fullName}`;
+    setAlert("Pacijent je unapred izabran iz kartona.", "info");
   }
 
   function editAppointment(id) {
@@ -454,6 +490,7 @@
     fillSelects();
     closePanel();
     await loadAppointments();
+    applyPatientQueryPreset();
   }
 
   function bindEvents() {

@@ -84,6 +84,21 @@ function formatCurrencyAmounts(amounts) {
     : "0.00";
 }
 
+function renderDirectorKpis({ records = [], patients = [], doctors = [] } = {}) {
+  const revenue = records.reduce((sum, record) => sum + Number(record.amountPaid || 0), 0);
+  const debt = records.reduce((sum, record) => sum + Number(record.amountDue || 0), 0);
+  const values = {
+    "director-kpi-revenue": window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(revenue, "EUR") : `${revenue.toFixed(2)} EUR`,
+    "director-kpi-debt": window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(debt, "EUR") : `${debt.toFixed(2)} EUR`,
+    "director-kpi-patients": String(patients.length || new Set(records.map(record => record.patient).filter(Boolean)).size),
+    "director-kpi-doctors": String(doctors.length || new Set(records.map(record => record.doctor).filter(Boolean)).size)
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+  });
+}
+
 function showReports() {
   document.getElementById("reports-grid").style.display = "grid";
   document.querySelectorAll(".report-content").forEach(el => el.classList.remove("active"));
@@ -2083,9 +2098,16 @@ function initializeDailyCashReport() {
   initializeGoogleCalendarSettings();
   initializeBackupSecurity();
   try {
-    cachedRecords = await window.DrRosaApi.getRecords();
+    const [records, patients, doctors] = await Promise.all([
+      window.DrRosaApi.getRecords(),
+      window.DrRosaApi.getPatients ? window.DrRosaApi.getPatients().catch(() => []) : [],
+      window.DrRosaApi.getDirectorDoctors ? window.DrRosaApi.getDirectorDoctors().catch(() => []) : []
+    ]);
+    cachedRecords = records;
+    renderDirectorKpis({ records, patients, doctors });
   } catch (error) {
     console.error("Director records load error:", error);
     cachedRecords = [];
+    renderDirectorKpis();
   }
 })();

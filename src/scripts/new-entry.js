@@ -27,6 +27,7 @@ const form = document.getElementById("new-entry-form");
 const alertBox = document.querySelector(".form-alert");
 const saveStatusBox = document.getElementById("save-status");
 const submitButton = form?.querySelector("button[type='submit']");
+const entryPatientContext = document.getElementById("entry-patient-context");
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
 const previewElements = {
   name: document.getElementById("preview-name"),
@@ -82,10 +83,11 @@ const procedureCatalog = window.DrRosaProcedureCatalog;
 const currencyUtils = window.DrRosaCurrencyUtils;
 
 const urlParams = new URLSearchParams(window.location.search);
+const patientIdParam = urlParams.get("patientId") || urlParams.get("id");
 const patientParam = urlParams.get("patient");
 const recordParam = urlParams.get("record");
-if (patientParam) {
-  inputs.patient.value = patientParam;
+if (patientParam || patientIdParam) {
+  inputs.patient.value = patientParam || "";
   const newPatientLink = document.getElementById("new-patient-link");
   if (newPatientLink) newPatientLink.style.display = "none";
 }
@@ -163,6 +165,35 @@ function patientName(patient) {
 
 function findPatientByName(name) {
   return patients.find(patient => patientName(patient).toLowerCase() === name.toLowerCase());
+}
+
+function selectedPatient() {
+  if (patientIdParam) {
+    return patients.find(patient => String(patient.id) === String(patientIdParam));
+  }
+  return findPatientByName(inputs.patient.value.trim());
+}
+
+function lockPatientFromQuery() {
+  if (!patientIdParam) return;
+  const patient = selectedPatient();
+  if (!patient) return;
+  const name = patientName(patient);
+  inputs.patient.value = patientName(patient);
+  inputs.patient.readOnly = true;
+  inputs.patient.classList.add("locked-patient-input");
+  if (entryPatientContext) {
+    entryPatientContext.hidden = false;
+    entryPatientContext.innerHTML = `
+      <div>
+        <span>Pacijent</span>
+        <strong>${escapeHtml(name)}</strong>
+        <small>${escapeHtml([patient.phone, patient.email].filter(Boolean).join(" / ") || "Kontakt nije unet")}</small>
+      </div>
+      <a class="secondary-btn" href="patient-dashboard.html?patientId=${encodeURIComponent(patient.id)}">Karton</a>
+    `;
+  }
+  closePatientSuggestions();
 }
 
 function findDoctorByName(name) {
@@ -993,7 +1024,7 @@ function updateTeethSummary() {
 
 function getPatientToothHistory(name) {
   if (!name) return [];
-  const patient = findPatientByName(name);
+  const patient = selectedPatient();
   return window.DrRosaTreatmentHistory.entriesFromRecords(allRecords, {
     patientId: patient?.id,
     patientName: name,
@@ -1045,7 +1076,7 @@ function renderInitialConditionSummary() {
 
 async function loadInitialConditionForCurrentPatient() {
   const patientNameValue = inputs.patient.value.trim();
-  const patient = findPatientByName(patientNameValue);
+  const patient = selectedPatient();
   if (!patient) {
     showAlert("Prvo odaberite postojeceg pacijenta da bi se prikazalo zateceno stanje.", "error", { persist: true, scroll: true });
     return;
@@ -1068,6 +1099,7 @@ inputs.patient.addEventListener("change", () => {
 });
 
 inputs.patient.addEventListener("input", () => {
+  if (inputs.patient.readOnly) return;
   inputs.patient.value = inputs.patient.value.replace(/\s+/g, " ");
   initialConditionEntries = [];
   renderInitialConditionSummary();
@@ -1077,6 +1109,7 @@ inputs.patient.addEventListener("input", () => {
 });
 
 inputs.patient.addEventListener("focus", () => {
+  if (inputs.patient.readOnly) return;
   renderPatientSuggestions();
 });
 
@@ -1181,7 +1214,7 @@ form.addEventListener("submit", async (event) => {
   showAlert("Čuvanje unosa...", "info", { persist: true });
 
   const hasBackendSession = Boolean(window.DrRosaApi.getSession?.());
-  let patient = findPatientByName(patientNameValue);
+  let patient = selectedPatient();
   const doctor = findDoctorByName(inputs.doctor.value);
 
   // If we're authenticated but patient isn't found locally, refresh patient list
@@ -1191,7 +1224,7 @@ form.addEventListener("submit", async (event) => {
     try {
       patients = await window.DrRosaApi.getPatients();
       populatePatientList();
-      patient = findPatientByName(patientNameValue);
+      patient = selectedPatient();
     } catch (e) {
       console.error('Error refreshing patients list:', e);
     }
@@ -1272,6 +1305,7 @@ form.addEventListener("submit", async (event) => {
     patients = loadedPatients;
     doctors = loadedDoctors;
     allRecords = loadedRecords;
+    lockPatientFromQuery();
     populatePatientList();
     populateDoctors();
     populateActivitySelect(inputs.procedureActivity);

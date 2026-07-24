@@ -38,6 +38,7 @@ const exportPdfBtn = document.getElementById("export-pdf-btn");
 const procedureCatalog = window.DrRosaProcedureCatalog;
 
 let allRecords = [];
+let allAppointments = [];
 let currentExportRows = [];
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -71,6 +72,24 @@ function formatCurrencyAmounts(amounts) {
   return entries.length
     ? entries.map(([currency, amount]) => window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(amount, currency) : `${amount.toFixed(2)} ${currency}`).join(" / ")
     : "0.00";
+}
+
+function nextAppointmentForPatient(patient) {
+  const now = Date.now();
+  return allAppointments
+    .filter(appointment => {
+      const appointmentPatientId = appointment.patientId || appointment.patient_id;
+      const appointmentPatientName = appointment.patientName || appointment.patient_name;
+      return patient.patientId
+        ? String(appointmentPatientId) === String(patient.patientId)
+        : appointmentPatientName === patient.patient;
+    })
+    .filter(appointment => {
+      const startsAt = new Date(appointment.startsAt || appointment.starts_at).getTime();
+      const status = fold(appointment.status);
+      return Number.isFinite(startsAt) && startsAt >= now && !["cancelled", "completed", "no_show"].includes(status);
+    })
+    .sort((a, b) => new Date(a.startsAt || a.starts_at) - new Date(b.startsAt || b.starts_at))[0] || null;
 }
 
 function option(value, label = value) {
@@ -177,6 +196,7 @@ function renderRecords(records) {
         patientId: record.patientId,
         patient: record.patient,
         lastVisit: record.lastVisit,
+        lastProcedure: record.procedure || "-",
         visits: 0,
         hasDebt: false,
         totalDebt: {},
@@ -194,6 +214,7 @@ function renderRecords(records) {
     }
     if (new Date(record.lastVisit) > new Date(patientMap[patientKey].lastVisit)) {
       patientMap[patientKey].lastVisit = record.lastVisit;
+      patientMap[patientKey].lastProcedure = record.procedure || "-";
     }
   });
 
@@ -201,6 +222,8 @@ function renderRecords(records) {
   currentExportRows = uniquePatients.map(patient => [
     patient.patient,
     formatDate(patient.lastVisit),
+    formatDate(nextAppointmentForPatient(patient)?.startsAt || nextAppointmentForPatient(patient)?.starts_at),
+    patient.lastProcedure || "-",
     patient.visits,
     "-",
     patient.hasDebt ? "Dugovanje" : "Plaćeno",
@@ -211,17 +234,20 @@ function renderRecords(records) {
   ]);
 
   if (uniquePatients.length === 0) {
-    body.innerHTML = `<tr><td colspan="9" class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="11" class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</td></tr>`;
     return;
   }
 
   uniquePatients.forEach((patient) => {
+    const nextAppointment = nextAppointmentForPatient(patient);
     const paymentStatus = patient.hasDebt ? "Dugovanje" : "Plaćeno";
     const paymentClass = patient.hasDebt ? "status-dugovanje" : "status-plaćeno";
     const row = document.createElement("tr");
     row.append(
       window.DrRosaSecurity.cell(patient.patient),
       window.DrRosaSecurity.cell(formatDate(patient.lastVisit)),
+      window.DrRosaSecurity.cell(formatDate(nextAppointment?.startsAt || nextAppointment?.starts_at)),
+      window.DrRosaSecurity.cell(patient.lastProcedure || "-"),
       window.DrRosaSecurity.cell(patient.visits),
       window.DrRosaSecurity.cell("-"),
       window.DrRosaSecurity.cell(paymentStatus, paymentClass),
@@ -230,13 +256,23 @@ function renderRecords(records) {
       window.DrRosaSecurity.cell(formatCurrencyAmounts(patient.totalDebt))
     );
     const actionCell = document.createElement("td");
+    actionCell.className = "table-actions";
+    const patientQuery = patient.patientId
+      ? `patientId=${encodeURIComponent(patient.patientId)}`
+      : `patient=${encodeURIComponent(patient.patient)}`;
     const link = document.createElement("a");
-    link.href = patient.patientId
-      ? `patient-dashboard.html?patientId=${encodeURIComponent(patient.patientId)}`
-      : `patient-dashboard.html?patient=${encodeURIComponent(patient.patient)}`;
+    link.href = `patient-dashboard.html?${patientQuery}`;
     link.className = "secondary-btn";
     link.textContent = "Otvori";
-    actionCell.appendChild(link);
+    const entryLink = document.createElement("a");
+    entryLink.href = `new-entry.html?${patientQuery}`;
+    entryLink.className = "secondary-btn";
+    entryLink.textContent = "Nova poseta";
+    const scheduleLink = document.createElement("a");
+    scheduleLink.href = `calendar.html?${patientQuery}`;
+    scheduleLink.className = "secondary-btn";
+    scheduleLink.textContent = "Zakazi";
+    actionCell.append(link, entryLink, scheduleLink);
     row.appendChild(actionCell);
     body.appendChild(row);
   });
@@ -284,7 +320,7 @@ function refresh() {
 
 function exportFiltered(format) {
   const title = "Filtrirana evidencija pacijenata";
-  const headers = ["Pacijent", "Poslednja poseta", "Ukupno poseta", "Status", "Placanje", "Valuta", "Smena", "Dugovanje", "Detalji"];
+  const headers = ["Pacijent", "Poslednja poseta", "Sledeci termin", "Poslednja procedura", "Ukupno poseta", "Status", "Placanje", "Valuta", "Smena", "Dugovanje", "Detalji"];
   if (format === "excel") {
     window.DrRosaExport.exportExcel(title, headers, currentExportRows);
     return;
@@ -309,7 +345,10 @@ exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
   await procedureCatalog.loadFromApi?.();
   await populateCodebookFilters();
   try {
-    allRecords = await window.DrRosaApi.getRecords();
+    [allRecords, allAppointments] = await Promise.all([
+      window.DrRosaApi.getRecords(),
+      window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : []
+    ]);
   } catch (error) {
     console.error("Records load error:", error);
     allRecords = [];

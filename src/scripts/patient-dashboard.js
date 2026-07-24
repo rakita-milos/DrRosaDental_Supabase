@@ -111,6 +111,189 @@ function formatDebtTotals(records) {
   return entries.length ? entries.map(([currency, amount]) => formatMoney(amount, currency)).join(" / ") : "0.00";
 }
 
+function patientAge(patient) {
+  const birthDate = patient?.birthDate || patient?.date_of_birth;
+  if (!birthDate) return "-";
+  const born = new Date(birthDate);
+  if (Number.isNaN(born.getTime())) return "-";
+  const today = new Date();
+  let age = today.getFullYear() - born.getFullYear();
+  const monthDelta = today.getMonth() - born.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < born.getDate())) age -= 1;
+  return age > 0 ? `${age} god.` : "-";
+}
+
+function latestRecord(records) {
+  return [...records]
+    .filter(record => record.lastVisit)
+    .sort((a, b) => String(b.lastVisit).localeCompare(String(a.lastVisit)))[0] || null;
+}
+
+function upcomingForPatient(appointments, patientId) {
+  const now = Date.now();
+  return appointments
+    .filter(appointment => String(appointment.patientId || appointment.patient_id) === String(patientId))
+    .filter(appointment => {
+      const startsAt = new Date(appointment.startsAt || appointment.starts_at).getTime();
+      const status = String(appointment.status || "").toLowerCase();
+      return Number.isFinite(startsAt) && startsAt >= now && !["cancelled", "completed", "no_show"].includes(status);
+    })
+    .sort((a, b) => new Date(a.startsAt || a.starts_at) - new Date(b.startsAt || b.starts_at))[0] || null;
+}
+
+function renderSummaryLine(label, value, tone = "") {
+  return `<div class="patient-summary-line ${tone}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || "-")}</strong></div>`;
+}
+
+function renderRiskList(patient, profile = {}) {
+  const risks = [
+    profile.allergies || patient?.allergies ? ["Alergije", profile.allergies || patient.allergies, "danger"] : null,
+    profile.contraindications ? ["Kontraindikacije", profile.contraindications, "danger"] : null,
+    profile.anesthesiaWarning ? ["Anestezija", profile.anesthesiaWarning, "warning"] : null,
+    profile.diabetes ? ["Dijabetes", "Da", "warning"] : null,
+    profile.heartCondition ? ["Srce", "Da", "warning"] : null,
+    profile.highBloodPressure ? ["Pritisak", "Da", "warning"] : null
+  ].filter(Boolean);
+
+  return risks.length
+    ? risks.map(([label, value, tone]) => `<span class="patient-risk-chip ${tone}"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</span>`).join("")
+    : `<p class="muted-text">Nema oznacenih rizika.</p>`;
+}
+
+function renderPatientOverview(patient, records, appointments, profile = {}) {
+  const dueRecords = records.filter(isDebt);
+  const last = latestRecord(records);
+  const next = patient?.id ? upcomingForPatient(appointments, patient.id) : null;
+  const nextStart = next ? formatDate(next.startsAt || next.starts_at) : "Nema zakazanog termina";
+  const totalDebt = formatDebtTotals(dueRecords);
+  overviewRecords = records;
+  overviewNextAppointment = next;
+  overviewPatientId = patient?.id || null;
+
+  if (patientWorkspace) patientWorkspace.style.display = "grid";
+  if (contactSummary) {
+    contactSummary.innerHTML = [
+      renderSummaryLine("Telefon", patient.phone),
+      renderSummaryLine("Email", patient.email),
+      renderSummaryLine("Godine", patientAge(patient)),
+      renderSummaryLine("Hitno", patient.emergencyContact || patient.emergency_contact)
+    ].join("");
+  }
+  if (riskSummary) riskSummary.innerHTML = renderRiskList(patient, profile);
+  if (financeSummary) {
+    financeSummary.innerHTML = [
+      renderSummaryLine("Dug", totalDebt, dueRecords.length ? "danger" : "success"),
+      renderSummaryLine("Zapisa sa dugom", String(dueRecords.length)),
+      renderSummaryLine("Zadnja poseta", formatDate(last?.lastVisit)),
+      renderSummaryLine("Sledeci termin", nextStart)
+    ].join("");
+  }
+  if (activityTimeline) renderPatientTimeline(records, next, patient?.id);
+}
+
+function renderPatientTimeline(records, nextAppointment, patientId) {
+  const visitItems = [...records]
+    .sort((a, b) => String(b.lastVisit || "").localeCompare(String(a.lastVisit || "")))
+    .slice(0, 8)
+    .map(record => ({
+      date: formatDate(record.lastVisit),
+      sortKey: record.lastVisit || "",
+      title: record.procedure || "Poseta",
+      meta: [record.doctor, record.status, record.paymentStatus].filter(Boolean).join(" / "),
+      amount: `${formatMoney(recordVisitCost(record), record.currency)}${Number(record.amountDue || 0) > 0 ? `, dug ${formatMoney(record.amountDue, record.currency)}` : ""}`,
+      href: recordDetailsUrl(record)
+    }));
+
+  const documentItems = loadedDocuments.slice(0, 4).map(document => ({
+    date: formatDate(document.documentDate || document.createdAt),
+    sortKey: document.documentDate || document.createdAt || "",
+    title: document.title || "Dokument",
+    meta: `Dokument / ${documentTypeLabel(document.documentType)}`,
+    amount: [imagingModalityLabel(document.imagingModality), document.toothNumber].filter(Boolean).join(" / "),
+    href: "#documents-card",
+    group: "documents"
+  }));
+
+  const noteItems = loadedClinicalNotes.slice(0, 4).map(note => ({
+    date: formatDate(note.createdAt),
+    sortKey: note.createdAt || "",
+    title: note.title || "Klinicka beleska",
+    meta: note.signedAt ? "Potpisana beleska" : "Beleska ceka potpis",
+    amount: note.signedBy || "",
+    href: "#clinical-notes-card",
+    group: "clinical"
+  }));
+
+  const planItems = loadedTreatmentPlans.slice(0, 4).map(plan => ({
+    date: formatDate(plan.createdAt || plan.updatedAt),
+    sortKey: plan.createdAt || plan.updatedAt || "",
+    title: plan.title || "Plan terapije",
+    meta: `Plan / ${labelFromMap(statusLabels, plan.status)}`,
+    amount: formatMoney(plan.total, plan.currency),
+    href: "#plans-card",
+    group: "finance"
+  }));
+
+  const invoiceItems = loadedInvoices.slice(0, 4).map(invoice => ({
+    date: formatDate(invoice.issueDate || invoice.createdAt),
+    sortKey: invoice.issueDate || invoice.createdAt || "",
+    title: invoice.invoiceNumber || "Racun",
+    meta: `Racun / ${labelFromMap(statusLabels, invoice.status)}`,
+    amount: `${formatMoney(invoice.total, invoice.currency)} / placeno ${formatMoney(invoice.amountPaid, invoice.currency)}`,
+    href: "#invoices-card",
+    group: "finance"
+  }));
+
+  const items = [];
+  if (nextAppointment) {
+    items.push({
+      date: formatDate(nextAppointment.startsAt || nextAppointment.starts_at),
+      sortKey: nextAppointment.startsAt || nextAppointment.starts_at || "",
+      title: nextAppointment.procedureName || nextAppointment.procedure_name || "Zakazan termin",
+      meta: "Sledeci termin",
+      amount: nextAppointment.doctorName || nextAppointment.doctor_name || "",
+      href: patientId ? `calendar.html?patientId=${encodeURIComponent(patientId)}` : "calendar.html"
+    });
+  }
+  items.push(...visitItems, ...documentItems, ...noteItems, ...planItems, ...invoiceItems);
+
+  items.sort((a, b) => String(b.sortKey || "").localeCompare(String(a.sortKey || "")));
+  activityTimeline.innerHTML = items.length ? items.slice(0, 12).map(item => `
+    <article class="patient-timeline-item">
+      <time>${escapeHtml(item.date)}</time>
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <span>${escapeHtml(item.meta || "-")}</span>
+        <small>${escapeHtml(item.amount || "")}</small>
+      </div>
+      ${item.group ? `<button class="secondary-btn timeline-group-btn" type="button" data-patient-group="${escapeHtml(item.group)}">Otvori</button>` : `<a class="secondary-btn" href="${escapeHtml(item.href)}">Otvori</a>`}
+    </article>
+  `).join("") : `<p class="empty-row">Nema aktivnosti za prikaz.</p>`;
+}
+
+function refreshPatientTimeline() {
+  if (!activityTimeline) return;
+  renderPatientTimeline(overviewRecords, overviewNextAppointment, overviewPatientId);
+}
+
+function activatePatientTab(tabId) {
+  const tab = document.querySelector(`[data-patient-tab="${tabId}"]`);
+  if (!tab) return;
+  document.querySelectorAll(".patient-tab").forEach(item => item.classList.toggle("active", item === tab));
+  document.querySelectorAll(".patient-tab-panel").forEach(panel => panel.classList.toggle("active", panel.id === tabId));
+  document.getElementById(tabId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function activatePatientGroup(groupName) {
+  document.querySelectorAll(".patient-group-tab").forEach(tab => {
+    tab.classList.toggle("active", tab.dataset.patientGroup === groupName);
+  });
+  document.querySelectorAll(".patient-tab-panel").forEach(panel => {
+    panel.classList.toggle("active", panel.dataset.patientPanelGroup === groupName);
+  });
+  clinicalSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 const queryPatientId = getQueryParam("patientId") || getQueryParam("id");
 const legacyPatientName = getQueryParam("patient");
 const title = document.getElementById("patient-name-title");
@@ -121,6 +304,13 @@ const recordsBody = document.getElementById("patient-records-body");
 const treatmentList = document.getElementById("treatment-list");
 const editPatientLink = document.getElementById("edit-patient-link");
 const deletePatientBtn = document.getElementById("delete-patient-btn");
+const schedulePatientLink = document.getElementById("schedule-patient-link");
+const quickDocumentTabBtn = document.getElementById("quick-document-tab-btn");
+const patientWorkspace = document.getElementById("patient-workspace");
+const contactSummary = document.getElementById("patient-contact-summary");
+const riskSummary = document.getElementById("patient-risk-summary");
+const financeSummary = document.getElementById("patient-finance-summary");
+const activityTimeline = document.getElementById("patient-activity-timeline");
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
 const clinicalSection = document.getElementById("patient-clinical-section");
 const patientAlerts = document.getElementById("patient-alerts");
@@ -135,6 +325,11 @@ let loadedClinicalChartEntries = [];
 let initialConditionEditor;
 let loadedClinicalNotes = [];
 let loadedPatientConsents = [];
+let loadedTreatmentPlans = [];
+let loadedInvoices = [];
+let overviewRecords = [];
+let overviewNextAppointment = null;
+let overviewPatientId = null;
 let currencyItems = [];
 let imagingObjectUrl = "";
 const imagingState = {
@@ -372,6 +567,7 @@ function imagingModalityLabel(value) {
 
 function renderDocuments(documents) {
   loadedDocuments = documents;
+  refreshPatientTimeline();
   documentsBody.innerHTML = documents.length ? documents.map(document => `
     <tr>
       <td>${escapeHtml(document.title)}</td>
@@ -771,6 +967,8 @@ function renderPlanItemsDraft() {
 }
 
 function renderPlans(plans) {
+  loadedTreatmentPlans = plans;
+  refreshPatientTimeline();
   document.getElementById("treatment-plans-body").innerHTML = plans.length ? plans.map(plan => `
     <tr>
       <td>${escapeHtml(plan.title)}<br><small>${plan.items.length} stavki</small></td>
@@ -846,6 +1044,8 @@ function clearInvoiceItemForm() {
 }
 
 function renderInvoices(invoices) {
+  loadedInvoices = invoices;
+  refreshPatientTimeline();
   document.getElementById("invoices-body").innerHTML = invoices.length ? invoices.map(invoice => `
     <tr>
       <td>${escapeHtml(invoice.invoiceNumber)}</td>
@@ -957,6 +1157,7 @@ function renderClinicalNoteTemplates(templates) {
 
 function renderClinicalNotes(notes) {
   loadedClinicalNotes = notes;
+  refreshPatientTimeline();
   document.getElementById("clinical-notes-body").innerHTML = notes.length ? notes.map(note => `
     <tr>
       <td>${escapeHtml(note.title)}<br><small>${escapeHtml(String(note.body || "").slice(0, 120))}</small></td>
@@ -1454,23 +1655,37 @@ async function initializeAdvancedWorkflows(patientId) {
   });
 }
 
-async function initializeClinicalSection(patientDetails, patientRecords) {
+async function initializeClinicalSection(patientDetails, patientRecords, appointments = []) {
   if (!patientDetails?.id) return;
   clinicalSection.style.display = "block";
   fillVisitOptions(patientRecords);
   const patientId = patientDetails.id;
   const profile = await window.DrRosaApi.getMedicalProfile(patientId);
   fillMedicalProfile(profile);
+  renderPatientOverview(patientDetails, patientRecords, appointments, profile);
   await loadDocuments(patientId);
   await initializeAdvancedWorkflows(patientId);
   await initializeClinicalWorkflows(patientId);
 
-  document.querySelectorAll(".patient-tab").forEach(tab => {
+  document.querySelectorAll(".patient-tabs-legacy .patient-tab").forEach(tab => {
     tab.addEventListener("click", () => {
-      document.querySelectorAll(".patient-tab").forEach(item => item.classList.toggle("active", item === tab));
+      document.querySelectorAll(".patient-tabs-legacy .patient-tab").forEach(item => item.classList.toggle("active", item === tab));
       document.querySelectorAll(".patient-tab-panel").forEach(panel => panel.classList.toggle("active", panel.id === tab.dataset.patientTab));
     });
   });
+  document.querySelectorAll(".patient-group-tab").forEach(tab => {
+    tab.addEventListener("click", () => activatePatientGroup(tab.dataset.patientGroup));
+  });
+  if (quickDocumentTabBtn) {
+    quickDocumentTabBtn.addEventListener("click", () => activatePatientGroup("documents"));
+  }
+  if (activityTimeline) {
+    activityTimeline.addEventListener("click", event => {
+      const button = event.target.closest(".timeline-group-btn");
+      if (!button) return;
+      activatePatientGroup(button.dataset.patientGroup);
+    });
+  }
 
   medicalForm.addEventListener("submit", async event => {
     event.preventDefault();
@@ -1583,17 +1798,20 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
 
   let records = [];
   let patients = [];
+  let appointments = [];
   let patientDetails = null;
   try {
     if (queryPatientId) {
-      [records, patientDetails] = await Promise.all([
+      [records, patientDetails, appointments] = await Promise.all([
         window.DrRosaApi.getRecords(),
-        window.DrRosaApi.getPatient(queryPatientId)
+        window.DrRosaApi.getPatient(queryPatientId),
+        window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : []
       ]);
     } else {
-      [records, patients] = await Promise.all([
+      [records, patients, appointments] = await Promise.all([
         window.DrRosaApi.getRecords(),
-        window.DrRosaApi.getPatients()
+        window.DrRosaApi.getPatients(),
+        window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : []
       ]);
       patientDetails = patients.find(patient => patientFullName(patient) === legacyPatientName);
     }
@@ -1611,7 +1829,14 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
   }
 
   title.textContent = selectedPatientName;
-  document.getElementById("new-entry-for-patient").href = `new-entry.html?patient=${encodeURIComponent(selectedPatientName)}`;
+  document.getElementById("new-entry-for-patient").href = selectedPatientId
+    ? `new-entry.html?patientId=${encodeURIComponent(selectedPatientId)}`
+    : `new-entry.html?patient=${encodeURIComponent(selectedPatientName)}`;
+  if (schedulePatientLink) {
+    schedulePatientLink.href = selectedPatientId
+      ? `calendar.html?patientId=${encodeURIComponent(selectedPatientId)}`
+      : `calendar.html?patient=${encodeURIComponent(selectedPatientName)}`;
+  }
 
   const patientRecords = selectedPatientId
     ? records.filter(record => String(record.patientId) === String(selectedPatientId))
@@ -1620,16 +1845,16 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
   const totalVisits = patientRecords.length;
   const dueRecords = patientRecords.filter(isDebt);
   const lastVisit = patientRecords.map(record => record.lastVisit).filter(Boolean).sort().pop();
+  const nextAppointment = selectedPatientId ? upcomingForPatient(appointments, selectedPatientId) : null;
 
   summaryCards.innerHTML = `
     <div class="hero-stats-card"><p class="eyebrow">Ukupno poseta</p><span>${totalVisits}</span></div>
     <div class="hero-stats-card"><p class="eyebrow">Zadnja poseta</p><span>${formatDate(lastVisit)}</span></div>
-    <div class="hero-stats-card"><p class="eyebrow">Dugovanja</p><span>${dueRecords.length}</span></div>
+    <div class="hero-stats-card"><p class="eyebrow">Sledeci termin</p><span>${nextAppointment ? formatDate(nextAppointment.startsAt || nextAppointment.starts_at) : "-"}</span></div>
     <div class="hero-stats-card"><p class="eyebrow">Iznos duga</p><span>${formatDebtTotals(dueRecords)}</span></div>
   `;
 
   if (patientDetails) {
-    patientInfoSection.style.display = "block";
     editPatientLink.href = `new-patient.html?patient=${encodeURIComponent(patientDetails.id)}`;
     deletePatientBtn.addEventListener("click", async () => {
       const confirmMessage = patientRecords.length > 0
@@ -1653,8 +1878,9 @@ async function initializeClinicalSection(patientDetails, patientRecords) {
       <p><strong>Alergije:</strong> ${escapeHtml(patientDetails.allergies || "-")}</p>
       <p><strong>Medicinska istorija:</strong> ${escapeHtml(patientDetails.medicalHistory || patientDetails.medical_history || "-")}</p>
     `;
+    renderPatientOverview(patientDetails, patientRecords, appointments);
     try {
-      await initializeClinicalSection(patientDetails, patientRecords);
+      await initializeClinicalSection(patientDetails, patientRecords, appointments);
     } catch (error) {
       console.error("Clinical section load error:", error);
       setMessage("medical-profile-message", "Karton trenutno nije učitan.", true);

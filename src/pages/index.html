@@ -34,8 +34,8 @@
       <section class="hero-card dashboard-hero">
         <div>
           <p class="eyebrow">Pacijent evidencija</p>
-          <h2>Moderna klinika za stomatologiju</h2>
-          <p>Pregledajte glavne podatke, termine i radne nalaze u jednom mjestu. Dizajniran s bojama logoa Dr Rosa.</p>
+          <h2>Danas u ordinaciji</h2>
+          <p>Pregled termina, pacijenata, dugovanja i radnih nalaza za operativni dan.</p>
         </div>
         <div class="hero-stats">
           <div>
@@ -47,6 +47,32 @@
             <p>Zakazanih termina</p>
           </div>
         </div>
+      </section>
+
+      <section class="dashboard-workbar" aria-label="Brze akcije i status dana">
+        <a class="dashboard-work-action primary-btn" href="calendar.html">Kalendar</a>
+        <a class="dashboard-work-action secondary-btn" href="new-entry.html">Nova poseta</a>
+        <a class="dashboard-work-action secondary-btn" href="new-patient.html">Novi pacijent</a>
+        <a class="dashboard-work-action secondary-btn" href="all-records.html?filter=debtors">Dugovanja</a>
+      </section>
+
+      <section class="dashboard-today-strip" aria-label="Status dana">
+        <article>
+          <span>Danas termina</span>
+          <strong id="today-appointments-count">0</strong>
+        </article>
+        <article>
+          <span>Danas zavrseno</span>
+          <strong id="today-completed-count">0</strong>
+        </article>
+        <article>
+          <span>Danas dugovanja</span>
+          <strong id="today-debt-count">0</strong>
+        </article>
+        <article>
+          <span>Sledeci termin</span>
+          <strong id="next-appointment-time">-</strong>
+        </article>
       </section>
 
       <section class="cards-grid" aria-label="Ključni pokazatelji">

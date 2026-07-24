@@ -76,12 +76,25 @@ function renderDashboardStats({ patients, appointments, records }) {
   const patientCount = patients.length;
   const appointmentCount = upcomingAppointments(appointments).length;
   const procedures = procedureCount(records);
+  const todaysAppointments = appointments.filter(appointment => isToday(appointment.startsAt || appointment.starts_at));
+  const completedToday = records.filter(record => isToday(record.lastVisit) && String(record.status || "").toLowerCase().includes("zavr")).length;
+  const debtToday = records.filter(record => isToday(record.lastVisit) && paymentIsDebt(record)).length;
+  const nextAppointment = upcomingAppointments(appointments)
+    .sort((a, b) => new Date(a.startsAt || a.starts_at) - new Date(b.startsAt || b.starts_at))[0];
 
   setCount("hero-patients-count", patientCount);
   setCount("patients-count", patientCount);
   setCount("hero-appointments-count", appointmentCount);
   setCount("appointments-count", appointmentCount);
   setCount("procedures-count", procedures);
+  setCount("today-appointments-count", todaysAppointments.length);
+  setCount("today-completed-count", completedToday);
+  setCount("today-debt-count", debtToday);
+  const nextAppointmentTime = document.getElementById("next-appointment-time");
+  if (nextAppointmentTime) {
+    const startsAt = nextAppointment?.startsAt || nextAppointment?.starts_at;
+    nextAppointmentTime.textContent = startsAt ? formatDate(startsAt) : "-";
+  }
 }
 
 function renderRecords(records) {
