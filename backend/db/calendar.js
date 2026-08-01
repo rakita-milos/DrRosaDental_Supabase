@@ -374,20 +374,39 @@ function createPostgresCalendarRepository(pool) {
 
     async startGoogleSyncJob({ userId = null } = {}) {
       return withTransaction(pool, async client => {
+        await execute(client, `
+          UPDATE google_calendar_sync_jobs
+          SET status = 'failed', finished_at = now(), error_message = 'Google sync lock expired before completion.'
+          WHERE status = 'running' AND started_at <= now() - interval '15 minutes'
+        `);
         const running = await queryOne(client, `
           SELECT id, started_at
           FROM google_calendar_sync_jobs
-          WHERE status = 'running' AND started_at > now() - interval '15 minutes'
+          WHERE status = 'running'
           ORDER BY started_at DESC
           LIMIT 1
           FOR UPDATE
         `);
         if (running) return { alreadyRunning: true, job: running };
-        const id = await insertReturningId(client, `
-          INSERT INTO google_calendar_sync_jobs (status, started_by)
-          VALUES ('running', ?)
-        `, [userId]);
-        return { alreadyRunning: false, job: { id, started_by: userId } };
+        try {
+          const id = await insertReturningId(client, `
+            INSERT INTO google_calendar_sync_jobs (status, started_by)
+            VALUES ('running', ?)
+          `, [userId]);
+          return { alreadyRunning: false, job: { id, started_by: userId } };
+        } catch (error) {
+          if (error?.code === '23505') {
+            const job = await queryOne(client, `
+              SELECT id, started_at
+              FROM google_calendar_sync_jobs
+              WHERE status = 'running'
+              ORDER BY started_at DESC
+              LIMIT 1
+            `);
+            return { alreadyRunning: true, job };
+          }
+          throw error;
+        }
       });
     },
 

@@ -58,8 +58,7 @@ async function authenticate(page, role = "staff") {
     data: credentials
   });
   if (!response.ok()) {
-    await authenticateWithSignedToken(page, role);
-    return;
+    throw new Error(`Login setup failed for ${role}: ${response.status()}`);
   }
   const session = await response.json();
   await page.evaluate(({ session }) => {
@@ -94,4 +93,4 @@ async function authenticateWithSignedToken(page, role = "staff") {
   }, { credentials });
 }
 
-module.exports = { authenticate, credentialsFor, tokenFor, signTestToken };
+module.exports = { authenticate, authenticateWithSignedToken, credentialsFor, tokenFor, signTestToken };

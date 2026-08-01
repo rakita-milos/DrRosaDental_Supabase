@@ -233,6 +233,12 @@ const publicBookingWriteLimiter = createRateLimiter({
   message: 'Too many booking requests. Try again later.'
 });
 
+const googleSyncLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.GOOGLE_SYNC_RATE_LIMIT_MAX || 8),
+  message: 'Too many Google Calendar sync requests. Try again later.'
+});
+
 const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '15m';
 const REFRESH_TOKEN_DAYS = Number(process.env.REFRESH_TOKEN_DAYS || 14);
 const LOCKOUT_ATTEMPTS = Number(process.env.LOCKOUT_ATTEMPTS || 5);
@@ -1163,6 +1169,15 @@ function appointmentDurationMinutes(startsAt, endsAt) {
 
 function appointmentConflict({ appointmentId = null, doctorId, chairId, startsAt, endsAt }) {
   return calendarRepo.appointmentConflict({ appointmentId, doctorId, chairId, startsAt, endsAt });
+}
+
+function isAppointmentOverlapConstraintError(error) {
+  return error?.code === '23P01'
+    && ['appointments_doctor_no_overlap', 'appointments_chair_no_overlap', 'appointments_runtime_no_overlap'].includes(error.constraint);
+}
+
+function sendAppointmentConflictError(res) {
+  return res.status(409).json({ error: 'Termin se preklapa sa postojecim zakazivanjem.' });
 }
 
 function serializeAppointment(row) {
@@ -2820,6 +2835,7 @@ app.post('/api/appointments', authenticateToken, requirePermission('calendar:wri
     processCalendarSyncRed({ limit: 5 });
     res.status(201).json(serializeAppointment(await appointmentById(appointmentId)));
   } catch (error) {
+    if (isAppointmentOverlapConstraintError(error)) return sendAppointmentConflictError(res);
     console.error('Create appointment error:', error);
     res.status(500).json({ error: 'Server error' });
   }
@@ -2877,6 +2893,7 @@ app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:
     processCalendarSyncRed({ limit: 5 });
     res.json(serializeAppointment(await appointmentById(current.id)));
   } catch (error) {
+    if (isAppointmentOverlapConstraintError(error)) return sendAppointmentConflictError(res);
     console.error('Update appointment error:', error);
     res.status(500).json({ error: 'Server error' });
   }
@@ -4248,8 +4265,8 @@ async function handleManualGooglePull(req, res) {
   }
 }
 
-app.post('/api/director/calendar-sync/pull-google', authenticateToken, requirePermission('calendar:write'), handleManualGooglePull);
-app.post('/api/calendar-sync/pull-google', authenticateToken, requirePermission('calendar:write'), handleManualGooglePull);
+app.post('/api/director/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), handleManualGooglePull);
+app.post('/api/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), handleManualGooglePull);
 
 app.get('/api/calendar-sync/google/status', authenticateToken, requirePermission('calendar:read'), async (_req, res) => {
   try {
@@ -4272,9 +4289,9 @@ app.get('/api/notifications', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/calendar-sync/daily-google-pull', async (req, res) => {
+app.post('/api/calendar-sync/daily-google-pull', googleSyncLimiter, async (req, res) => {
   const secret = process.env.GOOGLE_CALENDAR_CRON_SECRET;
-  const provided = req.headers['x-cron-secret'] || req.query.secret;
+  const provided = req.headers['x-cron-secret'];
   if (!secret || provided !== secret) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const stats = await runGooglePullWithLock({
