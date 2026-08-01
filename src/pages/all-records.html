@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sve evidencije | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css" />
+  <link rel="stylesheet" href="../styles/styles.css?v=responsive-20260727" />
 </head>
 <body>
   <div class="app-shell">
@@ -84,6 +84,11 @@
               <option value="Delimično">Delimično</option>
               <option value="debtors">Dužnici</option>
             </select>
+            <select id="appointment-filter">
+              <option value="">Svi termini</option>
+              <option value="has_upcoming">Ima termin</option>
+              <option value="no_upcoming">Bez sledeceg termina</option>
+            </select>
           </div>
           <div class="export-actions records-export-actions">
             <button id="export-excel-btn" class="secondary-btn" type="button">Excel</button>
@@ -92,7 +97,7 @@
         </div>
 
         <div class="table-wrap">
-          <table>
+          <table class="records-table">
             <thead>
               <tr>
                 <th>Pacijent</th>
@@ -100,12 +105,9 @@
                 <th>Sledeci termin</th>
                 <th>Poslednja procedura</th>
                 <th>Ukupno poseta</th>
-                <th>Status</th>
                 <th>Plaćanje</th>
-                <th>Valuta</th>
-                <th>Smena</th>
                 <th>Dugovanje</th>
-                <th>Detalji</th>
+                <th>Akcije</th>
               </tr>
             </thead>
             <tbody id="all-records-body"></tbody>
@@ -116,10 +118,10 @@
   </div>
 
   <script src="../scripts/api.js"></script>
-  <script src="../scripts/date-utils.js?v=picker-format-20260708"></script>
+  <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/export-utils.js"></script>
   <script src="../scripts/procedure-catalog.js"></script>
-  <script src="../scripts/all-records.js"></script>
+  <script src="../scripts/all-records.js?v=records-links-20260727"></script>
 </body>
 </html>

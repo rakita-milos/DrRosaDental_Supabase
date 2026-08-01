@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Novi unos | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css" />
+  <link rel="stylesheet" href="../styles/styles.css?v=responsive-20260727" />
 </head>
 <body>
   <div class="app-shell">
@@ -31,7 +31,13 @@
     </header>
 
     <main>
-      <section class="form-card entry-basics-card">
+      <nav class="entry-step-strip" aria-label="Tok unosa posete">
+        <a href="#entry-basics-section">1. Pacijent</a>
+        <a href="#entry-work-section">2. Rad</a>
+        <a href="#entry-details-section">3. Naplata</a>
+        <a href="#entry-summary-section">4. Pregled</a>
+      </nav>
+      <section class="form-card entry-basics-card" id="entry-basics-section">
         <div class="section-header">
           <div>
             <p class="eyebrow">Osnovni podaci</p>
@@ -70,11 +76,11 @@
         </div>
       </section>
 
-      <section class="teeth-section">
+      <section class="teeth-section" id="entry-work-section">
         <div class="section-header">
           <div>
-            <p class="eyebrow">Zubi</p>
-            <h2>Mapa zuba (FDI brojevanje)</h2>
+            <p class="eyebrow">Rad i postupak</p>
+            <h2>Mapa zuba i tretmani</h2>
           </div>
           <button class="secondary-btn" id="show-initial-condition" type="button">Zateceno stanje</button>
         </div>
@@ -192,29 +198,36 @@
       </section>
 
       <div class="form-page">
-      <section class="form-card">
+      <section class="form-card entry-details-card" id="entry-details-section">
         <div class="section-header">
           <div>
-            <p class="eyebrow">Forma</p>
-            <h2>Dodaj novi pregled za pacijenta</h2>
+            <p class="eyebrow">Detalji posete</p>
+            <h2>Status, postupak bez zuba i naplata</h2>
           </div>
         </div>
 
 
         <form id="new-entry-form">
           <div class="input-grid">
-            <label>
-              Osnovna delatnost
-              <select id="procedure-activity" name="procedureActivity">
-                <option value="">Odaberi delatnost</option>
-              </select>
-            </label>
-            <label>
-              Postupak
-              <select id="procedure" name="procedure" disabled>
-                <option value="">Odaberi postupak</option>
-              </select>
-            </label>
+            <div class="entry-form-block procedure-fallback full-width">
+              <div class="entry-form-block-header">
+                <span>Postupak bez mape zuba</span>
+              </div>
+              <div class="input-grid">
+                <label>
+                  Osnovna delatnost
+                  <select id="procedure-activity" name="procedureActivity">
+                    <option value="">Odaberi delatnost</option>
+                  </select>
+                </label>
+                <label>
+                  Postupak
+                  <select id="procedure" name="procedure" disabled>
+                    <option value="">Odaberi postupak</option>
+                  </select>
+                </label>
+              </div>
+            </div>
             <label>
               Status
               <select id="status" name="status" required>
@@ -263,8 +276,9 @@
               <div id="payment-parts-list" class="payment-parts-list"></div>
               <div class="payment-summary-strip">
                 <span>Ukupno za naplatu: <strong id="payment-total-display">0.00 EUR</strong></span>
-                <span>Placeno: <strong id="payment-paid-display">0.00 EUR</strong></span>
+                <span>Plaćeno: <strong id="payment-paid-display">0.00 EUR</strong></span>
                 <span>Dug: <strong id="payment-debt-display">0.00 EUR</strong></span>
+                <span>Status: <strong id="payment-status-display">Plaćeno</strong></span>
               </div>
             </div>
             <label class="full-width">
@@ -282,7 +296,7 @@
         </form>
       </section>
 
-      <aside class="summary-panel">
+      <aside class="summary-panel" id="entry-summary-section">
         <div class="section-header">
           <div>
             <p class="eyebrow">Pregled</p>
@@ -321,11 +335,11 @@
   </div>
 
   <script src="../scripts/api.js"></script>
-  <script src="../scripts/date-utils.js?v=picker-format-20260708"></script>
+  <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/procedure-catalog.js"></script>
   <script src="../scripts/tooth-condition-editor.js"></script>
   <script src="../scripts/treatment-history.js"></script>
-  <script src="../scripts/new-entry.js?v=split-payments-20260704b"></script>
+  <script src="../scripts/new-entry.js?v=entry-redirect-20260726"></script>
 </body>
 </html>

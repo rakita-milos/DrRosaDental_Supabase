@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Karton pacijenta | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css" />
+  <link rel="stylesheet" href="../styles/styles.css?v=responsive-20260727" />
 </head>
 <body>
   <div class="app-shell">
@@ -65,6 +65,33 @@
           </div>
         </aside>
         <section class="patient-main-panel">
+          <div id="patient-upcoming-panel" class="patient-focus-panel"></div>
+          <div class="patient-focus-grid">
+            <section class="patient-focus-panel">
+              <div class="patient-focus-header">
+                <div>
+                  <p class="eyebrow">Dokumenti</p>
+                  <h2>Brzi dokumenti</h2>
+                </div>
+                <button id="quick-upload-document-btn" class="secondary-btn" type="button">Upload</button>
+              </div>
+              <div id="patient-quick-documents"></div>
+            </section>
+            <section class="patient-focus-panel">
+              <div class="patient-focus-header">
+                <div>
+                  <p class="eyebrow">Interno</p>
+                  <h2>Komentari osoblja</h2>
+                </div>
+              </div>
+              <form id="quick-internal-comment-form" class="quick-internal-comment-form">
+                <textarea id="quick-internal-comment" rows="3" placeholder="Kratka interna napomena za tim"></textarea>
+                <button class="primary-btn" type="submit">Dodaj</button>
+              </form>
+              <p id="quick-internal-comment-message" class="form-alert" role="status"></p>
+              <div id="patient-internal-comments"></div>
+            </section>
+          </div>
           <div class="section-header">
             <div>
               <p class="eyebrow">Pregled aktivnosti</p>
@@ -74,18 +101,6 @@
           <div id="patient-activity-timeline" class="patient-timeline"></div>
         </section>
       </section>
-
-      <section class="list-section legacy-patient-section" id="patient-info-section" hidden>
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Podaci o pacijentu</p>
-            <h2>Kontakt i medicinski podaci</h2>
-          </div>
-        </div>
-        <div class="info-card" id="patient-info"></div>
-      </section>
-
-      <section class="patient-alerts legacy-patient-section" id="patient-alerts" aria-live="polite" hidden></section>
 
       <section class="list-section patient-tabs-section" id="patient-clinical-section" style="display:none;">
         <div class="section-header">
@@ -101,19 +116,6 @@
           <button class="patient-group-tab" type="button" data-patient-group="finance">Finansije</button>
           <button class="patient-group-tab" type="button" data-patient-group="admin">Administracija</button>
         </div>
-        <div class="patient-tabs patient-tabs-legacy" role="tablist" aria-label="Karton pacijenta">
-          <button class="patient-tab active" type="button" data-patient-tab="medical-card">Karton</button>
-          <button class="patient-tab" type="button" data-patient-tab="initial-condition-card">Zateceno stanje</button>
-          <button class="patient-tab" type="button" data-patient-tab="clinical-chart-card">Zubni status</button>
-          <button class="patient-tab" type="button" data-patient-tab="clinical-notes-card">Klinicke beleske</button>
-          <button class="patient-tab" type="button" data-patient-tab="consents-card">Saglasnosti</button>
-          <button class="patient-tab" type="button" data-patient-tab="documents-card">Dokumenti</button>
-          <button class="patient-tab" type="button" data-patient-tab="plans-card">Plan terapije</button>
-          <button class="patient-tab" type="button" data-patient-tab="perio-card">Parodontologija</button>
-          <button class="patient-tab" type="button" data-patient-tab="invoices-card">Računi</button>
-          <button class="patient-tab" type="button" data-patient-tab="insurance-card">Osiguranje</button>
-        </div>
-
         <div class="patient-tab-panel active" id="medical-card" data-patient-panel-group="clinical">
           <form id="medical-profile-form" class="admin-codebook-form">
             <div class="input-grid">
@@ -231,7 +233,7 @@
           <div class="table-wrap"><table><thead><tr><th>Zub</th><th>Kodovi</th><th>Status</th><th>Dijagnoza</th><th>Akcije</th></tr></thead><tbody id="clinical-chart-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel active" id="clinical-notes-card" data-patient-panel-group="clinical">
+        <div class="patient-tab-panel" id="clinical-notes-card" data-patient-panel-group="clinical">
           <form id="clinical-note-form" class="admin-codebook-form">
             <input id="clinical-note-id" type="hidden" />
             <div class="input-grid">
@@ -257,7 +259,7 @@
           <div class="table-wrap"><table><thead><tr><th>Beleška</th><th>Potpis</th><th>Datum</th><th>Akcije</th></tr></thead><tbody id="clinical-notes-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel active" id="consents-card" data-patient-panel-group="clinical">
+        <div class="patient-tab-panel" id="consents-card" data-patient-panel-group="clinical">
           <form id="patient-consent-form" class="admin-codebook-form">
             <input id="consent-id" type="hidden" />
             <div class="input-grid">
@@ -579,52 +581,14 @@
         </div>
       </section>
 
-      <section class="list-section legacy-patient-section" hidden>
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Pregled</p>
-            <h2>Sve zapise pacijenta</h2>
-          </div>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Datum</th>
-                <th>Postupak</th>
-                <th>Doktor</th>
-                <th>Status</th>
-                <th>Plaćanje</th>
-                <th>Smena</th>
-                <th>Cena pregleda</th>
-                <th>Dugovanje</th>
-                <th>Napomena</th>
-                <th>Akcije</th>
-              </tr>
-            </thead>
-            <tbody id="patient-records-body"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="list-section legacy-patient-section" hidden>
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Tretmani zuba</p>
-            <h2>Detaljna istorija rada po zubima</h2>
-          </div>
-        </div>
-        <div class="info-card" id="treatment-list"></div>
-      </section>
     </main>
   </div>
 
   <script src="../scripts/api.js"></script>
-  <script src="../scripts/date-utils.js?v=picker-format-20260708"></script>
+  <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/tooth-condition-editor.js"></script>
   <script src="../scripts/treatment-history.js"></script>
-  <script src="../scripts/patient-dashboard.js"></script>
+  <script src="../scripts/patient-dashboard.js?v=patient-workcenter-20260727"></script>
 </body>
 </html>

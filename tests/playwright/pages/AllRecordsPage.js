@@ -10,7 +10,7 @@ class AllRecordsPage {
     this.exportExcel = page.locator("#export-excel-btn");
     this.exportPdf = page.locator("#export-pdf-btn");
     this.doctorFilter = page.locator("#doctor-filter");
-    this.dateFilter = page.locator("#date-filter");
+    this.dateFilter = page.locator('[data-drrosa-for="date-filter"]');
     this.periodFilter = page.locator("#period-filter");
     this.activityFilter = page.locator("#activity-filter");
     this.procedureFilter = page.locator("#procedure-filter");

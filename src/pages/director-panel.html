@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Direktor panel | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css" />
+  <link rel="stylesheet" href="../styles/styles.css?v=responsive-20260727" />
 </head>
 <body>
   <div class="app-shell">
@@ -54,6 +54,18 @@
         <article>
           <span>Doktori</span>
           <strong id="director-kpi-doctors">0</strong>
+        </article>
+        <article>
+          <span>Pacijenti bez kontrole</span>
+          <a class="director-kpi-link" href="all-records.html?appointment=no_upcoming"><strong id="director-kpi-no-followup">0</strong></a>
+        </article>
+        <article>
+          <span>Dužnici</span>
+          <a class="director-kpi-link" href="all-records.html?filter=debtors"><strong id="director-kpi-debtors">0</strong></a>
+        </article>
+        <article>
+          <span>Termini ove nedelje</span>
+          <a class="director-kpi-link" href="calendar.html"><strong id="director-kpi-week-appointments">0</strong></a>
         </article>
       </section>
 
@@ -855,10 +867,10 @@
   </div>
 
   <script src="../scripts/api.js"></script>
-  <script src="../scripts/date-utils.js?v=picker-format-20260708"></script>
+  <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/export-utils.js"></script>
   <script src="../scripts/procedure-catalog.js"></script>
-  <script src="../scripts/director-reports.js"></script>
+  <script src="../scripts/director-reports.js?v=director-kpis-20260727"></script>
 </body>
 </html>

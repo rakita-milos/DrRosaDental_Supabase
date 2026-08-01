@@ -1186,6 +1186,9 @@ function serializeAppointment(row) {
     notes: row.notes,
     googleEventId: row.google_event_id,
     googleSyncStatus: row.google_sync_status,
+    googleEventType: row.google_event_type || 'appointment',
+    googleSyncWarning: row.google_sync_warning || '',
+    googleSyncWarningCode: row.google_sync_warning_code || '',
     visitRecordId: row.visit_record_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -1409,7 +1412,36 @@ function googleEventTimes(event) {
   const startsAt = normalizeIsoDateTime(event?.start?.dateTime);
   const endsAt = normalizeIsoDateTime(event?.end?.dateTime);
   if (!startsAt || !endsAt || appointmentDurationMinutes(startsAt, endsAt) <= 0) return null;
-  return { startsAt, endsAt };
+  return { startsAt, endsAt, googleEventType: 'appointment', warning: null, warningCode: null };
+}
+
+function googleEventTimeInfo(event) {
+  const timed = googleEventTimes(event);
+  if (timed) return timed;
+
+  const startDate = cleanText(event?.start?.date, { max: 20 });
+  const endDate = cleanText(event?.end?.date, { max: 20 }) || startDate;
+  if (startDate) {
+    const startsAt = normalizeIsoDateTime(`${startDate}T00:00:00.000Z`);
+    const endsAt = normalizeIsoDateTime(`${endDate}T00:00:00.000Z`) || normalizeIsoDateTime(`${startDate}T23:59:00.000Z`);
+    return {
+      startsAt,
+      endsAt: endsAt && new Date(endsAt) > new Date(startsAt) ? endsAt : new Date(new Date(startsAt).getTime() + 24 * 60 * 60000).toISOString(),
+      googleEventType: 'google_event',
+      warning: 'Google celodnevni dogadjaj je uvezen kao napomena i ne blokira termine.',
+      warningCode: 'all_day_event'
+    };
+  }
+
+  const fallbackStart = new Date();
+  fallbackStart.setHours(0, 0, 0, 0);
+  return {
+    startsAt: fallbackStart.toISOString(),
+    endsAt: new Date(fallbackStart.getTime() + 30 * 60000).toISOString(),
+    googleEventType: 'google_event',
+    warning: 'Google dogadjaj nema validno vreme i zahteva proveru.',
+    warningCode: 'invalid_time'
+  };
 }
 
 function googleEventProcedureName(event, fallback) {
@@ -1434,6 +1466,83 @@ function googleImportNotes(event) {
   return cleanText(parts.join('\n'), { max: 2000 });
 }
 
+function appendGoogleWarning(notes, warning) {
+  if (!warning) return notes;
+  return cleanText(`Upozorenje: ${warning}\n${notes || ''}`, { max: 2000 });
+}
+
+function normalizeGoogleChairText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function googleEventChairSearchText(event) {
+  return [
+    event?.summary,
+    event?.description,
+    event?.location
+  ].map(normalizeGoogleChairText).filter(Boolean).join(' ');
+}
+
+function chairIdFromGoogleEvent(event, chairs = []) {
+  const text = googleEventChairSearchText(event);
+  if (!text) return null;
+
+  for (const chair of chairs) {
+    const chairName = normalizeGoogleChairText(chair.name);
+    if (chairName && text.includes(chairName)) return chair.id;
+    const number = String(chair.name || '').match(/\d+/)?.[0];
+    if (number && new RegExp(`\\b(?:stolica|chair|s)\\s*${number}\\b`).test(text)) {
+      return chair.id;
+    }
+  }
+
+  return null;
+}
+
+async function chairConflict({ appointmentId = null, chairId, startsAt, endsAt }) {
+  if (!chairId) return null;
+  return appointmentConflict({ appointmentId, doctorId: 0, chairId, startsAt, endsAt });
+}
+
+async function doctorConflict({ appointmentId = null, doctorId, startsAt, endsAt }) {
+  if (!doctorId) return null;
+  return appointmentConflict({ appointmentId, doctorId, chairId: 0, startsAt, endsAt });
+}
+
+async function chairForGoogleEvent({ appointmentId = null, preferredChairId = null, startsAt, endsAt, googleEventType = 'appointment', event = null }) {
+  const activeChairs = await calendarRepo.activeChairs();
+  const eventChairId = chairIdFromGoogleEvent(event, activeChairs) || preferredChairId;
+  const fallback = eventChairId ? activeChairs.find(chair => String(chair.id) === String(eventChairId)) || { id: eventChairId } : await calendarRepo.defaultActiveChair();
+  if (googleEventType !== 'appointment') return { chair: fallback, warning: null, warningCode: null };
+
+  const orderedChairs = [
+    ...activeChairs.filter(chair => String(chair.id) === String(eventChairId || fallback?.id)),
+    ...activeChairs.filter(chair => String(chair.id) !== String(eventChairId || fallback?.id))
+  ];
+
+  for (const chair of orderedChairs) {
+    if (!await chairConflict({ appointmentId, chairId: chair.id, startsAt, endsAt })) {
+      if (eventChairId && String(chair.id) !== String(eventChairId)) {
+        return {
+          chair,
+          warning: `Google event je oznacen za ${fallback?.name || `stolicu #${eventChairId}`}, ali je ta stolica zauzeta. Dogadjaj je prebacen u ${chair.name || `stolicu #${chair.id}`}.`,
+          warningCode: 'chair_reassigned'
+        };
+      }
+      return { chair, warning: null, warningCode: null };
+    }
+  }
+
+  return {
+    chair: fallback,
+    warning: 'Nema slobodne stolice u ovom terminu. Dogadjaj je uvezen sa upozorenjem.',
+    warningCode: 'chair_conflict'
+  };
+}
+
 async function importAppointmentFromGoogleEvent(event, times, colorContext) {
   if (event.status === 'cancelled') return { action: 'skipped_missing_local' };
 
@@ -1445,20 +1554,24 @@ async function importAppointmentFromGoogleEvent(event, times, colorContext) {
       calendarColor: googleColor.background
     }) || await calendarRepo.defaultActiveDoctor()
     : await calendarRepo.defaultActiveDoctor();
-  const chair = await calendarRepo.defaultActiveChair();
+  const chairChoice = await chairForGoogleEvent({
+    startsAt: times.startsAt,
+    endsAt: times.endsAt,
+    googleEventType: times.googleEventType,
+    event
+  });
+  const chair = chairChoice.chair;
   if (!doctor?.id || !chair?.id) return { action: 'skipped_missing_local' };
 
   const procedureName = cleanText(event.summary, { max: 255 }) || 'Google Calendar termin';
-  const conflict = await appointmentConflict({
-    doctorId: doctor.id,
-    chairId: chair.id,
-    startsAt: times.startsAt,
-    endsAt: times.endsAt
-  });
-  const conflictNote = conflict
-    ? `Upozorenje: moguci konflikt sa terminom #${conflict.id} (${conflict.patient_name || 'nepoznat pacijent'}).\n`
-    : '';
-  const notes = cleanText(`${conflictNote}${googleImportNotes(event)}`, { max: 2000 });
+  const doctorOverlap = times.googleEventType === 'appointment'
+    ? await doctorConflict({ doctorId: doctor.id, startsAt: times.startsAt, endsAt: times.endsAt })
+    : null;
+  const warning = times.warning || chairChoice.warning || (doctorOverlap
+    ? `Doktor vec ima termin #${doctorOverlap.id} u istom vremenu. Proveriti raspored.`
+    : null);
+  const warningCode = times.warningCode || chairChoice.warningCode || (doctorOverlap ? 'doctor_conflict' : null);
+  const notes = appendGoogleWarning(googleImportNotes(event), warning);
   const appointmentId = await calendarRepo.importAppointmentFromGoogle({
     patientId,
     doctorId: doctor.id,
@@ -1469,17 +1582,19 @@ async function importAppointmentFromGoogleEvent(event, times, colorContext) {
     durationMinutes: appointmentDurationMinutes(times.startsAt, times.endsAt),
     status: 'scheduled',
     notes,
-    googleEventId: cleanText(event.id, { max: 255 })
+    googleEventId: cleanText(event.id, { max: 255 }),
+    googleEventType: times.googleEventType,
+    warning,
+    warningCode
   });
 
-  return { action: conflict ? 'imported_conflict' : 'imported', appointmentId };
+  return { action: warning ? 'imported_warning' : 'imported', appointmentId, warningCode };
 }
 
 async function updateAppointmentFromGoogleEvent(event, colorContext) {
   const appointmentId = await googleEventAppointmentId(event);
   if (!appointmentId) {
-    const times = googleEventTimes(event);
-    if (!times) return { action: 'skipped_unsupported_time' };
+    const times = googleEventTimeInfo(event);
     return importAppointmentFromGoogleEvent(event, times, colorContext);
   }
 
@@ -1494,33 +1609,43 @@ async function updateAppointmentFromGoogleEvent(event, colorContext) {
     return { action: 'unchanged', appointmentId };
   }
 
-  const times = googleEventTimes(event);
-  if (!times) return { action: 'skipped_unsupported_time', appointmentId };
-
-  const conflict = await appointmentConflict({
+  const times = googleEventTimeInfo(event);
+  const chairChoice = await chairForGoogleEvent({
     appointmentId: current.id,
-    doctorId: current.doctor_id,
-    chairId: current.chair_id,
+    preferredChairId: current.chair_id,
     startsAt: times.startsAt,
-    endsAt: times.endsAt
+    endsAt: times.endsAt,
+    googleEventType: times.googleEventType,
+    event
   });
-  if (conflict) return { action: 'skipped_conflict', appointmentId, conflictId: conflict.id };
+  const doctorOverlap = times.googleEventType === 'appointment'
+    ? await doctorConflict({ appointmentId: current.id, doctorId: current.doctor_id, startsAt: times.startsAt, endsAt: times.endsAt })
+    : null;
+  const warning = times.warning || chairChoice.warning || (doctorOverlap
+    ? `Doktor vec ima termin #${doctorOverlap.id} u istom vremenu. Proveriti raspored.`
+    : null);
+  const warningCode = times.warningCode || chairChoice.warningCode || (doctorOverlap ? 'doctor_conflict' : null);
 
   const isDrRosaEvent = event?.extendedProperties?.private?.drrosaSource === 'drrosa';
   const procedureName = googleEventProcedureName(event, current.procedure_name);
-  const notes = isDrRosaEvent
+  const baseNotes = isDrRosaEvent
     ? cleanText(event.description, { max: 2000 })
     : googleImportNotes(event);
+  const notes = appendGoogleWarning(baseNotes, warning);
   const status = normalizeAppointmentStatus(current.status);
   const changed = current.starts_at !== times.startsAt
     || current.ends_at !== times.endsAt
     || current.procedure_name !== procedureName
     || (current.notes || null) !== notes
-    || current.google_event_id !== event.id;
+    || current.google_event_id !== event.id
+    || String(current.chair_id) !== String(chairChoice.chair?.id)
+    || (current.google_event_type || 'appointment') !== times.googleEventType
+    || (current.google_sync_warning || null) !== (warning || null)
+    || (current.google_sync_warning_code || null) !== (warningCode || null);
 
   if (!changed) return { action: 'unchanged', appointmentId };
 
-  await calendarRepo.updateFromGoogle({
+  await calendarRepo.updateFromGoogleWithWarning({
     id: current.id,
     startsAt: times.startsAt,
     endsAt: times.endsAt,
@@ -1528,12 +1653,16 @@ async function updateAppointmentFromGoogleEvent(event, colorContext) {
     procedureName,
     notes,
     googleEventId: event.id,
-    status
+    status,
+    chairId: chairChoice.chair?.id || current.chair_id,
+    googleEventType: times.googleEventType,
+    warning,
+    warningCode
   });
-  return { action: 'updated', appointmentId };
+  return { action: warning ? 'updated_warning' : 'updated', appointmentId, warningCode };
 }
 
-async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast = 1, daysFuture = 14 } = {}) {
+async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast = 1, daysFuture = 14, complete = false } = {}) {
   const settings = await calendarRepo.googleSettings();
   if (!settings?.sync_enabled) throw new Error('Google Calendar sync is disabled.');
   if (settings.sync_direction !== 'two_way') throw new Error('Two-way sync is not enabled.');
@@ -1545,7 +1674,8 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
   const lookbackDays = Math.max(0, Math.min(30, Number(daysPast) || 1));
   const lookaheadDays = Math.max(1, Math.min(180, Number(daysFuture) || 14));
   const startedAt = Date.now();
-  const timeBudgetMs = 12000;
+  const timeBudgetMs = complete ? 45000 : 12000;
+  const maxPages = complete ? 20 : 2;
   const stats = {
     fetched: 0,
     imported: 0,
@@ -1556,6 +1686,11 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     skippedMissingLocal: 0,
     skippedUnsupportedTime: 0,
     skippedConflicts: 0,
+    importedWithWarning: 0,
+    allDayEvents: 0,
+    conflicts: 0,
+    invalidTime: 0,
+    warnings: [],
     fullSync: reset || !settings.events_sync_token,
     partial: false
   };
@@ -1591,23 +1726,37 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
       stats.fetched += 1;
       const result = await updateAppointmentFromGoogleEvent(event, colorContext);
       if (result.action === 'imported') stats.imported += 1;
-      if (result.action === 'imported_conflict') {
+      if (result.action === 'imported_warning') {
         stats.imported += 1;
-        stats.skippedConflicts += 1;
+        stats.importedWithWarning += 1;
       }
       if (result.action === 'updated') stats.updated += 1;
+      if (result.action === 'updated_warning') {
+        stats.updated += 1;
+        stats.importedWithWarning += 1;
+      }
       if (result.action === 'cancelled') stats.cancelled += 1;
       if (result.action === 'unchanged') stats.unchanged += 1;
       if (result.action === 'skipped_external') stats.skippedExternal += 1;
       if (result.action === 'skipped_missing_local') stats.skippedMissingLocal += 1;
       if (result.action === 'skipped_unsupported_time') stats.skippedUnsupportedTime += 1;
       if (result.action === 'skipped_conflict') stats.skippedConflicts += 1;
+      if (result.warningCode === 'all_day_event') stats.allDayEvents += 1;
+      if (result.warningCode === 'invalid_time') stats.invalidTime += 1;
+      if (['doctor_conflict', 'chair_conflict'].includes(result.warningCode)) stats.conflicts += 1;
+      if (result.warningCode) {
+        stats.warnings.push({
+          eventId: cleanText(event?.id, { max: 255 }),
+          title: cleanText(event?.summary, { max: 255 }) || 'Bez naslova',
+          code: result.warningCode
+        });
+      }
     }
 
     pageToken = data.nextPageToken || null;
     nextSyncToken = data.nextSyncToken || nextSyncToken;
     pages += 1;
-    if (pageToken && (pages >= 2 || Date.now() - startedAt > timeBudgetMs)) {
+    if (pageToken && (pages >= maxPages || Date.now() - startedAt > timeBudgetMs)) {
       stats.partial = true;
       break;
     }
@@ -1620,6 +1769,109 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
   }
 
   return stats;
+}
+
+function googleSyncSummaryMessage(stats = {}) {
+  return [
+    `Procitano ${Number(stats.fetched || 0)}`,
+    `uvezeno ${Number(stats.imported || 0)}`,
+    `azurirano ${Number(stats.updated || 0)}`,
+    `upozorenja ${Number(stats.importedWithWarning || 0)}`,
+    `all-day ${Number(stats.allDayEvents || 0)}`,
+    `konflikti ${Number(stats.conflicts || 0)}`
+  ].join(', ');
+}
+
+function serializeGoogleSyncJob(row) {
+  if (!row) return null;
+  const result = safeJsonParse(row.result_json, null);
+  return {
+    id: row.id,
+    status: row.status,
+    startedBy: row.started_by,
+    startedByName: row.started_by_name || '',
+    startedByRole: row.started_by_role || '',
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    fetched: Number(row.fetched || 0),
+    imported: Number(row.imported || 0),
+    updated: Number(row.updated || 0),
+    cancelled: Number(row.cancelled || 0),
+    unchanged: Number(row.unchanged || 0),
+    importedWithWarning: Number(row.imported_with_warning || 0),
+    allDayEvents: Number(row.all_day_events || 0),
+    conflicts: Number(row.conflicts || 0),
+    invalidTime: Number(row.invalid_time || 0),
+    partial: Boolean(row.partial),
+    errorMessage: row.error_message || '',
+    result
+  };
+}
+
+function serializeNotification(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    metadata: safeJsonParse(row.metadata, {}),
+    createdBy: row.created_by,
+    createdByName: row.created_by_name || '',
+    createdAt: row.created_at
+  };
+}
+
+async function notifyUsers({ type, title, message, metadata = null, userId = null }) {
+  try {
+    await calendarRepo.createNotification({ type, title, message, metadata, userId });
+  } catch (error) {
+    console.error('Notification create error:', error);
+  }
+}
+
+async function runGooglePullWithLock({ userId = null, req = null, reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true } = {}) {
+  const lock = await calendarRepo.startGoogleSyncJob({ userId });
+  if (lock.alreadyRunning) {
+    const error = new Error('Google sync je vec u toku.');
+    error.status = 409;
+    error.runningJob = lock.job;
+    throw error;
+  }
+
+  const jobId = lock.job.id;
+  await notifyUsers({
+    type: 'google_sync_started',
+    title: 'Google sync pokrenut',
+    message: 'Sinhronizacija sa Google Kalendarom je pokrenuta.',
+    metadata: { jobId },
+    userId
+  });
+
+  try {
+    const stats = await pullGoogleCalendarChanges({ reset, limit, daysPast, daysFuture, complete });
+    stats.jobId = jobId;
+    await calendarRepo.finishGoogleSyncJob({ jobId, status: 'success', stats });
+    await notifyUsers({
+      type: 'google_sync_finished',
+      title: 'Google sync zavrsen',
+      message: googleSyncSummaryMessage(stats),
+      metadata: { jobId, stats },
+      userId
+    });
+    if (req) await auditLog({ userId, action: 'google_calendar_pulled', entityType: 'google_calendar', entityId: 1, req, metadata: stats });
+    return stats;
+  } catch (error) {
+    const stats = { jobId, error: error.message || 'Google Calendar pull failed' };
+    await calendarRepo.finishGoogleSyncJob({ jobId, status: 'failed', stats, errorMessage: error.message || 'Google Calendar pull failed' });
+    await notifyUsers({
+      type: 'google_sync_failed',
+      title: 'Google sync nije uspeo',
+      message: error.message || 'Google Calendar pull failed',
+      metadata: { jobId },
+      userId
+    });
+    throw error;
+  }
 }
 
 const DOCUMENT_TYPES = new Set(['rtg', 'ortopan', 'photo', 'finding', 'lab', 'consent', 'invoice', 'other']);
@@ -3975,19 +4227,71 @@ app.post('/api/director/calendar-sync/retry', authenticateToken, requireDirector
   }
 });
 
-app.post('/api/director/calendar-sync/pull-google', authenticateToken, requireDirector, async (req, res) => {
+async function handleManualGooglePull(req, res) {
   try {
-    const stats = await pullGoogleCalendarChanges({
+    const stats = await runGooglePullWithLock({
+      userId: req.user.id,
+      req,
       reset: req.body?.reset === true,
-      limit: req.body?.limit,
+      limit: req.body?.limit || 100,
       daysPast: req.body?.daysPast ?? req.body?.days_past,
-      daysFuture: req.body?.daysFuture ?? req.body?.days_future
+      daysFuture: req.body?.daysFuture ?? req.body?.days_future,
+      complete: req.body?.complete !== false
     });
-    await auditLog({ userId: req.user.id, action: 'google_calendar_pulled', entityType: 'google_calendar', entityId: 1, req, metadata: stats });
     res.json(stats);
   } catch (error) {
     console.error('Pull Google Calendar changes error:', error);
-    res.status(googleCalendarRouteStatus(error)).json({ error: error.message || 'Google Calendar pull failed' });
+    res.status(error.status || googleCalendarRouteStatus(error)).json({
+      error: error.message || 'Google Calendar pull failed',
+      runningJob: error.runningJob || null
+    });
+  }
+}
+
+app.post('/api/director/calendar-sync/pull-google', authenticateToken, requirePermission('calendar:write'), handleManualGooglePull);
+app.post('/api/calendar-sync/pull-google', authenticateToken, requirePermission('calendar:write'), handleManualGooglePull);
+
+app.get('/api/calendar-sync/google/status', authenticateToken, requirePermission('calendar:read'), async (_req, res) => {
+  try {
+    res.json({ latest: serializeGoogleSyncJob(await calendarRepo.latestGoogleSyncJob()) });
+  } catch (error) {
+    console.error('Get Google sync status error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/notifications', authenticateToken, async (req, res) => {
+  try {
+    const sinceId = positiveInteger(req.query.since_id ?? req.query.sinceId) || 0;
+    const limit = Math.max(1, Math.min(50, Number(req.query.limit || 20)));
+    const rows = await calendarRepo.notificationsSince({ sinceId, limit });
+    res.json(rows.map(serializeNotification));
+  } catch (error) {
+    console.error('Get notifications error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/calendar-sync/daily-google-pull', async (req, res) => {
+  const secret = process.env.GOOGLE_CALENDAR_CRON_SECRET;
+  const provided = req.headers['x-cron-secret'] || req.query.secret;
+  if (!secret || provided !== secret) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const stats = await runGooglePullWithLock({
+      userId: null,
+      reset: req.body?.reset === true,
+      limit: req.body?.limit || 100,
+      daysPast: req.body?.daysPast ?? 1,
+      daysFuture: req.body?.daysFuture ?? 14,
+      complete: true
+    });
+    res.json(stats);
+  } catch (error) {
+    console.error('Daily Google Calendar pull error:', error);
+    res.status(error.status || googleCalendarRouteStatus(error)).json({
+      error: error.message || 'Google Calendar pull failed',
+      runningJob: error.runningJob || null
+    });
   }
 });
 

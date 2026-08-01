@@ -44,6 +44,74 @@ function isToday(rawDate) {
   return String(rawDate).slice(0, 10) === todayKey;
 }
 
+function appointmentStart(appointment) {
+  return appointment.startsAt || appointment.starts_at;
+}
+
+function appointmentPatientId(appointment) {
+  return appointment.patientId || appointment.patient_id;
+}
+
+function appointmentPatientName(appointment) {
+  return appointment.patientName || appointment.patient_name || appointment.patient || "-";
+}
+
+function patientName(patient) {
+  return patient.fullName || [patient.firstName || patient.first_name, patient.lastName || patient.last_name].filter(Boolean).join(" ");
+}
+
+function dashboardStatusLabel(status) {
+  const labels = {
+    scheduled: "Zakazano",
+    confirmed: "Potvrdjeno",
+    arrived: "Dosao",
+    completed: "Zavrseno",
+    cancelled: "Otkazano",
+    no_show: "Nije dosao"
+  };
+  return labels[status] || status || "-";
+}
+
+function timeLabel(rawDate) {
+  if (!rawDate) return "-";
+  const date = new Date(rawDate);
+  if (!Number.isFinite(date.getTime())) return "-";
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function patientDashboardUrlFromAppointment(appointment) {
+  const patientId = appointmentPatientId(appointment);
+  if (patientId) return `patient-dashboard.html?patientId=${encodeURIComponent(patientId)}`;
+  return `patient-dashboard.html?patient=${encodeURIComponent(appointmentPatientName(appointment))}`;
+}
+
+function newEntryUrlFromAppointment(appointment) {
+  const params = new URLSearchParams();
+  const patientId = appointmentPatientId(appointment);
+  if (patientId) params.set("patientId", patientId);
+  else params.set("patient", appointmentPatientName(appointment));
+  if (appointment.id) params.set("appointmentId", appointment.id);
+  return `new-entry.html?${params.toString()}`;
+}
+
+function patientDebtSummary(records, appointment) {
+  const patientId = appointmentPatientId(appointment);
+  const name = appointmentPatientName(appointment);
+  const patientRecords = records.filter(record => patientId
+    ? String(record.patientId || record.patient_id) === String(patientId)
+    : record.patient === name);
+  const debts = {};
+  patientRecords.filter(paymentIsDebt).forEach(record => {
+    const currency = record.currency || "EUR";
+    debts[currency] = (debts[currency] || 0) + Number(record.amountDue || record.amount_due || 0);
+  });
+  const entries = Object.entries(debts).filter(([, amount]) => amount > 0);
+  if (!entries.length) return "";
+  return entries.map(([currency, amount]) => window.DrRosaCurrencyUtils
+    ? window.DrRosaCurrencyUtils.formatMoney(amount, currency)
+    : `${amount.toFixed(2)} ${currency}`).join(" / ");
+}
+
 function renderDueSummary(records) {
   const uniqueDebtors = new Set(records.filter(paymentIsDebt).map(record => record.patient)).size;
   const debtorsCountEl = document.getElementById("debtors-count");
@@ -58,7 +126,7 @@ function setCount(id, value) {
 function upcomingAppointments(appointments) {
   const now = Date.now();
   return appointments.filter(appointment => {
-    const startsAt = new Date(appointment.startsAt || appointment.starts_at).getTime();
+    const startsAt = new Date(appointmentStart(appointment)).getTime();
     const status = String(appointment.status || "").toLowerCase();
     return Number.isFinite(startsAt) && startsAt >= now && !["cancelled", "completed", "no_show"].includes(status);
   });
@@ -76,15 +144,13 @@ function renderDashboardStats({ patients, appointments, records }) {
   const patientCount = patients.length;
   const appointmentCount = upcomingAppointments(appointments).length;
   const procedures = procedureCount(records);
-  const todaysAppointments = appointments.filter(appointment => isToday(appointment.startsAt || appointment.starts_at));
+  const todaysAppointments = appointments.filter(appointment => isToday(appointmentStart(appointment)));
   const completedToday = records.filter(record => isToday(record.lastVisit) && String(record.status || "").toLowerCase().includes("zavr")).length;
   const debtToday = records.filter(record => isToday(record.lastVisit) && paymentIsDebt(record)).length;
   const nextAppointment = upcomingAppointments(appointments)
     .sort((a, b) => new Date(a.startsAt || a.starts_at) - new Date(b.startsAt || b.starts_at))[0];
 
-  setCount("hero-patients-count", patientCount);
   setCount("patients-count", patientCount);
-  setCount("hero-appointments-count", appointmentCount);
   setCount("appointments-count", appointmentCount);
   setCount("procedures-count", procedures);
   setCount("today-appointments-count", todaysAppointments.length);
@@ -92,47 +158,115 @@ function renderDashboardStats({ patients, appointments, records }) {
   setCount("today-debt-count", debtToday);
   const nextAppointmentTime = document.getElementById("next-appointment-time");
   if (nextAppointmentTime) {
-    const startsAt = nextAppointment?.startsAt || nextAppointment?.starts_at;
+    const startsAt = appointmentStart(nextAppointment || {});
     nextAppointmentTime.textContent = startsAt ? formatDate(startsAt) : "-";
   }
 }
 
-function renderRecords(records) {
-  const tableBody = document.getElementById("record-table-body");
-  tableBody.innerHTML = "";
+function renderTodaySchedule(appointments, records) {
+  const container = document.getElementById("today-schedule-list");
+  if (!container) return;
+  const todaysAppointments = appointments
+    .filter(appointment => isToday(appointmentStart(appointment)))
+    .sort((a, b) => new Date(appointmentStart(a)) - new Date(appointmentStart(b)));
 
-  if (records.length === 0) {
-    tableBody.innerHTML = `<tr><td colspan="8" class="empty-row">Nema dostupnih zapisa.</td></tr>`;
+  if (!todaysAppointments.length) {
+    container.innerHTML = `
+      <div class="dashboard-empty-state">
+        <strong>Nema termina za danas.</strong>
+        <span>Kalendar je slobodan ili termini jos nisu uneti.</span>
+      </div>
+    `;
     return;
   }
 
-  records.slice(0, 10).forEach((record) => {
-    const statusClass = `status-${String(record.status || "").toLowerCase().replace(/\s+/g, "-")}`;
-    const patientLink = record.patientId
-      ? `patient-dashboard.html?patientId=${encodeURIComponent(record.patientId)}`
-      : `patient-dashboard.html?patient=${encodeURIComponent(record.patient)}`;
-    const row = document.createElement("tr");
-    row.append(
-      window.DrRosaSecurity.cell(record.patient),
-      window.DrRosaSecurity.cell(formatDate(record.lastVisit)),
-      window.DrRosaSecurity.cell(record.procedure),
-      window.DrRosaSecurity.cell(record.doctor),
-      window.DrRosaSecurity.cell(record.status, statusClass),
-      window.DrRosaSecurity.cell(record.visits || 1),
-      window.DrRosaSecurity.cell(record.note || "-")
-    );
-    const actionCell = document.createElement("td");
-    const link = document.createElement("a");
-    link.href = patientLink;
-    link.className = "secondary-btn";
-    link.textContent = "Otvori";
-    actionCell.appendChild(link);
-    row.appendChild(actionCell);
-    tableBody.appendChild(row);
-  });
+  container.innerHTML = todaysAppointments.map(appointment => {
+    const status = appointment.status || "scheduled";
+    const debt = patientDebtSummary(records, appointment);
+    const doctor = appointment.doctorName || appointment.doctor_name || "-";
+    const chair = appointment.chairName || appointment.chair_name || "-";
+    const procedure = appointment.procedureName || appointment.procedure_name || "Kontrola";
+    return `
+      <article class="today-appointment-card appointment-${status}" data-appointment-id="${appointment.id || ""}">
+        <div class="today-appointment-time">
+          <strong>${timeLabel(appointmentStart(appointment))}</strong>
+          <span>${dashboardStatusLabel(status)}</span>
+        </div>
+        <div class="today-appointment-main">
+          <h3>${window.DrRosaSecurity.escapeHtml(appointmentPatientName(appointment))}</h3>
+          <p>${window.DrRosaSecurity.escapeHtml(procedure)}</p>
+          <small>${window.DrRosaSecurity.escapeHtml(doctor)} / ${window.DrRosaSecurity.escapeHtml(chair)}</small>
+          ${debt ? `<em>Dug: ${window.DrRosaSecurity.escapeHtml(debt)}</em>` : ""}
+        </div>
+        <div class="today-appointment-actions">
+          <a class="secondary-btn" href="${patientDashboardUrlFromAppointment(appointment)}">Karton</a>
+          <a class="secondary-btn" href="${newEntryUrlFromAppointment(appointment)}">Nova poseta</a>
+          ${["scheduled", "confirmed"].includes(status) ? `<button class="primary-btn" type="button" data-arrive-appointment="${appointment.id}">Dosao</button>` : ""}
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function renderDashboardAlerts({ patients, records, appointments }) {
+  const container = document.getElementById("dashboard-alert-list");
+  if (!container) return;
+  const alerts = [];
+  const todayRecords = records.filter(record => isToday(record.lastVisit));
+  const debtorsToday = todayRecords.filter(paymentIsDebt);
+  const openToday = todayRecords.filter(record => !String(record.status || "").toLowerCase().includes("zavr"));
+  const upcomingPatientIds = new Set(upcomingAppointments(appointments).map(appointment => String(appointmentPatientId(appointment))).filter(Boolean));
+  const noFollowup = patients.filter(patient => patient.id && !upcomingPatientIds.has(String(patient.id))).slice(0, 5);
+
+  if (debtorsToday.length) {
+    alerts.push({
+      tone: "danger",
+      title: `${debtorsToday.length} pacijent${debtorsToday.length === 1 ? "" : "a"} sa dugom danas`,
+      text: "Pre naplate ili izlaska pacijenta proveriti dugovanje.",
+      href: "all-records.html?filter=debtors",
+      action: "Otvori dugovanja"
+    });
+  }
+  if (openToday.length) {
+    alerts.push({
+      tone: "warning",
+      title: `${openToday.length} danasnjih pregleda nije zakljuceno`,
+      text: "Proveriti status posete, nalaz i naplatu pre kraja smene.",
+      href: "all-records.html",
+      action: "Pregled evidencije"
+    });
+  }
+  if (noFollowup.length) {
+    alerts.push({
+      tone: "info",
+      title: `${noFollowup.length} pacijent${noFollowup.length === 1 ? "" : "a"} bez sledece kontrole`,
+      text: noFollowup.map(patientName).filter(Boolean).join(", "),
+      href: "all-records.html?appointment=no_upcoming",
+      action: "Zakazi kontrole"
+    });
+  }
+
+  if (!alerts.length) {
+    container.innerHTML = `
+      <div class="dashboard-empty-state">
+        <strong>Nema hitnih upozorenja.</strong>
+        <span>Danas nema dugovanja, otvorenih statusa ili kriticnih kontrola.</span>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = alerts.map(alert => `
+    <article class="dashboard-alert-card ${alert.tone}">
+      <strong>${window.DrRosaSecurity.escapeHtml(alert.title)}</strong>
+      <span>${window.DrRosaSecurity.escapeHtml(alert.text)}</span>
+      <a class="secondary-btn" href="${alert.href}">${window.DrRosaSecurity.escapeHtml(alert.action)}</a>
+    </article>
+  `).join("");
 }
 
 (async function initDashboard() {
+  if (!document.getElementById("today-schedule-list")) return;
   if (!await requireAccess()) return;
   try {
     const [patients, records, appointments] = await Promise.all([
@@ -140,13 +274,27 @@ function renderRecords(records) {
       window.DrRosaApi.getRecords(),
       window.DrRosaApi.getAppointments()
     ]);
-    const todaysRecords = records.filter(record => isToday(record.lastVisit));
     renderDashboardStats({ patients, appointments, records });
     renderDueSummary(records);
-    renderRecords(todaysRecords);
+    renderTodaySchedule(appointments, records);
+    renderDashboardAlerts({ patients, records, appointments });
   } catch (error) {
     renderDashboardStats({ patients: [], appointments: [], records: [] });
-    renderRecords([]);
+    renderTodaySchedule([], []);
+    renderDashboardAlerts({ patients: [], appointments: [], records: [] });
     console.error("Dashboard load error:", error);
   }
 })();
+
+document.getElementById("today-schedule-list")?.addEventListener("click", async event => {
+  const arriveButton = event.target.closest("[data-arrive-appointment]");
+  if (!arriveButton) return;
+  arriveButton.disabled = true;
+  try {
+    await window.DrRosaApi.updateAppointmentStatus(arriveButton.dataset.arriveAppointment, "arrived");
+    window.location.reload();
+  } catch (error) {
+    arriveButton.disabled = false;
+    console.error("Appointment arrival update error:", error);
+  }
+});

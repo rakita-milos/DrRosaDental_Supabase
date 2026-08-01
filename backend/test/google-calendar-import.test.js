@@ -28,8 +28,9 @@ test('Google import repository creates fallback patient and synced appointment',
   assert.match(calendarRepoSource, /first_name = 'Google Calendar' AND last_name = 'Import'/);
   assert.match(calendarRepoSource, /INSERT INTO patients \(first_name, last_name, medical_history\)/);
   assert.match(calendarRepoSource, /importAppointmentFromGoogle\(appointment\)/);
-  assert.match(calendarRepoSource, /google_event_id, google_sync_status, created_by, updated_by/);
-  assert.match(calendarRepoSource, /VALUES \(\?, \?, \?, NULL, \?, \?, \?, \?, \?, \?, \?, 'synced', NULL, NULL\)/);
+  assert.match(calendarRepoSource, /google_event_id, google_sync_status, google_event_type, google_sync_warning/);
+  assert.match(calendarRepoSource, /appointment\.warning \? 'warning' : 'synced'/);
+  assert.match(calendarRepoSource, /appointment\.googleEventType \|\| 'appointment'/);
 });
 
 test('Google color mapping is stored on doctors and used for import/export', () => {
@@ -58,11 +59,33 @@ test('Google OAuth verification uses saved tokens without asking for a new code'
   assert.match(directorReportsSource, /settings\.oauthConnected && !googleOAuthReconnectMode/);
 });
 
-test('Manual Google pull uses a bounded window instead of forcing a full reset', () => {
-  assert.match(serverSource, /async function pullGoogleCalendarChanges\(\{ limit = 50, reset = false, daysPast = 1, daysFuture = 14 \} = \{\}\)/);
+test('Manual Google pull uses a bounded date window and can complete all pages', () => {
+  assert.match(serverSource, /async function pullGoogleCalendarChanges\(\{ limit = 50, reset = false, daysPast = 1, daysFuture = 14, complete = false \} = \{\}\)/);
   assert.match(serverSource, /query\.set\('timeMax'/);
   assert.match(serverSource, /daysPast: req\.body\?\.daysPast/);
-  assert.match(apiSource, /pullGoogleCalendarChanges\(\{ reset = false, limit = 50, daysPast = 1, daysFuture = 14 \} = \{\}\)/);
+  assert.match(serverSource, /const maxPages = complete \? 20 : 2/);
+  assert.match(apiSource, /pullGoogleCalendarChanges\(\{ reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true \} = \{\}\)/);
   assert.match(directorReportsSource, /pullGoogleCalendarChanges\(\{ reset: false, limit: 50, daysPast: 1, daysFuture: 14 \}\)/);
   assert.doesNotMatch(directorReportsSource, /pullGoogleCalendarChanges\(\{ reset: true \}\)/);
+});
+
+test('Google pull records warnings instead of skipping all-day and conflict events', () => {
+  assert.match(serverSource, /function googleEventTimeInfo\(event\)/);
+  assert.match(serverSource, /warningCode: 'all_day_event'/);
+  assert.match(serverSource, /warningCode: 'invalid_time'/);
+  assert.match(serverSource, /async function chairForGoogleEvent/);
+  assert.match(serverSource, /action: warning \? 'imported_warning' : 'imported'/);
+  assert.match(serverSource, /action: warning \? 'updated_warning' : 'updated'/);
+  assert.match(serverSource, /stats\.importedWithWarning \+= 1/);
+  assert.match(schemaSource, /CREATE TABLE IF NOT EXISTS google_calendar_sync_jobs/);
+  assert.match(schemaSource, /CREATE TABLE IF NOT EXISTS app_notifications/);
+});
+
+test('Google import can infer preferred chair from event text', () => {
+  assert.match(serverSource, /function chairIdFromGoogleEvent\(event, chairs = \[\]\)/);
+  assert.match(serverSource, /googleEventChairSearchText\(event\)/);
+  assert.match(serverSource, /\?:stolica\|chair\|s/);
+  assert.match(serverSource, /chairIdFromGoogleEvent\(event, activeChairs\) \|\| preferredChairId/);
+  assert.match(serverSource, /warningCode: 'chair_reassigned'/);
+  assert.match(serverSource, /googleEventType: times\.googleEventType,\s*event/s);
 });

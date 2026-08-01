@@ -33,6 +33,7 @@ const periodFilter = document.getElementById("period-filter");
 const activityFilter = document.getElementById("activity-filter");
 const procedureFilter = document.getElementById("procedure-filter");
 const paymentFilter = document.getElementById("payment-filter");
+const appointmentFilter = document.getElementById("appointment-filter");
 const exportExcelBtn = document.getElementById("export-excel-btn");
 const exportPdfBtn = document.getElementById("export-pdf-btn");
 const procedureCatalog = window.DrRosaProcedureCatalog;
@@ -44,6 +45,9 @@ let currentExportRows = [];
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get("filter") === "debtors" && paymentFilter) {
   paymentFilter.value = "debtors";
+}
+if (urlParams.get("appointment") && appointmentFilter) {
+  appointmentFilter.value = urlParams.get("appointment");
 }
 
 function formatDate(dateString) {
@@ -234,7 +238,7 @@ function renderRecords(records) {
   ]);
 
   if (uniquePatients.length === 0) {
-    body.innerHTML = `<tr><td colspan="11" class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</td></tr>`;
     return;
   }
 
@@ -249,10 +253,7 @@ function renderRecords(records) {
       window.DrRosaSecurity.cell(formatDate(nextAppointment?.startsAt || nextAppointment?.starts_at)),
       window.DrRosaSecurity.cell(patient.lastProcedure || "-"),
       window.DrRosaSecurity.cell(patient.visits),
-      window.DrRosaSecurity.cell("-"),
       window.DrRosaSecurity.cell(paymentStatus, paymentClass),
-      window.DrRosaSecurity.cell(Array.from(patient.currencies).join(" / ")),
-      window.DrRosaSecurity.cell(Array.from(patient.shifts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "-"),
       window.DrRosaSecurity.cell(formatCurrencyAmounts(patient.totalDebt))
     );
     const actionCell = document.createElement("td");
@@ -272,7 +273,10 @@ function renderRecords(records) {
     scheduleLink.href = `calendar.html?${patientQuery}`;
     scheduleLink.className = "secondary-btn";
     scheduleLink.textContent = "Zakazi";
-    actionCell.append(link, entryLink, scheduleLink);
+    const actionGroup = document.createElement("div");
+    actionGroup.className = "record-action-group";
+    actionGroup.append(link, entryLink, scheduleLink);
+    actionCell.append(actionGroup);
     row.appendChild(actionCell);
     body.appendChild(row);
   });
@@ -299,8 +303,10 @@ function filterRecords(records) {
   const activity = activityFilter?.value || "";
   const procedure = procedureFilter?.value || "";
   const payment = paymentFilter?.value || "";
+  const appointment = appointmentFilter?.value || "";
 
   return records.filter((record) => {
+    const nextAppointment = nextAppointmentForPatient({ patientId: record.patientId, patient: record.patient });
     const matchesPatient = !patient || record.patient === patient;
     const matchesStatus = !status || fold(record.status) === fold(status);
     const matchesDoctor = !doctor || fold(record.doctor) === fold(doctor) || fold(record.doctor).includes(fold(doctor));
@@ -308,7 +314,10 @@ function filterRecords(records) {
     const matchesActivity = !activity || procedureCatalog.matchesActivity(record, activity);
     const matchesProcedureValue = matchesProcedure(record, procedure);
     const matchesPayment = !payment || (payment === "debtors" ? isDebt(record) : fold(record.paymentStatus) === fold(payment));
-    return matchesPatient && matchesStatus && matchesDoctor && matchesDate && matchesActivity && matchesProcedureValue && matchesPayment && matchesPeriod(record.lastVisit, period);
+    const matchesAppointment = !appointment
+      || (appointment === "has_upcoming" && Boolean(nextAppointment))
+      || (appointment === "no_upcoming" && !nextAppointment);
+    return matchesPatient && matchesStatus && matchesDoctor && matchesDate && matchesActivity && matchesProcedureValue && matchesPayment && matchesAppointment && matchesPeriod(record.lastVisit, period);
   });
 }
 
@@ -328,7 +337,7 @@ function exportFiltered(format) {
   window.DrRosaExport.exportPdf(title, headers, currentExportRows);
 }
 
-[searchInput, statusFilter, doctorFilter, dateFilter, periodFilter, procedureFilter, paymentFilter]
+[searchInput, statusFilter, doctorFilter, dateFilter, periodFilter, procedureFilter, paymentFilter, appointmentFilter]
   .filter(Boolean)
   .forEach(input => input.addEventListener("change", refresh));
 

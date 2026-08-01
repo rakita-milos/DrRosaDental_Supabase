@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dr Rosa stomatološka ordinacija</title>
-  <link rel="stylesheet" href="../styles/styles.css" />
+  <link rel="stylesheet" href="../styles/styles.css?v=responsive-20260727" />
 </head>
 <body>
   <div class="app-shell">
@@ -37,60 +37,71 @@
           <h2>Danas u ordinaciji</h2>
           <p>Pregled termina, pacijenata, dugovanja i radnih nalaza za operativni dan.</p>
         </div>
-        <div class="hero-stats">
-          <div>
-            <span id="hero-patients-count">0</span>
-            <p>Aktivnih pacijenata</p>
-          </div>
-          <div>
-            <span id="hero-appointments-count">0</span>
-            <p>Zakazanih termina</p>
-          </div>
+        <div class="dashboard-day-summary" aria-label="Dnevni sazetak">
+          <article>
+            <span>Danas termina</span>
+            <strong id="today-appointments-count">0</strong>
+          </article>
+          <article>
+            <span>Danas zavrseno</span>
+            <strong id="today-completed-count">0</strong>
+          </article>
+          <article>
+            <span>Danas dugovanja</span>
+            <strong id="today-debt-count">0</strong>
+          </article>
+          <article>
+            <span>Sledeci termin</span>
+            <strong id="next-appointment-time">-</strong>
+          </article>
         </div>
       </section>
 
-      <section class="dashboard-workbar" aria-label="Brze akcije i status dana">
-        <a class="dashboard-work-action primary-btn" href="calendar.html">Kalendar</a>
-        <a class="dashboard-work-action secondary-btn" href="new-entry.html">Nova poseta</a>
-        <a class="dashboard-work-action secondary-btn" href="new-patient.html">Novi pacijent</a>
-        <a class="dashboard-work-action secondary-btn" href="all-records.html?filter=debtors">Dugovanja</a>
+      <section class="dashboard-operations-grid" aria-label="Operativni pregled dana">
+        <section class="list-section dashboard-schedule-panel">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Raspored</p>
+              <h2>Danasnji raspored</h2>
+            </div>
+            <a href="calendar.html" class="secondary-btn">Otvori kalendar</a>
+          </div>
+          <div id="today-schedule-list" class="today-schedule-list"></div>
+        </section>
+
+        <section class="list-section dashboard-alert-panel">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Prioriteti</p>
+              <h2>Upozorenja za danas</h2>
+            </div>
+          </div>
+          <div id="dashboard-alert-list" class="dashboard-alert-list"></div>
+        </section>
       </section>
 
-      <section class="dashboard-today-strip" aria-label="Status dana">
-        <article>
-          <span>Danas termina</span>
-          <strong id="today-appointments-count">0</strong>
-        </article>
-        <article>
-          <span>Danas zavrseno</span>
-          <strong id="today-completed-count">0</strong>
-        </article>
-        <article>
-          <span>Danas dugovanja</span>
-          <strong id="today-debt-count">0</strong>
-        </article>
-        <article>
-          <span>Sledeci termin</span>
-          <strong id="next-appointment-time">-</strong>
-        </article>
-      </section>
-
-      <section class="cards-grid" aria-label="Ključni pokazatelji">
+      <section class="dashboard-kpi-grid" aria-label="Kljucni pokazatelji">
+        <a href="all-records.html" class="stat-card-link">
         <article class="stat-card gradient-green">
           <h3>Pacijenti</h3>
           <p class="stat-number" id="patients-count">0</p>
           <p>Sve evidentirane osobe u bazi.</p>
         </article>
+        </a>
+        <a href="calendar.html" class="stat-card-link">
         <article class="stat-card gradient-blue">
           <h3>Termini</h3>
           <p class="stat-number" id="appointments-count">0</p>
           <p>Predstojeći pregledi i zahvati.</p>
         </article>
+        </a>
+        <a href="all-records.html" class="stat-card-link">
         <article class="stat-card gradient-green-dark">
-          <h3>Procedura</h3>
+          <h3>Procedure</h3>
           <p class="stat-number" id="procedures-count">0</p>
           <p>Otvoreni radni nalogi i zahvati.</p>
         </article>
+        </a>
         <a href="all-records.html?filter=debtors" class="stat-card-link">
           <article class="stat-card gradient-orange">
             <h3>Dužnici</h3>
@@ -100,39 +111,11 @@
         </a>
       </section>
 
-      <section class="list-section">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Evidencija pacijenata</p>
-            <h2>Današnji unosi</h2>
-          </div>
-          <a href="all-records.html" class="secondary-btn">Kompletna evidencija</a>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Pacijent</th>
-                <th>Poslednja poseta</th>
-                <th>Postupak</th>
-                <th>Doktor</th>
-                <th>Status</th>
-                <th>Poseta</th>
-                <th>Napomena</th>
-                <th>Detalji</th>
-              </tr>
-            </thead>
-            <tbody id="record-table-body"></tbody>
-          </table>
-        </div>
-      </section>
-
     </main>
   </div>
 
   <script src="../scripts/api.js"></script>
-  <script src="../scripts/date-utils.js?v=picker-format-20260708"></script>
+  <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/script.js"></script>
 </body>
 </html>

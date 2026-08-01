@@ -121,7 +121,7 @@ test("regression: new visit without tooth map accepts split EUR and RSD payments
   await authenticate(page, "staff");
   await page.goto(`/src/pages/new-entry.html?patient=${encodeURIComponent(fullName)}`);
 
-  await page.locator("#last-visit").fill("2026-07-04");
+  await page.locator('[data-drrosa-for="last-visit"]').fill("04.07.2026");
   await page.locator("#procedure-activity").selectOption({ index: 1 });
   await expect(page.locator("#procedure")).toBeEnabled();
   await page.locator("#procedure").selectOption({ label: "Kontrola" });
@@ -184,7 +184,7 @@ test("regression: new visit split payments works through visible custom selects"
   await authenticate(page, "staff");
   await page.goto(`/src/pages/new-entry.html?patient=${encodeURIComponent(fullName)}`);
 
-  await page.locator("#last-visit").fill("2026-07-04");
+  await page.locator('[data-drrosa-for="last-visit"]').fill("04.07.2026");
   await choose("#procedure-activity", 1);
   await expect(page.locator("#procedure")).toBeEnabled();
   await choose("#procedure", 1);
@@ -267,7 +267,7 @@ test("regression: zero-priced procedure can save split payments after manual tot
   await authenticate(page, "staff");
   await page.goto(`/src/pages/new-entry.html?patient=${encodeURIComponent(fullName)}`);
 
-  await page.locator("#last-visit").fill("2026-07-04");
+  await page.locator('[data-drrosa-for="last-visit"]').fill("04.07.2026");
   await page.locator("#procedure-activity").selectOption({ label: activityName });
   await expect(page.locator("#procedure")).toBeEnabled();
   await page.locator("#procedure").selectOption({ label: procedureName });
@@ -335,7 +335,7 @@ test("regression: split payment without total amount shows actionable error", as
   await authenticate(page, "staff");
   await page.goto(`/src/pages/new-entry.html?patient=${encodeURIComponent(fullName)}`);
 
-  await page.locator("#last-visit").fill("2026-07-04");
+  await page.locator('[data-drrosa-for="last-visit"]').fill("04.07.2026");
   await page.locator("#procedure-activity").selectOption({ label: activityName });
   await expect(page.locator("#procedure")).toBeEnabled();
   await page.locator("#procedure").selectOption({ label: procedureName });

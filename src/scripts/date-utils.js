@@ -25,9 +25,24 @@
 
   function parseDisplayDate(value) {
     const text = String(value || "").trim();
-    const display = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    const display = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})\.?$/);
     if (!display) return "";
-    return isoDateKey(new Date(Number(display[3]), Number(display[2]) - 1, Number(display[1])));
+    const day = Number(display[1]);
+    const month = Number(display[2]);
+    const year = Number(display[3]);
+    const date = new Date(year, month - 1, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return "";
+    return isoDateKey(date);
+  }
+
+  function normalizeDisplayTime(value) {
+    const text = String(value || "").trim();
+    const match = text.match(/^(\d{1,2}):(\d{1,2})$/);
+    if (!match) return "";
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return "";
+    return `${pad(hours)}:${pad(minutes)}`;
   }
 
   function formatTime(value) {
@@ -85,19 +100,56 @@
     input.dataset.drrosaPickerReady = "date";
 
     const nativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+    const wasRequired = input.required;
     const wrapper = wrapInput(input, "drrosa-picker drrosa-date-picker");
+    const displayInput = document.createElement("input");
     const button = document.createElement("button");
     const popover = document.createElement("div");
+    input.required = false;
+    displayInput.type = "text";
+    displayInput.className = "drrosa-picker-text";
+    if (input.id) displayInput.dataset.drrosaFor = input.id;
+    displayInput.placeholder = "DD.MM.YYYY";
+    displayInput.inputMode = "numeric";
+    displayInput.autocomplete = "off";
+    displayInput.required = wasRequired;
+    displayInput.pattern = "\\d{1,2}\\.\\d{1,2}\\.\\d{4}\\.?";
+    if (input.getAttribute("form")) displayInput.setAttribute("form", input.getAttribute("form"));
+    displayInput.setAttribute("aria-label", input.closest("label")?.textContent?.trim() || "Datum");
     button.type = "button";
-    button.className = "drrosa-picker-button";
+    button.className = "drrosa-picker-button drrosa-picker-icon";
+    button.setAttribute("aria-label", "Otvori kalendar");
     button.setAttribute("aria-haspopup", "dialog");
     popover.className = "drrosa-picker-popover";
     popover.hidden = true;
-    wrapper.append(button, popover);
+    wrapper.append(displayInput, button, popover);
     input.classList.add("drrosa-native-picker-input");
 
-    function syncButton() {
-      button.textContent = input.value ? formatDate(input.value) : "DD.MM.YYYY";
+    function setDisplayValidity(isValid, message = "") {
+      displayInput.setCustomValidity(message);
+      displayInput.setAttribute("aria-invalid", isValid ? "false" : "true");
+    }
+
+    function syncDisplay() {
+      displayInput.value = input.value ? formatDate(input.value) : "";
+      setDisplayValidity(true);
+    }
+
+    function commitDisplayValue() {
+      const value = displayInput.value.trim();
+      if (!value) {
+        setInputValue(input, "");
+        setDisplayValidity(true);
+        return true;
+      }
+      const parsed = parseDisplayDate(value);
+      if (!parsed) {
+        setDisplayValidity(false, "Unesite datum u formatu DD.MM.YYYY");
+        return false;
+      }
+      setInputValue(input, parsed);
+      syncDisplay();
+      return true;
     }
 
     Object.defineProperty(input, "value", {
@@ -107,7 +159,7 @@
       },
       set(value) {
         nativeValue.set.call(input, parseDisplayDate(value) || isoDateKey(value) || value || "");
-        syncButton();
+        syncDisplay();
       }
     });
 
@@ -148,14 +200,35 @@
         dateButton.addEventListener("click", event => {
           event.stopPropagation();
           setInputValue(input, dateButton.dataset.date);
-          syncButton();
+          syncDisplay();
           popover.hidden = true;
           closeOpenPicker(null);
         });
       });
     }
 
+    displayInput.addEventListener("input", () => {
+      setDisplayValidity(true);
+    });
+    displayInput.addEventListener("change", () => {
+      commitDisplayValue();
+    });
+    displayInput.addEventListener("blur", () => {
+      commitDisplayValue();
+    });
+    displayInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        commitDisplayValue();
+      }
+      if (event.key === "ArrowDown" && event.altKey) {
+        event.preventDefault();
+        closeOpenPicker(popover);
+        popover.hidden = false;
+        renderCalendar();
+      }
+    });
     button.addEventListener("click", () => {
+      commitDisplayValue();
       const willOpen = popover.hidden;
       closeOpenPicker(willOpen ? popover : null);
       popover.hidden = !willOpen;
@@ -170,12 +243,17 @@
       const dateButton = event.target.closest("[data-date]");
       if (!dateButton) return;
       setInputValue(input, dateButton.dataset.date);
-      syncButton();
+      syncDisplay();
       popover.hidden = true;
       closeOpenPicker(null);
     });
-    input.addEventListener("change", syncButton);
-    syncButton();
+    input.addEventListener("change", syncDisplay);
+    input.form?.addEventListener("submit", event => {
+      if (commitDisplayValue()) return;
+      event.preventDefault();
+      displayInput.reportValidity();
+    }, true);
+    syncDisplay();
   }
 
   function enhanceTimeInput(input) {
@@ -183,24 +261,60 @@
     input.dataset.drrosaPickerReady = "time";
 
     const nativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+    const wasRequired = input.required;
     const wrapper = wrapInput(input, "drrosa-picker drrosa-time-picker");
+    const displayInput = document.createElement("input");
     const button = document.createElement("button");
     const popover = document.createElement("div");
+    input.required = false;
+    displayInput.type = "text";
+    displayInput.className = "drrosa-picker-text";
+    if (input.id) displayInput.dataset.drrosaFor = input.id;
+    displayInput.placeholder = "HH:MM";
+    displayInput.inputMode = "numeric";
+    displayInput.autocomplete = "off";
+    displayInput.required = wasRequired;
+    displayInput.pattern = "\\d{1,2}:\\d{1,2}";
+    if (input.getAttribute("form")) displayInput.setAttribute("form", input.getAttribute("form"));
+    displayInput.setAttribute("aria-label", input.closest("label")?.textContent?.trim() || "Vreme");
     button.type = "button";
-    button.className = "drrosa-picker-button";
+    button.className = "drrosa-picker-button drrosa-picker-icon";
+    button.setAttribute("aria-label", "Otvori birac vremena");
     button.setAttribute("aria-haspopup", "dialog");
     popover.className = "drrosa-picker-popover drrosa-time-popover";
     popover.hidden = true;
-    wrapper.append(button, popover);
+    wrapper.append(displayInput, button, popover);
     input.classList.add("drrosa-native-picker-input");
 
     function normalize(value) {
-      const formatted = formatTime(value);
-      return formatted === "-" ? "" : formatted;
+      return normalizeDisplayTime(value) || (formatTime(value) === "-" ? "" : formatTime(value));
     }
 
-    function syncButton() {
-      button.textContent = input.value || "HH:MM";
+    function setDisplayValidity(isValid, message = "") {
+      displayInput.setCustomValidity(message);
+      displayInput.setAttribute("aria-invalid", isValid ? "false" : "true");
+    }
+
+    function syncDisplay() {
+      displayInput.value = input.value || "";
+      setDisplayValidity(true);
+    }
+
+    function commitDisplayValue() {
+      const value = displayInput.value.trim();
+      if (!value) {
+        setInputValue(input, "");
+        setDisplayValidity(true);
+        return true;
+      }
+      const normalized = normalizeDisplayTime(value);
+      if (!normalized) {
+        setDisplayValidity(false, "Unesite vreme u formatu HH:MM");
+        return false;
+      }
+      setInputValue(input, normalized);
+      syncDisplay();
+      return true;
     }
 
     Object.defineProperty(input, "value", {
@@ -210,7 +324,7 @@
       },
       set(value) {
         nativeValue.set.call(input, normalize(value));
-        syncButton();
+        syncDisplay();
       }
     });
 
@@ -227,7 +341,28 @@
       `;
     }
 
+    displayInput.addEventListener("input", () => {
+      setDisplayValidity(true);
+    });
+    displayInput.addEventListener("change", () => {
+      commitDisplayValue();
+    });
+    displayInput.addEventListener("blur", () => {
+      commitDisplayValue();
+    });
+    displayInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        commitDisplayValue();
+      }
+      if (event.key === "ArrowDown" && event.altKey) {
+        event.preventDefault();
+        closeOpenPicker(popover);
+        popover.hidden = false;
+        renderTime();
+      }
+    });
     button.addEventListener("click", () => {
+      commitDisplayValue();
       const willOpen = popover.hidden;
       closeOpenPicker(willOpen ? popover : null);
       popover.hidden = !willOpen;
@@ -238,12 +373,17 @@
       const hour = popover.querySelector("[data-time-hour]").value;
       const minute = popover.querySelector("[data-time-minute]").value;
       setInputValue(input, `${hour}:${minute}`);
-      syncButton();
+      syncDisplay();
       popover.hidden = true;
       closeOpenPicker(null);
     });
-    input.addEventListener("change", syncButton);
-    syncButton();
+    input.addEventListener("change", syncDisplay);
+    input.form?.addEventListener("submit", event => {
+      if (commitDisplayValue()) return;
+      event.preventDefault();
+      displayInput.reportValidity();
+    }, true);
+    syncDisplay();
   }
 
   function enhancePickers(root = document) {

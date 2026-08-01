@@ -324,11 +324,22 @@
     return request("/director/calendar-sync/retry", { method: "POST" });
   }
 
-  async function pullGoogleCalendarChanges({ reset = false, limit = 50, daysPast = 1, daysFuture = 14 } = {}) {
-    return request("/director/calendar-sync/pull-google", {
+  async function pullGoogleCalendarChanges({ reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true } = {}) {
+    return request("/calendar-sync/pull-google", {
       method: "POST",
-      body: JSON.stringify({ reset, limit, daysPast, daysFuture })
+      body: JSON.stringify({ reset, limit, daysPast, daysFuture, complete })
     });
+  }
+
+  async function getGoogleCalendarSyncStatus() {
+    return request("/calendar-sync/google/status");
+  }
+
+  async function getNotifications({ sinceId = 0, limit = 20 } = {}) {
+    const query = new URLSearchParams();
+    if (sinceId) query.set("sinceId", sinceId);
+    if (limit) query.set("limit", limit);
+    return request(`/notifications${query.toString() ? `?${query}` : ""}`);
   }
 
   async function testGoogleCalendarSync() {
@@ -823,6 +834,8 @@
     updateGoogleCalendarSettings,
     retryCalendarSync,
     pullGoogleCalendarChanges,
+    getGoogleCalendarSyncStatus,
+    getNotifications,
     testGoogleCalendarSync,
     exchangeGoogleCalendarCode,
     verifyGoogleCalendarOAuth,
@@ -892,6 +905,54 @@
     document.addEventListener("DOMContentLoaded", initializePublicBookingNavigation);
   } else {
     initializePublicBookingNavigation();
+  }
+
+  function showGlobalNotification(notification) {
+    if (!notification?.message) return;
+    let wrap = document.querySelector(".global-notification-stack");
+    if (!wrap) {
+      wrap = document.createElement("div");
+      wrap.className = "global-notification-stack";
+      wrap.setAttribute("aria-live", "polite");
+      document.body.appendChild(wrap);
+    }
+    const toast = document.createElement("article");
+    toast.className = `global-notification ${String(notification.type || "").includes("failed") ? "error" : "info"}`;
+    toast.innerHTML = `
+      <strong>${escapeHtml(notification.title || "Obavestenje")}</strong>
+      <span>${escapeHtml(notification.message)}</span>
+    `;
+    wrap.appendChild(toast);
+    window.setTimeout(() => toast.remove(), 9000);
+  }
+
+  function initializeNotifications() {
+    if (window.DrRosaNotificationsStarted || location.pathname.endsWith("/login.html")) return;
+    window.DrRosaNotificationsStarted = true;
+    let lastId = Number(localStorage.getItem("drrosa-last-notification-id") || 0);
+
+    async function poll() {
+      if (!getSession()) return;
+      try {
+        const notifications = await getNotifications({ sinceId: lastId, limit: 10 });
+        notifications.forEach(notification => {
+          lastId = Math.max(lastId, Number(notification.id || 0));
+          showGlobalNotification(notification);
+        });
+        localStorage.setItem("drrosa-last-notification-id", String(lastId));
+      } catch (_error) {
+        // Notification polling must never interrupt clinical workflows.
+      }
+    }
+
+    window.setTimeout(poll, 2500);
+    window.setInterval(poll, 12000);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeNotifications);
+  } else {
+    initializeNotifications();
   }
 
   function escapeHtml(value) {
@@ -1071,5 +1132,49 @@
     document.addEventListener("DOMContentLoaded", initializeCustomSelects);
   } else {
     initializeCustomSelects();
+  }
+
+  function initializeResponsiveMenu() {
+    const topbar = document.querySelector(".topbar");
+    const nav = topbar?.querySelector(".topbar-actions");
+    if (!topbar || !nav || topbar.querySelector(".mobile-menu-toggle")) return;
+
+    const button = document.createElement("button");
+    const navId = nav.id || "primary-navigation";
+    nav.id = navId;
+    button.className = "mobile-menu-toggle";
+    button.type = "button";
+    button.setAttribute("aria-controls", navId);
+    button.setAttribute("aria-expanded", "false");
+    button.innerHTML = "<span></span><span></span><span></span><strong>Meni</strong>";
+
+    topbar.insertBefore(button, nav);
+
+    function setOpen(isOpen) {
+      topbar.classList.toggle("menu-open", isOpen);
+      button.setAttribute("aria-expanded", String(isOpen));
+    }
+
+    button.addEventListener("click", () => {
+      setOpen(!topbar.classList.contains("menu-open"));
+    });
+
+    nav.addEventListener("click", event => {
+      if (event.target.closest("a, button")) setOpen(false);
+    });
+
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") setOpen(false);
+    });
+
+    window.addEventListener("resize", () => {
+      if (window.innerWidth > 980) setOpen(false);
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeResponsiveMenu);
+  } else {
+    initializeResponsiveMenu();
   }
 })();

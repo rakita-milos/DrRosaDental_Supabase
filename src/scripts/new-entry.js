@@ -60,6 +60,7 @@ const inputs = {
   paymentTotalDisplay: document.getElementById("payment-total-display"),
   paymentPaidDisplay: document.getElementById("payment-paid-display"),
   paymentDebtDisplay: document.getElementById("payment-debt-display"),
+  paymentStatusDisplay: document.getElementById("payment-status-display"),
   shift: document.getElementById("shift"),
   note: document.getElementById("note")
 };
@@ -125,6 +126,48 @@ function showAlert(message, type = "success", options = {}) {
   }
 }
 
+function setupEntryStepNavigation() {
+  const stepLinks = [...document.querySelectorAll(".entry-step-strip a[href^='#']")];
+  if (!stepLinks.length) return;
+
+  const sectionEntries = stepLinks
+    .map(link => ({ link, section: document.querySelector(link.getAttribute("href")) }))
+    .filter(entry => entry.section);
+
+  function setActiveStep(sectionId) {
+    sectionEntries.forEach(({ link, section }) => {
+      const active = section.id === sectionId;
+      link.classList.toggle("is-active", active);
+      if (active) link.setAttribute("aria-current", "step");
+      else link.removeAttribute("aria-current");
+    });
+  }
+
+  sectionEntries.forEach(({ link, section }) => {
+    link.addEventListener("click", event => {
+      event.preventDefault();
+      setActiveStep(section.id);
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
+  setActiveStep(sectionEntries[0].section.id);
+
+  if (!("IntersectionObserver" in window)) return;
+
+  const observer = new IntersectionObserver(entries => {
+    const visibleEntry = entries
+      .filter(entry => entry.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visibleEntry) setActiveStep(visibleEntry.target.id);
+  }, {
+    rootMargin: "-120px 0px -58% 0px",
+    threshold: [0.12, 0.28, 0.5]
+  });
+
+  sectionEntries.forEach(({ section }) => observer.observe(section));
+}
+
 function setSubmitting(isSubmitting) {
   if (!submitButton) return;
   submitButton.disabled = isSubmitting;
@@ -172,6 +215,21 @@ function selectedPatient() {
     return patients.find(patient => String(patient.id) === String(patientIdParam));
   }
   return findPatientByName(inputs.patient.value.trim());
+}
+
+function patientDashboardUrl(patient, record) {
+  const params = new URLSearchParams();
+  if (patient?.id) {
+    params.set("patientId", patient.id);
+  } else {
+    params.set("patient", inputs.patient.value.trim());
+  }
+  if (record?.id) {
+    params.set("highlightRecord", record.id);
+  } else if (inputs.lastVisit.value) {
+    params.set("highlightVisit", inputs.lastVisit.value);
+  }
+  return `patient-dashboard.html?${params.toString()}`;
 }
 
 function lockPatientFromQuery() {
@@ -720,6 +778,7 @@ function updatePaymentCalculation({ render = true } = {}) {
   if (inputs.paymentTotalDisplay) inputs.paymentTotalDisplay.textContent = formatMoney(summary.total, summary.currency);
   if (inputs.paymentPaidDisplay) inputs.paymentPaidDisplay.textContent = formatMoney(summary.paid, summary.currency);
   if (inputs.paymentDebtDisplay) inputs.paymentDebtDisplay.textContent = formatMoney(summary.debt, summary.currency);
+  if (inputs.paymentStatusDisplay) inputs.paymentStatusDisplay.textContent = inputs.paymentStatus.selectedOptions[0]?.textContent || summary.status;
   if (render) renderPaymentParts();
 }
 
@@ -908,6 +967,7 @@ inputs.amountPaid.addEventListener("input", () => {
 });
 
 inputs.amountPaid.closest("label")?.setAttribute("hidden", "");
+inputs.paymentStatus.closest("label")?.setAttribute("hidden", "");
 
 inputs.totalAmount?.addEventListener("input", () => {
   totalAmountTouched = true;
@@ -1189,7 +1249,7 @@ form.addEventListener("submit", async (event) => {
   const amountDueValue = summary.debt;
   const amountPaidValue = summary.paid;
   if (!patientNameValue || !inputs.lastVisit.value || (!hasProcedureSelection && !hasTreatments)) {
-    showAlert("Ispunite pacijenta, datum i odaberite osnovnu delatnost/postupak ili rad na mapi zuba.", "error", { persist: true, scroll: true });
+    showAlert("Ispunite pacijenta, datum i dodajte rad na mapi zuba ili izaberite postupak bez mape zuba.", "error", { persist: true, scroll: true });
     return;
   }
 
@@ -1265,27 +1325,16 @@ form.addEventListener("submit", async (event) => {
   try {
     if (recordParam) {
       await window.DrRosaApi.updateRecord(recordParam, newRecord);
-      showAlert("Unos je azuriran! Vratite se na dashboard da ga pregledate.");
-      allRecords = await window.DrRosaApi.getRecords();
+      showAlert("Unos je azuriran. Otvaram karton pacijenta...", "success", { persist: true });
       setSubmitting(false);
+      window.location.href = patientDashboardUrl(patient, { id: recordParam });
       return;
     }
 
-    await window.DrRosaApi.createRecord(newRecord);
-    showAlert("Unos je spremljen! Vratite se na dashboard da ga pregledate.");
-    form.reset();
-    teethTreatments = {};
-    paymentParts = [];
-    totalAmountTouched = false;
-    populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
-    populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
-    updateDiscountCurrencyLabel();
-    allRecords = await window.DrRosaApi.getRecords();
-    updateTeethSummary();
-    updateToothHighlights();
-    updatePaymentCalculation();
-    updatePreview();
-    setSubmitting(false);
+    const savedRecord = await window.DrRosaApi.createRecord(newRecord);
+    showAlert("Unos je spremljen. Otvaram karton pacijenta...", "success", { persist: true });
+    window.location.href = patientDashboardUrl(patient, savedRecord);
+    return;
   } catch (error) {
     setSubmitting(false);
     showAlert(error.message || "Unos nije sačuvan.", "error", { persist: true, scroll: true });
@@ -1293,6 +1342,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 (async function init() {
+  setupEntryStepNavigation();
   if (!await requireAccess()) return;
   try {
     await procedureCatalog.loadFromApi?.();

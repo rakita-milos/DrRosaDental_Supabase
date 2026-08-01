@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kalendar termina | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css" />
+  <link rel="stylesheet" href="../styles/styles.css?v=responsive-20260727" />
 </head>
 <body>
   <div class="app-shell">
@@ -40,6 +40,10 @@
           <div class="calendar-actions">
             <button id="prev-period" class="secondary-btn" type="button" aria-label="Prethodni period">&lt;</button>
             <button id="today-btn" class="secondary-btn" type="button">Danas</button>
+            <button id="google-calendar-sync-btn" class="secondary-btn google-sync-btn" type="button">
+              <span class="btn-spinner" aria-hidden="true"></span>
+              <span data-google-sync-label>Sync Google</span>
+            </button>
             <button id="next-period" class="secondary-btn" type="button" aria-label="Sledeci period">&gt;</button>
           </div>
         </div>
@@ -70,6 +74,7 @@
           </label>
           <button id="new-appointment-btn" class="primary-btn" type="button">Novi termin</button>
         </div>
+        <div id="google-sync-status" class="google-sync-status" aria-live="polite"></div>
       </section>
 
       <section class="calendar-layout">
@@ -88,13 +93,15 @@
           </div>
           <div id="appointment-alert" class="form-alert" aria-live="polite"></div>
           <div id="appointment-patient-context" class="entry-patient-context" hidden></div>
-          <form id="appointment-form">
+          <form id="appointment-form" class="appointment-form-grid">
             <input type="hidden" id="appointment-id" />
-            <div class="input-grid">
+            <div class="appointment-form-section appointment-patient-section">
               <label class="full-width">
                 Pacijent
                 <select id="appointment-patient" required></select>
               </label>
+            </div>
+            <div class="appointment-form-section appointment-time-section">
               <label>
                 Datum
                 <input id="appointment-date" type="date" required />
@@ -114,6 +121,8 @@
                   <option value="120">120 min</option>
                 </select>
               </label>
+            </div>
+            <div class="appointment-form-section appointment-resource-section">
               <label>
                 Doktor
                 <select id="appointment-doctor" required></select>
@@ -133,6 +142,8 @@
                   <option value="no_show">Nije došao</option>
                 </select>
               </label>
+            </div>
+            <div class="appointment-form-section appointment-service-section">
               <label>
                 Postupak
                 <select id="appointment-procedure" required></select>
@@ -155,9 +166,9 @@
   </div>
 
   <script src="../scripts/api.js"></script>
-  <script src="../scripts/date-utils.js?v=picker-format-20260708"></script>
+  <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/script.js"></script>
-  <script src="../scripts/calendar.js"></script>
+  <script src="../scripts/calendar.js?v=appointment-modal-20260724"></script>
 </body>
 </html>

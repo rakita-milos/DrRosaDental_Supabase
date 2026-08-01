@@ -5,7 +5,7 @@ class NewPatientPage {
     this.page = page;
     this.firstName = page.locator("#first-name");
     this.lastName = page.locator("#last-name");
-    this.birthDate = page.locator("#birth-date");
+    this.birthDate = page.locator('[data-drrosa-for="birth-date"]');
     this.gender = page.locator("#gender");
     this.address = page.locator("#address");
     this.phone = page.locator("#phone");
@@ -25,7 +25,7 @@ class NewPatientPage {
   async fillPatient(data) {
     await this.firstName.fill(data.firstName);
     await this.lastName.fill(data.lastName);
-    await this.birthDate.fill(data.birthDate || "1986-05-08");
+    await this.birthDate.fill(data.birthDateDisplay || "08.05.1986");
     await this.gender.selectOption({ index: data.genderIndex || 1 });
     await this.address.fill(data.address || "Playwright smoke address");
     await this.phone.fill(data.phone || "060123456");

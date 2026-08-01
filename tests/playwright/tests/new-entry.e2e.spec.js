@@ -33,7 +33,8 @@ async function gotoNewEntry(page, fullName) {
 }
 
 async function fillBasicVisit(page, { note, date = "2026-07-06", total = "120" } = {}) {
-  await page.locator("#last-visit").fill(date);
+  const [year, month, day] = date.split("-");
+  await page.locator('[data-drrosa-for="last-visit"]').fill(`${day}.${month}.${year}`);
   await page.locator("#procedure-activity").selectOption({ index: 1 });
   await expect(page.locator("#procedure")).toBeEnabled();
   await page.locator("#procedure").selectOption({ label: "Kontrola" });
@@ -84,7 +85,7 @@ test("new entry: explains why save is blocked when no procedure or tooth treatme
   const fullName = await createTestPatient(request, baseURL, stamp, "Validation");
 
   await gotoNewEntry(page, fullName);
-  await page.locator("#last-visit").fill("2026-07-06");
+  await page.locator('[data-drrosa-for="last-visit"]').fill("06.07.2026");
   await page.locator("#doctor").selectOption({ index: 0 });
   await page.locator("#shift").selectOption({ index: 0 });
   await page.locator("#total-amount").fill("30");
@@ -108,7 +109,7 @@ test("new entry: tooth map treatment can be added and saved", async ({ page, req
   await page.locator("#save-treatment").click();
   await expect(page.locator("#teeth-summary")).toContainText(/Zub 11|Kontrola/);
 
-  await page.locator("#last-visit").fill("2026-07-06");
+  await page.locator('[data-drrosa-for="last-visit"]').fill("06.07.2026");
   await page.locator("#status").selectOption({ index: 2 });
   await page.locator("#doctor").selectOption({ index: 0 });
   await page.locator("#shift").selectOption({ index: 0 });

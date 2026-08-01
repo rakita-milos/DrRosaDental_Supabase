@@ -107,6 +107,34 @@
     alert.className = `form-alert ${type ? `alert-${type}` : ""}`;
   }
 
+  function setGoogleSyncStatus(message = "", type = "") {
+    const status = document.getElementById("google-sync-status");
+    if (!status) return;
+    status.textContent = message;
+    status.className = `google-sync-status ${type || ""}`.trim();
+  }
+
+  function googleSyncMessage(result = {}) {
+    const warnings = Number(result.importedWithWarning || 0);
+    return [
+      `Procitano: ${Number(result.fetched || 0)}`,
+      `uvezeno: ${Number(result.imported || 0)}`,
+      `azurirano: ${Number(result.updated || 0)}`,
+      `upozorenja: ${warnings}`,
+      `all-day: ${Number(result.allDayEvents || 0)}`,
+      `konflikti: ${Number(result.conflicts || 0)}`
+    ].join(", ");
+  }
+
+  function setGoogleSyncLoading(isLoading) {
+    const button = document.getElementById("google-calendar-sync-btn");
+    const label = button?.querySelector("[data-google-sync-label]");
+    if (!button || !label) return;
+    button.disabled = isLoading;
+    button.classList.toggle("is-loading", isLoading);
+    label.textContent = isLoading ? "Sinhronizacija..." : "Sync Google";
+  }
+
   function normalizeText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
   }
@@ -121,6 +149,21 @@
     const foreground = hexColor(appointment.doctorCalendarTextColor, "#ffffff");
     if (!background) return "";
     return ` style="border-left-color:${background}; background:${background}; color:${foreground};"`;
+  }
+
+  function appointmentUiClass(appointment, baseClass) {
+    return [
+      baseClass,
+      `appointment-${appointment.status}`,
+      appointment.googleEventType && appointment.googleEventType !== "appointment" ? "google-event-note" : "",
+      appointment.googleSyncWarning ? "google-event-warning" : ""
+    ].filter(Boolean).join(" ");
+  }
+
+  function googleWarningLine(appointment) {
+    if (!appointment.googleSyncWarning) return "";
+    const label = appointment.googleSyncWarningCode === "all_day_event" ? "Google event" : "Za proveru";
+    return `<small class="google-warning-line">${label}: ${window.DrRosaSecurity.escapeHtml(appointment.googleSyncWarning)}</small>`;
   }
 
   function hasCodeLikeContent(value) {
@@ -237,6 +280,21 @@
       .sort((a, b) => parseLocalDateTime(a.startsAt) - parseLocalDateTime(b.startsAt));
   }
 
+  function isGoogleNoteEvent(appointment) {
+    return appointment.googleEventType && appointment.googleEventType !== "appointment";
+  }
+
+  function chairLabel(appointment) {
+    const chair = state.chairs.find(item => String(item.id) === String(appointment.chairId));
+    return chair?.name || appointment.chairName || "Stolica";
+  }
+
+  function chairShortLabel(appointment) {
+    const label = chairLabel(appointment);
+    const match = label.match(/\d+/);
+    return match ? `S${match[0]}` : label.slice(0, 2).toUpperCase();
+  }
+
   function renderMonthItems(appointments) {
     if (!appointments.length) return `<p class="empty-row">Slobodno</p>`;
     const visible = appointments.slice(0, 3);
@@ -250,9 +308,10 @@
   function renderCompactAppointment(appointment) {
     const starts = parseLocalDateTime(appointment.startsAt);
     return `
-      <button class="appointment-compact appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
+      <button class="${appointmentUiClass(appointment, "appointment-compact")}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
         <span>${pad(starts.getHours())}:${pad(starts.getMinutes())}</span>
-        <strong>${window.DrRosaSecurity.escapeHtml(shortPatientName(appointment.patientName))}</strong>
+        <strong>${window.DrRosaSecurity.escapeHtml(shortPatientName(appointment.patientName))} · ${window.DrRosaSecurity.escapeHtml(chairShortLabel(appointment))}</strong>
+        ${appointment.googleSyncWarning ? `<small>!</small>` : ""}
       </button>
     `;
   }
@@ -273,6 +332,24 @@
           ${days.map(day => renderWeekSlot(day, hour)).join("")}
         `).join("")}
       </div>
+      <div class="week-agenda">
+        ${days.map(renderWeekAgendaDay).join("")}
+      </div>
+    `;
+  }
+
+  function renderWeekAgendaDay(day) {
+    const appointments = appointmentsForDay(day);
+    return `
+      <section class="week-agenda-day" data-date="${dateKey(day)}">
+        <button class="week-agenda-heading" type="button" data-date="${dateKey(day)}">
+          <span>${DAY_NAMES[(day.getDay() || 7) - 1]}</span>
+          <strong>${window.DrRosaDateUtils.formatDate(day)}</strong>
+        </button>
+        <div class="week-agenda-list">
+          ${appointments.length ? appointments.map(renderAgendaAppointment).join("") : `<button class="empty-day-agenda" type="button" data-date="${dateKey(day)}">Slobodan dan</button>`}
+        </div>
+      </section>
     `;
   }
 
@@ -288,35 +365,92 @@
 
   function renderWeekAppointment(appointment) {
     const starts = parseLocalDateTime(appointment.startsAt);
-    const ends = parseLocalDateTime(appointment.endsAt);
+    const ends = appointment.endsAt
+      ? parseLocalDateTime(appointment.endsAt)
+      : new Date(starts.getTime() + Number(appointment.durationMinutes || 30) * 60000);
     return `
-      <button class="week-appointment appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
+      <button class="${appointmentUiClass(appointment, "week-appointment")}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
         <span>${pad(starts.getHours())}:${pad(starts.getMinutes())}-${pad(ends.getHours())}:${pad(ends.getMinutes())}</span>
-        <strong>${window.DrRosaSecurity.escapeHtml(shortPatientName(appointment.patientName))}</strong>
+        <strong>${window.DrRosaSecurity.escapeHtml(shortPatientName(appointment.patientName))} · ${window.DrRosaSecurity.escapeHtml(chairShortLabel(appointment))}</strong>
         ${paymentLine(appointment)}
+        ${googleWarningLine(appointment)}
       </button>
     `;
   }
 
   function renderDayAgenda(day) {
     const appointments = appointmentsForDay(day);
+    const noteEvents = appointments.filter(isGoogleNoteEvent);
+    const chairAppointments = appointments.filter(appointment => !isGoogleNoteEvent(appointment));
+    const chairs = state.chairs.length ? state.chairs : [{ id: "", name: "Stolica" }];
+    const hours = Array.from({ length: 13 }, (_, index) => 8 + index);
     return `
-      <div class="day-agenda" data-date="${dateKey(day)}">
-        ${appointments.length ? appointments.map(renderAgendaAppointment).join("") : `<button class="empty-day-agenda" type="button" data-date="${dateKey(day)}">Slobodan dan</button>`}
+      <div class="day-chair-board" data-date="${dateKey(day)}">
+        ${noteEvents.length ? `
+          <section class="google-day-notes" aria-label="Google napomene">
+            <div class="google-day-notes-header">
+              <span>Google napomene</span>
+              <strong>${noteEvents.length}</strong>
+            </div>
+            <div class="google-day-notes-list">
+              ${noteEvents.map(renderAgendaAppointment).join("")}
+            </div>
+          </section>
+        ` : ""}
+        <div class="day-chair-switch" aria-label="Izbor stolice">
+          ${chairs.map((chair, index) => `
+            <button class="${index === 0 ? "is-active" : ""}" type="button" data-chair-tab="${chair.id}">
+              ${window.DrRosaSecurity.escapeHtml(chair.name)}
+            </button>
+          `).join("")}
+        </div>
+        <div class="day-chair-columns" style="--chair-count:${chairs.length}">
+          ${chairs.map(chair => `
+            <section class="day-chair-column" data-chair-id="${chair.id}">
+              <header class="day-chair-header">
+                <span>${window.DrRosaSecurity.escapeHtml(chair.name)}</span>
+                <strong>${chairAppointments.filter(appointment => String(appointment.chairId) === String(chair.id)).length}</strong>
+              </header>
+              <div class="day-chair-slots">
+                ${hours.map(hour => renderChairSlot(day, chair, hour, chairAppointments)).join("")}
+              </div>
+            </section>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderChairSlot(day, chair, hour, appointments) {
+    const slotAppointments = appointments.filter(appointment => {
+      const starts = parseLocalDateTime(appointment.startsAt);
+      return String(appointment.chairId) === String(chair.id) && starts.getHours() === hour;
+    });
+    return `
+      <div class="day-chair-slot" data-date="${dateKey(day)}" data-hour="${hour}" data-chair-id="${chair.id}">
+        <button class="day-chair-slot-time" type="button" data-date="${dateKey(day)}" data-hour="${hour}" data-chair-id="${chair.id}">
+          ${pad(hour)}:00
+        </button>
+        <div class="day-chair-slot-items">
+          ${slotAppointments.length ? slotAppointments.map(renderAgendaAppointment).join("") : `<button class="empty-day-agenda" type="button" data-date="${dateKey(day)}" data-hour="${hour}" data-chair-id="${chair.id}">Slobodno</button>`}
+        </div>
       </div>
     `;
   }
 
   function renderAgendaAppointment(appointment) {
     const starts = parseLocalDateTime(appointment.startsAt);
-    const ends = parseLocalDateTime(appointment.endsAt);
+    const ends = appointment.endsAt
+      ? parseLocalDateTime(appointment.endsAt)
+      : new Date(starts.getTime() + Number(appointment.durationMinutes || 30) * 60000);
     return `
-      <button class="agenda-appointment appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
+      <button class="${appointmentUiClass(appointment, "agenda-appointment")}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
         <span class="appointment-time">${pad(starts.getHours())}:${pad(starts.getMinutes())} - ${pad(ends.getHours())}:${pad(ends.getMinutes())}</span>
         <strong>${window.DrRosaSecurity.escapeHtml(appointment.patientName)}</strong>
         <span>${window.DrRosaSecurity.escapeHtml(appointment.procedureName)}</span>
         <small>${window.DrRosaSecurity.escapeHtml(appointment.doctorName)} / ${window.DrRosaSecurity.escapeHtml(appointment.chairName)}</small>
         ${paymentLine(appointment)}
+        ${googleWarningLine(appointment)}
         <em>${STATUS_LABELS[appointment.status] || appointment.status}</em>
       </button>
     `;
@@ -330,20 +464,23 @@
 
   function renderAppointmentCard(appointment) {
     const starts = parseLocalDateTime(appointment.startsAt);
-    const ends = parseLocalDateTime(appointment.endsAt);
+    const ends = appointment.endsAt
+      ? parseLocalDateTime(appointment.endsAt)
+      : new Date(starts.getTime() + Number(appointment.durationMinutes || 30) * 60000);
     return `
-      <button class="appointment-card appointment-${appointment.status}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
+      <button class="${appointmentUiClass(appointment, "appointment-card")}" type="button" data-appointment-id="${appointment.id}"${appointmentColorStyle(appointment)}>
         <span class="appointment-time">${pad(starts.getHours())}:${pad(starts.getMinutes())} - ${pad(ends.getHours())}:${pad(ends.getMinutes())}</span>
         <strong>${window.DrRosaSecurity.escapeHtml(appointment.patientName)}</strong>
         <span>${window.DrRosaSecurity.escapeHtml(appointment.procedureName)}</span>
         <small>${window.DrRosaSecurity.escapeHtml(appointment.doctorName)} / ${window.DrRosaSecurity.escapeHtml(appointment.chairName)}</small>
         ${paymentLine(appointment)}
+        ${googleWarningLine(appointment)}
         <em>${STATUS_LABELS[appointment.status] || appointment.status}</em>
       </button>
     `;
   }
 
-  function resetForm(date = new Date()) {
+  function resetForm(date = new Date(), options = {}) {
     openPanel();
     const context = document.getElementById("appointment-patient-context");
     const patientSelect = document.getElementById("appointment-patient");
@@ -359,6 +496,8 @@
     document.getElementById("appointment-duration").value = "30";
     document.getElementById("appointment-status").value = "scheduled";
     document.getElementById("appointment-notes").value = "";
+    if (options.chairId) document.getElementById("appointment-chair").value = options.chairId;
+    if (Number.isInteger(options.hour)) document.getElementById("appointment-time").value = `${pad(options.hour)}:00`;
     document.getElementById("create-visit-btn").disabled = true;
     document.getElementById("cancel-appointment-btn").hidden = true;
     document.getElementById("cancel-appointment-btn").disabled = true;
@@ -506,6 +645,19 @@
       state.currentDate = new Date();
       await loadAppointments();
     });
+    document.getElementById("google-calendar-sync-btn")?.addEventListener("click", async () => {
+      setGoogleSyncLoading(true);
+      setGoogleSyncStatus("Sinhronizacija sa Google Kalendarom je u toku...", "info");
+      try {
+        const result = await window.DrRosaApi.pullGoogleCalendarChanges({ reset: false, limit: 100, daysPast: 1, daysFuture: 14, complete: true });
+        setGoogleSyncStatus(`Google sync zavrsen. ${googleSyncMessage(result)}.`, result.importedWithWarning ? "success" : "success");
+        await loadAppointments();
+      } catch (error) {
+        setGoogleSyncStatus(error.message || "Google sync nije uspeo.", "error");
+      } finally {
+        setGoogleSyncLoading(false);
+      }
+    });
     document.getElementById("calendar-view").addEventListener("change", async event => {
       state.viewMode = event.target.value;
       closePanel();
@@ -527,6 +679,22 @@
       const appointmentButton = event.target.closest("[data-appointment-id]");
       if (appointmentButton) {
         editAppointment(appointmentButton.dataset.appointmentId);
+        return;
+      }
+      const slotButton = event.target.closest("[data-date][data-chair-id]");
+      if (slotButton) {
+        resetForm(new Date(`${slotButton.dataset.date}T09:00:00`), {
+          chairId: slotButton.dataset.chairId,
+          hour: Number(slotButton.dataset.hour)
+        });
+        return;
+      }
+      const chairTab = event.target.closest("[data-chair-tab]");
+      if (chairTab) {
+        const board = chairTab.closest(".day-chair-board");
+        const column = board?.querySelector(`.day-chair-column[data-chair-id="${CSS.escape(chairTab.dataset.chairTab)}"]`);
+        board?.querySelectorAll("[data-chair-tab]").forEach(button => button.classList.toggle("is-active", button === chairTab));
+        column?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
         return;
       }
       const dayButton = event.target.closest("[data-date]");

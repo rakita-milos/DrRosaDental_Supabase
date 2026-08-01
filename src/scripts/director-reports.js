@@ -84,14 +84,43 @@ function formatCurrencyAmounts(amounts) {
     : "0.00";
 }
 
-function renderDirectorKpis({ records = [], patients = [], doctors = [] } = {}) {
+function startsAtValue(appointment) {
+  return appointment?.startsAt || appointment?.starts_at;
+}
+
+function appointmentPatientId(appointment) {
+  return appointment?.patientId || appointment?.patient_id;
+}
+
+function activeUpcomingAppointments(appointments = []) {
+  const now = Date.now();
+  return appointments.filter(appointment => {
+    const startsAt = new Date(startsAtValue(appointment)).getTime();
+    const status = String(appointment.status || "").toLowerCase();
+    return Number.isFinite(startsAt) && startsAt >= now && !["cancelled", "completed", "no_show"].includes(status);
+  });
+}
+
+function renderDirectorKpis({ records = [], patients = [], doctors = [], appointments = [] } = {}) {
   const revenue = records.reduce((sum, record) => sum + Number(record.amountPaid || 0), 0);
   const debt = records.reduce((sum, record) => sum + Number(record.amountDue || 0), 0);
+  const debtorPatients = new Set(records.filter(isDebt).map(record => record.patientId || record.patient).filter(Boolean));
+  const upcoming = activeUpcomingAppointments(appointments);
+  const weekEnd = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  const weekAppointments = upcoming.filter(appointment => new Date(startsAtValue(appointment)).getTime() <= weekEnd).length;
+  const patientIdsWithUpcoming = new Set(upcoming.map(appointmentPatientId).filter(Boolean).map(String));
+  const patientIds = patients.length
+    ? patients.map(patient => patient.id).filter(Boolean).map(String)
+    : Array.from(new Set(records.map(record => record.patientId).filter(Boolean).map(String)));
+  const noFollowup = patientIds.filter(id => !patientIdsWithUpcoming.has(id)).length;
   const values = {
     "director-kpi-revenue": window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(revenue, "EUR") : `${revenue.toFixed(2)} EUR`,
     "director-kpi-debt": window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(debt, "EUR") : `${debt.toFixed(2)} EUR`,
     "director-kpi-patients": String(patients.length || new Set(records.map(record => record.patient).filter(Boolean)).size),
-    "director-kpi-doctors": String(doctors.length || new Set(records.map(record => record.doctor).filter(Boolean)).size)
+    "director-kpi-doctors": String(doctors.length || new Set(records.map(record => record.doctor).filter(Boolean)).size),
+    "director-kpi-no-followup": String(noFollowup),
+    "director-kpi-debtors": String(debtorPatients.size),
+    "director-kpi-week-appointments": String(weekAppointments)
   };
   Object.entries(values).forEach(([id, value]) => {
     const element = document.getElementById(id);
@@ -146,13 +175,30 @@ function initializeReports() {
 
   reports.push({ id: "admin-codebooks-report", tone: "teal", icon: "ADM", title: "Admin šifarnici", description: "Delatnosti, postupci, statusi, valute i smene" });
 
-  document.getElementById("reports-grid").innerHTML = reports.map(report => `
-    <button class="report-card report-card-${report.tone}" type="button" data-report-id="${report.id}">
-      <span class="report-icon">${report.icon}</span>
-      <span class="report-title">${report.title}</span>
-      <span class="report-description">${report.description}</span>
-    </button>
-  `).join("");
+  const reportGroups = [
+    { title: "Finansije", ids: ["financial-report", "excel-report", "daily-cash-report"] },
+    { title: "Operativa", ids: ["patients-report", "doctors-report", "procedures-report"] },
+    { title: "Podešavanja", ids: ["public-booking-report", "google-calendar-report", "admin-codebooks-report"] },
+    { title: "Sigurnost", ids: ["backup-security-report"] }
+  ];
+
+  document.getElementById("reports-grid").innerHTML = reportGroups.map(group => {
+    const items = group.ids.map(id => reports.find(report => report.id === id)).filter(Boolean);
+    return `
+      <section class="director-report-group" aria-label="${group.title}">
+        <h3>${group.title}</h3>
+        <div class="director-report-group-grid">
+          ${items.map(report => `
+            <button class="report-card report-card-${report.tone}" type="button" data-report-id="${report.id}">
+              <span class="report-icon">${report.icon}</span>
+              <span class="report-title">${report.title}</span>
+              <span class="report-description">${report.description}</span>
+            </button>
+          `).join("")}
+        </div>
+      </section>
+    `;
+  }).join("");
 }
 
 function initializeReportNavigation() {
@@ -2098,13 +2144,14 @@ function initializeDailyCashReport() {
   initializeGoogleCalendarSettings();
   initializeBackupSecurity();
   try {
-    const [records, patients, doctors] = await Promise.all([
+    const [records, patients, doctors, appointments] = await Promise.all([
       window.DrRosaApi.getRecords(),
       window.DrRosaApi.getPatients ? window.DrRosaApi.getPatients().catch(() => []) : [],
-      window.DrRosaApi.getDirectorDoctors ? window.DrRosaApi.getDirectorDoctors().catch(() => []) : []
+      window.DrRosaApi.getDirectorDoctors ? window.DrRosaApi.getDirectorDoctors().catch(() => []) : [],
+      window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : []
     ]);
     cachedRecords = records;
-    renderDirectorKpis({ records, patients, doctors });
+    renderDirectorKpis({ records, patients, doctors, appointments });
   } catch (error) {
     console.error("Director records load error:", error);
     cachedRecords = [];
