@@ -101,6 +101,14 @@
     };
   }
 
+  function visibleSyncRange() {
+    const range = visibleRange();
+    return {
+      timeMin: range.from.toISOString(),
+      timeMax: range.to.toISOString()
+    };
+  }
+
   function setAlert(message, type = "info") {
     const alert = document.getElementById("appointment-alert");
     alert.textContent = message || "";
@@ -116,14 +124,16 @@
 
   function googleSyncMessage(result = {}) {
     const warnings = Number(result.importedWithWarning || 0);
-    return [
+    const parts = [
       `Procitano: ${Number(result.fetched || 0)}`,
       `uvezeno: ${Number(result.imported || 0)}`,
       `azurirano: ${Number(result.updated || 0)}`,
       `upozorenja: ${warnings}`,
       `all-day: ${Number(result.allDayEvents || 0)}`,
       `konflikti: ${Number(result.conflicts || 0)}`
-    ].join(", ");
+    ];
+    if (result.partial) parts.push("NIJE zavrseno sve - pokrenite sync ponovo");
+    return parts.join(", ");
   }
 
   function setGoogleSyncLoading(isLoading) {
@@ -193,7 +203,7 @@
   }
 
   function optionList(items, { value = "id", label = "name" } = {}) {
-    return items.map(item => `<option value="${item[value]}">${window.DrRosaSecurity.escapeHtml(item[label])}</option>`).join("");
+    return items.map(item => `<option value="${window.DrRosaSecurity.escapeAttribute(item[value])}">${window.DrRosaSecurity.escapeHtml(item[label])}</option>`).join("");
   }
 
   function formatMoney(amount, currency = "EUR") {
@@ -222,7 +232,7 @@
     document.getElementById("appointment-chair").innerHTML = optionList(state.chairs);
     document.getElementById("appointment-patient").innerHTML = optionList(state.patients, { label: "fullName" });
     document.getElementById("appointment-procedure").innerHTML = state.procedures
-      .map(item => `<option value="${item.id}" data-name="${window.DrRosaSecurity.escapeHtml(item.value)}">${window.DrRosaSecurity.escapeHtml(item.label)}</option>`)
+      .map(item => `<option value="${window.DrRosaSecurity.escapeAttribute(item.id)}" data-name="${window.DrRosaSecurity.escapeAttribute(item.value)}">${window.DrRosaSecurity.escapeHtml(item.label)}</option>`)
       .join("");
   }
 
@@ -649,8 +659,14 @@
       setGoogleSyncLoading(true);
       setGoogleSyncStatus("Sinhronizacija sa Google Kalendarom je u toku...", "info");
       try {
-        const result = await window.DrRosaApi.pullGoogleCalendarChanges({ reset: false, limit: 100, daysPast: 1, daysFuture: 14, complete: true });
-        setGoogleSyncStatus(`Google sync zavrsen. ${googleSyncMessage(result)}.`, result.importedWithWarning ? "success" : "success");
+        const result = await window.DrRosaApi.pullGoogleCalendarChanges({
+          mode: "range",
+          reset: true,
+          limit: 100,
+          complete: true,
+          ...visibleSyncRange()
+        });
+        setGoogleSyncStatus(`Google sync zavrsen. ${googleSyncMessage(result)}.`, result.partial ? "error" : "success");
         await loadAppointments();
       } catch (error) {
         setGoogleSyncStatus(error.message || "Google sync nije uspeo.", "error");

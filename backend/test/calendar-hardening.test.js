@@ -5,6 +5,7 @@ const { test } = require('node:test');
 
 const serverSource = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const calendarRepoSource = readFileSync(path.join(__dirname, '..', 'db', 'calendar.js'), 'utf8');
+const appointmentServiceSource = readFileSync(path.join(__dirname, '..', 'services', 'appointment-service.js'), 'utf8');
 const schemaSource = readFileSync(path.join(__dirname, '..', 'database.postgres.sql'), 'utf8');
 const authHelperSource = readFileSync(path.join(__dirname, '..', '..', 'tests', 'playwright', 'utils', 'auth.js'), 'utf8');
 
@@ -33,8 +34,8 @@ test('Appointment overlap protection exists at API and database layers', () => {
   assert.match(schemaSource, /CONSTRAINT = 'appointments_runtime_no_overlap'/);
   assert.match(schemaSource, /NEW\.google_sync_warning_code IN \('doctor_conflict', 'chair_conflict', 'chair_reassigned'\)/);
   assert.match(schemaSource, /google_sync_warning_code IS NULL/);
-  assert.match(serverSource, /function isAppointmentOverlapConstraintError/);
-  assert.match(serverSource, /error\?\.code === '23P01'/);
+  assert.match(appointmentServiceSource, /function isAppointmentOverlapConstraintError/);
+  assert.match(appointmentServiceSource, /error\?\.code === '23P01'/);
   assert.match(serverSource, /return sendAppointmentConflictError\(res\)/);
 });
 

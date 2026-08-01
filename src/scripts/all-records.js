@@ -97,7 +97,7 @@ function nextAppointmentForPatient(patient) {
 }
 
 function option(value, label = value) {
-  return `<option value="${window.DrRosaSecurity.escapeHtml(value)}">${window.DrRosaSecurity.escapeHtml(label)}</option>`;
+  return `<option value="${window.DrRosaSecurity.escapeAttribute(value)}">${window.DrRosaSecurity.escapeHtml(label)}</option>`;
 }
 
 function populateActivityFilter() {

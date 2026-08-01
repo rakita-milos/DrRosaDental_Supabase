@@ -7,7 +7,17 @@ const {
   patientDocumentSchema,
   importScanSchema,
   recordCreateSchema,
-  publicBookingSchema
+  publicBookingSchema,
+  googlePullSchema,
+  medicalProfileSchema,
+  documentUpdateSchema,
+  recordUpdateSchema,
+  publicBookingSettingsSchema,
+  googleCalendarSettingsSchema,
+  googleOAuthExchangeSchema,
+  doctorWriteSchema,
+  codebookWriteSchema,
+  dailyCashReportSchema
 } = require('../validation');
 
 test('login schema validates valid credentials', () => {
@@ -102,4 +112,41 @@ test('public booking schema accepts camelCase booking payload', () => {
   });
   assert.equal(error, undefined);
   assert.equal(value.firstName, 'Mina');
+});
+
+test('google pull schema accepts explicit visible range refresh', () => {
+  const { error, value } = googlePullSchema.validate({
+    mode: 'range',
+    reset: true,
+    limit: 100,
+    complete: true,
+    timeMin: '2026-08-01T00:00:00.000Z',
+    timeMax: '2026-08-04T00:00:00.000Z'
+  });
+  assert.equal(error, undefined);
+  assert.equal(value.mode, 'range');
+  assert.equal(value.timeMin, '2026-08-01T00:00:00.000Z');
+});
+
+test('critical write schemas accept expected director and clinical payloads', () => {
+  assert.equal(medicalProfileSchema.validate({ allergies: 'Penicilin', smoker: false }).error, undefined);
+  assert.equal(documentUpdateSchema.validate({ title: 'Ortopan', claimAttachmentReady: true }).error, undefined);
+  assert.equal(recordUpdateSchema.validate({ procedure: 'Kontrola', notes: 'Bez tegoba' }).error, undefined);
+  assert.equal(publicBookingSettingsSchema.validate({ enabled: true }).error, undefined);
+  assert.equal(googleCalendarSettingsSchema.validate({
+    connectedEmail: 'dr@example.com',
+    calendarId: 'calendar-id',
+    redirectUri: 'https://example.com/callback',
+    syncEnabled: true,
+    syncDirection: 'two_way',
+    directorPassword: '123456789012'
+  }).error, undefined);
+  assert.equal(googleOAuthExchangeSchema.validate({ code: '4/abc' }).error, undefined);
+  assert.equal(doctorWriteSchema.validate({ name: 'Dr Rosa', email: 'rosa@example.com', calendarColor: '#ffffff' }).error, undefined);
+  assert.equal(codebookWriteSchema.validate({ type: 'procedure', value: 'kontrola', label: 'Kontrola', price: 10 }).error, undefined);
+  assert.equal(dailyCashReportSchema.validate({
+    date: '2026-08-01',
+    shift: 'prepodne',
+    lines: [{ itemValue: 'cash', amounts: { EUR: 10 }, notes: { EUR: 'ok' } }]
+  }).error, undefined);
 });

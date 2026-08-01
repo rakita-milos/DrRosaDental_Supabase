@@ -29,6 +29,7 @@ const saveStatusBox = document.getElementById("save-status");
 const submitButton = form?.querySelector("button[type='submit']");
 const entryPatientContext = document.getElementById("entry-patient-context");
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
+const escapeAttribute = window.DrRosaSecurity.escapeAttribute;
 const previewElements = {
   name: document.getElementById("preview-name"),
   visit: document.getElementById("preview-visit"),
@@ -283,7 +284,7 @@ function renderPatientSuggestions(query = inputs.patient.value) {
 
   list.innerHTML = names.length
     ? names.map(name => `
-      <button class="patient-autocomplete-option" type="button" role="option" data-patient-name="${escapeHtml(name)}">
+      <button class="patient-autocomplete-option" type="button" role="option" data-patient-name="${escapeAttribute(name)}">
         ${escapeHtml(name)}
       </button>
     `).join("")
@@ -297,11 +298,11 @@ function populatePatientList() {
 
 function populateDoctors() {
   if (!doctors.length) return;
-  inputs.doctor.innerHTML = doctors.map(doctor => `<option value="${escapeHtml(doctor.name)}">${escapeHtml(doctor.name)}</option>`).join("");
+  inputs.doctor.innerHTML = doctors.map(doctor => `<option value="${escapeAttribute(doctor.name)}">${escapeHtml(doctor.name)}</option>`).join("");
 }
 
 function option(value, label = value) {
-  return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+  return `<option value="${escapeAttribute(value)}">${escapeHtml(label)}</option>`;
 }
 
 function procedureOption(procedure) {
@@ -309,7 +310,7 @@ function procedureOption(procedure) {
     amount: procedureCatalog.getPrice(procedure),
     currency: procedureCatalog.getPriceCurrency?.(procedure) || "EUR"
   };
-  return `<option value="${escapeHtml(procedure)}" data-price="${Number(priceInfo.amount || 0)}" data-price-currency="${escapeHtml(priceInfo.currency || "EUR")}">${escapeHtml(procedure)}</option>`;
+  return `<option value="${escapeAttribute(procedure)}" data-price="${Number(priceInfo.amount || 0)}" data-price-currency="${escapeAttribute(priceInfo.currency || "EUR")}">${escapeHtml(procedure)}</option>`;
 }
 
 function paymentCurrency() {

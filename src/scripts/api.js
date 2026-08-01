@@ -1,5 +1,6 @@
 (function () {
   const API_BASE = window.DRROSA_API_BASE || "/api";
+  const { escapeHtml } = window.DrRosaSecurity;
 
   function getSession() {
     return JSON.parse(localStorage.getItem("drrosa-session") || "null");
@@ -324,10 +325,10 @@
     return request("/director/calendar-sync/retry", { method: "POST" });
   }
 
-  async function pullGoogleCalendarChanges({ reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true } = {}) {
+  async function pullGoogleCalendarChanges({ reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true, mode = "incremental", timeMin = null, timeMax = null } = {}) {
     return request("/calendar-sync/pull-google", {
       method: "POST",
-      body: JSON.stringify({ reset, limit, daysPast, daysFuture, complete })
+      body: JSON.stringify({ reset, limit, daysPast, daysFuture, complete, mode, timeMin, timeMax })
     });
   }
 
@@ -954,24 +955,6 @@
   } else {
     initializeNotifications();
   }
-
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  function cell(value, className) {
-    const td = document.createElement("td");
-    if (className) td.className = className;
-    td.textContent = value ?? "-";
-    return td;
-  }
-
-  window.DrRosaSecurity = { escapeHtml, cell };
 
   function initializeCustomSelects() {
     if (window.DrRosaCustomSelects?.initialized) return;

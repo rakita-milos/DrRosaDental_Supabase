@@ -27,6 +27,14 @@ const { createRuntimeSettingsRepository } = require('./db/runtime-settings');
 const { createStartupSeedRepository } = require('./db/startup-seed');
 const { createPool, initializePostgresSchema } = require('./db/postgres');
 const { asyncRoute, sendError } = require('./route-utils');
+const { registerSystemRoutes } = require('./routes/system-routes');
+const {
+  createAppointmentService,
+  appointmentDurationMinutes,
+  isAppointmentOverlapConstraintError,
+  sendAppointmentConflictError
+} = require('./services/appointment-service');
+const { createGoogleCalendarSyncService } = require('./services/google-calendar-sync-service');
 const {
   validateBody,
   loginSchema,
@@ -36,7 +44,19 @@ const {
   patientDocumentSchema,
   recordCreateSchema,
   publicBookingSchema,
-  importScanSchema
+  appointmentWriteSchema,
+  appointmentStatusSchema,
+  googlePullSchema,
+  importScanSchema,
+  medicalProfileSchema,
+  documentUpdateSchema,
+  recordUpdateSchema,
+  publicBookingSettingsSchema,
+  googleCalendarSettingsSchema,
+  googleOAuthExchangeSchema,
+  doctorWriteSchema,
+  codebookWriteSchema,
+  dailyCashReportSchema
 } = require('./validation');
 
 const app = express();
@@ -108,6 +128,26 @@ const clinicalRepo = createClinicalRepository({ pgPool });
 const billingRepo = createBillingRepository({ pgPool });
 const runtimeSettings = createRuntimeSettingsRepository({ pgPool });
 const startupSeed = createStartupSeedRepository({ pgPool });
+const appointmentService = createAppointmentService({
+  calendarRepo,
+  procedureByInput,
+  activeDoctorExists,
+  positiveInteger,
+  validatedText,
+  normalizeIsoDateTime,
+  normalizeAppointmentStatus
+});
+const googleCalendarSyncService = createGoogleCalendarSyncService({
+  cleanText,
+  normalizeIsoDateTime,
+  appointmentDurationMinutes
+});
+const {
+  googleEventTimeInfo,
+  googleEventProcedureName,
+  googleEventChairSearchText,
+  chairIdFromGoogleEvent
+} = googleCalendarSyncService;
 
 let server;
 let runtimeReadyPromise;
@@ -1164,83 +1204,6 @@ function signedMoney(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
-function appointmentDurationMinutes(startsAt, endsAt) {
-  return Math.round((new Date(endsAt).getTime() - new Date(startsAt).getTime()) / 60000);
-}
-
-function boundedAppointmentDuration(value) {
-  const duration = Number(value);
-  if (!Number.isFinite(duration)) return 30;
-  return Math.max(5, Math.min(480, duration));
-}
-
-function appointmentConflict({ appointmentId = null, doctorId, chairId, startsAt, endsAt }) {
-  return calendarRepo.appointmentConflict({ appointmentId, doctorId, chairId, startsAt, endsAt });
-}
-
-function isAppointmentOverlapConstraintError(error) {
-  return error?.code === '23P01'
-    && ['appointments_doctor_no_overlap', 'appointments_chair_no_overlap', 'appointments_runtime_no_overlap'].includes(error.constraint);
-}
-
-function sendAppointmentConflictError(res) {
-  return res.status(409).json({ error: 'Termin se preklapa sa postojecim zakazivanjem.' });
-}
-
-async function appointmentPayloadFromInput(data, { validatePatient = true, validateChair = true } = {}) {
-  const patientId = positiveInteger(data.patient_id ?? data.patientId);
-  const doctorId = positiveInteger(data.doctor_id ?? data.doctorId);
-  const chairId = positiveInteger(data.chair_id ?? data.chairId);
-  const procedureIdInput = positiveInteger(data.procedure_id ?? data.procedureId);
-  const procedure = await procedureByInput({
-    procedureId: procedureIdInput,
-    procedureName: data.procedure_name ?? data.procedureName
-  });
-  const procedureNameResult = validatedText(data.procedure_name ?? data.procedureName ?? procedure?.label, { field: 'Postupak', max: 255, required: true });
-  const notesResult = validatedText(data.notes, { field: 'Napomena', max: 2000 });
-  const textError = procedureNameResult.error || notesResult.error;
-  if (textError) return { status: 400, error: textError };
-
-  const procedureName = procedureNameResult.value;
-  const startsAt = normalizeIsoDateTime(data.starts_at ?? data.startsAt);
-  const durationMinutesInput = boundedAppointmentDuration(data.duration_minutes ?? data.durationMinutes ?? 30);
-  const endsAt = normalizeIsoDateTime(data.ends_at ?? data.endsAt) ||
-    (startsAt ? new Date(new Date(startsAt).getTime() + durationMinutesInput * 60000).toISOString() : null);
-  const status = normalizeAppointmentStatus(data.status);
-  const notes = notesResult.value;
-
-  if (!patientId || !doctorId || !chairId || !procedure || !procedureName || !startsAt || !endsAt) {
-    return { status: 400, error: 'Pacijent, doktor, stolica, datum i postupak su obavezni.' };
-  }
-  if (appointmentDurationMinutes(startsAt, endsAt) <= 0) {
-    return { status: 400, error: 'End time must be after start time' };
-  }
-  if (validatePatient && !(await calendarRepo.rowExists('patients', patientId))) {
-    return { status: 404, error: 'Patient not found' };
-  }
-  if (!(await activeDoctorExists(doctorId))) {
-    return { status: 404, error: 'Doctor not found' };
-  }
-  if (validateChair && !(await calendarRepo.rowExists('chairs', chairId))) {
-    return { status: 404, error: 'Chair not found' };
-  }
-
-  return {
-    value: {
-      patientId,
-      doctorId,
-      chairId,
-      procedureId: procedure.id,
-      procedureName,
-      startsAt,
-      endsAt,
-      durationMinutes: appointmentDurationMinutes(startsAt, endsAt),
-      status,
-      notes
-    }
-  };
-}
-
 function serializeAppointment(row) {
   return {
     id: row.id,
@@ -1484,52 +1447,6 @@ async function googleEventAppointmentId(event) {
   return null;
 }
 
-function googleEventTimes(event) {
-  const startsAt = normalizeIsoDateTime(event?.start?.dateTime);
-  const endsAt = normalizeIsoDateTime(event?.end?.dateTime);
-  if (!startsAt || !endsAt || appointmentDurationMinutes(startsAt, endsAt) <= 0) return null;
-  return { startsAt, endsAt, googleEventType: 'appointment', warning: null, warningCode: null };
-}
-
-function googleEventTimeInfo(event) {
-  const timed = googleEventTimes(event);
-  if (timed) return timed;
-
-  const startDate = cleanText(event?.start?.date, { max: 20 });
-  const endDate = cleanText(event?.end?.date, { max: 20 }) || startDate;
-  if (startDate) {
-    const startsAt = normalizeIsoDateTime(`${startDate}T00:00:00.000Z`);
-    const endsAt = normalizeIsoDateTime(`${endDate}T00:00:00.000Z`) || normalizeIsoDateTime(`${startDate}T23:59:00.000Z`);
-    return {
-      startsAt,
-      endsAt: endsAt && new Date(endsAt) > new Date(startsAt) ? endsAt : new Date(new Date(startsAt).getTime() + 24 * 60 * 60000).toISOString(),
-      googleEventType: 'google_event',
-      warning: 'Google celodnevni dogadjaj je uvezen kao napomena i ne blokira termine.',
-      warningCode: 'all_day_event'
-    };
-  }
-
-  const fallbackStart = new Date();
-  fallbackStart.setHours(0, 0, 0, 0);
-  return {
-    startsAt: fallbackStart.toISOString(),
-    endsAt: new Date(fallbackStart.getTime() + 30 * 60000).toISOString(),
-    googleEventType: 'google_event',
-    warning: 'Google dogadjaj nema validno vreme i zahteva proveru.',
-    warningCode: 'invalid_time'
-  };
-}
-
-function googleEventProcedureName(event, fallback) {
-  const summary = cleanText(event?.summary, { max: 255 });
-  if (!summary) return fallback;
-  if (event?.extendedProperties?.private?.drrosaSource === 'drrosa') {
-    const [procedure] = summary.split(' - ');
-    return cleanText(procedure, { max: 255 }) || fallback;
-  }
-  return summary;
-}
-
 function googleImportNotes(event) {
   const parts = [
     'Uvezeno iz Google Calendar-a. Pacijent nije povezan sa kartonom u aplikaciji.',
@@ -1547,45 +1464,14 @@ function appendGoogleWarning(notes, warning) {
   return cleanText(`Upozorenje: ${warning}\n${notes || ''}`, { max: 2000 });
 }
 
-function normalizeGoogleChairText(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function googleEventChairSearchText(event) {
-  return [
-    event?.summary,
-    event?.description,
-    event?.location
-  ].map(normalizeGoogleChairText).filter(Boolean).join(' ');
-}
-
-function chairIdFromGoogleEvent(event, chairs = []) {
-  const text = googleEventChairSearchText(event);
-  if (!text) return null;
-
-  for (const chair of chairs) {
-    const chairName = normalizeGoogleChairText(chair.name);
-    if (chairName && text.includes(chairName)) return chair.id;
-    const number = String(chair.name || '').match(/\d+/)?.[0];
-    if (number && new RegExp(`\\b(?:stolica|chair|s)\\s*${number}\\b`).test(text)) {
-      return chair.id;
-    }
-  }
-
-  return null;
-}
-
 async function chairConflict({ appointmentId = null, chairId, startsAt, endsAt }) {
   if (!chairId) return null;
-  return appointmentConflict({ appointmentId, doctorId: 0, chairId, startsAt, endsAt });
+  return appointmentService.conflict({ appointmentId, doctorId: 0, chairId, startsAt, endsAt });
 }
 
 async function doctorConflict({ appointmentId = null, doctorId, startsAt, endsAt }) {
   if (!doctorId) return null;
-  return appointmentConflict({ appointmentId, doctorId, chairId: 0, startsAt, endsAt });
+  return appointmentService.conflict({ appointmentId, doctorId, chairId: 0, startsAt, endsAt });
 }
 
 async function chairForGoogleEvent({ appointmentId = null, preferredChairId = null, startsAt, endsAt, googleEventType = 'appointment', event = null }) {
@@ -1738,7 +1624,7 @@ async function updateAppointmentFromGoogleEvent(event, colorContext) {
   return { action: warning ? 'updated_warning' : 'updated', appointmentId, warningCode };
 }
 
-async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast = 1, daysFuture = 14, complete = false } = {}) {
+async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast = 1, daysFuture = 14, complete = false, mode = 'incremental', timeMin = null, timeMax = null } = {}) {
   const settings = await calendarRepo.googleSettings();
   if (!settings?.sync_enabled) throw new Error('Google Calendar sync is disabled.');
   if (settings.sync_direction !== 'two_way') throw new Error('Two-way sync is not enabled.');
@@ -1749,9 +1635,12 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
   const batchLimit = Math.max(1, Math.min(100, Number(limit) || 50));
   const lookbackDays = Math.max(0, Math.min(30, Number(daysPast) || 1));
   const lookaheadDays = Math.max(1, Math.min(180, Number(daysFuture) || 14));
+  const rangeMode = mode === 'range';
+  const rangeStart = normalizeIsoDateTime(timeMin) || new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
+  const rangeEnd = normalizeIsoDateTime(timeMax) || new Date(Date.now() + lookaheadDays * 24 * 60 * 60 * 1000).toISOString();
   const startedAt = Date.now();
-  const timeBudgetMs = complete ? 45000 : 12000;
-  const maxPages = complete ? 20 : 2;
+  const timeBudgetMs = complete ? (rangeMode ? 90000 : 45000) : 12000;
+  const maxPages = complete ? (rangeMode ? 100 : 20) : 2;
   const stats = {
     fetched: 0,
     imported: 0,
@@ -1767,8 +1656,11 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     conflicts: 0,
     invalidTime: 0,
     warnings: [],
-    fullSync: reset || !settings.events_sync_token,
-    partial: false
+    fullSync: rangeMode || reset || !settings.events_sync_token,
+    partial: false,
+    mode: rangeMode ? 'range' : 'incremental',
+    timeMin: rangeMode ? rangeStart : null,
+    timeMax: rangeMode ? rangeEnd : null
   };
   let nextSyncToken = null;
   let pageToken = null;
@@ -1777,13 +1669,13 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
 
   do {
     const query = new URLSearchParams({ maxResults: String(batchLimit), eventLabelVersion: '1' });
-    if (!usedReset && settings.events_sync_token) {
+    if (!rangeMode && !usedReset && settings.events_sync_token) {
       query.set('syncToken', settings.events_sync_token);
     } else {
       query.set('singleEvents', 'true');
       query.set('showDeleted', 'true');
-      query.set('timeMin', new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString());
-      query.set('timeMax', new Date(Date.now() + lookaheadDays * 24 * 60 * 60 * 1000).toISOString());
+      query.set('timeMin', rangeStart);
+      query.set('timeMax', rangeEnd);
     }
     if (pageToken) query.set('pageToken', pageToken);
 
@@ -1793,7 +1685,7 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     } catch (error) {
       if (error.status === 410 && !usedReset) {
         await calendarRepo.clearGoogleEventsSyncToken();
-        return pullGoogleCalendarChanges({ limit, reset: true });
+        return pullGoogleCalendarChanges({ limit, reset: true, daysPast, daysFuture, complete, mode, timeMin, timeMax });
       }
       throw error;
     }
@@ -1838,7 +1730,7 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     }
   } while (pageToken);
 
-  if (nextSyncToken && !stats.partial) {
+  if (!rangeMode && nextSyncToken && !stats.partial) {
     await calendarRepo.markGooglePull({ syncToken: nextSyncToken });
   } else {
     await calendarRepo.markGooglePull({});
@@ -1905,7 +1797,7 @@ async function notifyUsers({ type, title, message, metadata = null, userId = nul
   }
 }
 
-async function runGooglePullWithLock({ userId = null, req = null, reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true } = {}) {
+async function runGooglePullWithLock({ userId = null, req = null, reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true, mode = 'incremental', timeMin = null, timeMax = null } = {}) {
   const lock = await calendarRepo.startGoogleSyncJob({ userId });
   if (lock.alreadyRunning) {
     const error = new Error('Google sync je vec u toku.');
@@ -1924,7 +1816,7 @@ async function runGooglePullWithLock({ userId = null, req = null, reset = false,
   });
 
   try {
-    const stats = await pullGoogleCalendarChanges({ reset, limit, daysPast, daysFuture, complete });
+    const stats = await pullGoogleCalendarChanges({ reset, limit, daysPast, daysFuture, complete, mode, timeMin, timeMax });
     stats.jobId = jobId;
     await calendarRepo.finishGoogleSyncJob({ jobId, status: 'success', stats });
     await notifyUsers({
@@ -2415,7 +2307,7 @@ app.get('/api/patients/:id/medical-profile', authenticateToken, requirePermissio
   }
 });
 
-app.put('/api/patients/:id/medical-profile', authenticateToken, requirePermission('patients:write'), async (req, res) => {
+app.put('/api/patients/:id/medical-profile', authenticateToken, requirePermission('patients:write'), validateBody(medicalProfileSchema), async (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
@@ -2559,7 +2451,7 @@ app.delete('/api/documents/:id', authenticateToken, requirePermission('documents
   }
 });
 
-app.put('/api/documents/:id', authenticateToken, requirePermission('documents:write'), async (req, res) => {
+app.put('/api/documents/:id', authenticateToken, requirePermission('documents:write'), validateBody(documentUpdateSchema), async (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const current = await patientDocumentsRepo.findActiveById(documentId);
@@ -2599,7 +2491,7 @@ app.get('/api/patients/:id/imaging', authenticateToken, requirePermission('docum
   }
 });
 
-app.put('/api/documents/:id/imaging', authenticateToken, requirePermission('documents:write'), async (req, res) => {
+app.put('/api/documents/:id/imaging', authenticateToken, requirePermission('documents:write'), validateBody(documentUpdateSchema), async (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const current = await patientDocumentsRepo.findActiveById(documentId);
@@ -2742,7 +2634,7 @@ app.post('/api/records', authenticateToken, requirePermission('records:write'), 
   }
 });
 
-app.put('/api/records/:id', authenticateToken, requirePermission('records:write'), async (req, res) => {
+app.put('/api/records/:id', authenticateToken, requirePermission('records:write'), validateBody(recordUpdateSchema), async (req, res) => {
   try {
     const recordId = positiveInteger(req.params.id);
     const current = await recordsPaymentsRepo.findRecordById(recordId);
@@ -2844,12 +2736,12 @@ app.get('/api/appointments', authenticateToken, requirePermission('calendar:read
   }
 });
 
-app.post('/api/appointments', authenticateToken, requirePermission('calendar:write'), async (req, res) => {
+app.post('/api/appointments', authenticateToken, requirePermission('calendar:write'), validateBody(appointmentWriteSchema), async (req, res) => {
   try {
-    const payload = await appointmentPayloadFromInput(req.body);
+    const payload = await appointmentService.payloadFromInput(req.body);
     if (payload.error) return res.status(payload.status).json({ error: payload.error });
     const appointment = payload.value;
-    const conflict = await appointmentConflict(appointment);
+    const conflict = await appointmentService.conflict(appointment);
     if (conflict) {
       return res.status(409).json({ error: 'Termin se preklapa sa postojećim zakazivanjem.', conflict });
     }
@@ -2868,15 +2760,15 @@ app.post('/api/appointments', authenticateToken, requirePermission('calendar:wri
   }
 });
 
-app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:write'), async (req, res) => {
+app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:write'), validateBody(appointmentWriteSchema), async (req, res) => {
   try {
     const current = await appointmentById(req.params.id);
     if (!current) return res.status(404).json({ error: 'Appointment not found' });
 
-    const payload = await appointmentPayloadFromInput({ ...current, ...req.body });
+    const payload = await appointmentService.payloadFromInput({ ...current, ...req.body });
     if (payload.error) return res.status(payload.status).json({ error: payload.error });
     const appointment = payload.value;
-    const conflict = await appointmentConflict({ appointmentId: current.id, ...appointment });
+    const conflict = await appointmentService.conflict({ appointmentId: current.id, ...appointment });
     if (conflict) {
       return res.status(409).json({ error: 'Termin se preklapa sa postojećim zakazivanjem.', conflict });
     }
@@ -2895,7 +2787,7 @@ app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:
   }
 });
 
-app.patch('/api/appointments/:id/status', authenticateToken, requirePermission('calendar:write'), async (req, res) => {
+app.patch('/api/appointments/:id/status', authenticateToken, requirePermission('calendar:write'), validateBody(appointmentStatusSchema), async (req, res) => {
   try {
     const current = await appointmentById(req.params.id);
     if (!current) return res.status(404).json({ error: 'Appointment not found' });
@@ -4239,7 +4131,10 @@ async function handleManualGooglePull(req, res) {
       limit: req.body?.limit || 100,
       daysPast: req.body?.daysPast ?? req.body?.days_past,
       daysFuture: req.body?.daysFuture ?? req.body?.days_future,
-      complete: req.body?.complete !== false
+      complete: req.body?.complete !== false,
+      mode: req.body?.mode,
+      timeMin: req.body?.timeMin ?? req.body?.time_min,
+      timeMax: req.body?.timeMax ?? req.body?.time_max
     });
     res.json(stats);
   } catch (error) {
@@ -4251,8 +4146,8 @@ async function handleManualGooglePull(req, res) {
   }
 }
 
-app.post('/api/director/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), handleManualGooglePull);
-app.post('/api/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), handleManualGooglePull);
+app.post('/api/director/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), validateBody(googlePullSchema), handleManualGooglePull);
+app.post('/api/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), validateBody(googlePullSchema), handleManualGooglePull);
 
 app.get('/api/calendar-sync/google/status', authenticateToken, requirePermission('calendar:read'), asyncRoute(async (_req, res) => {
   res.json({ latest: serializeGoogleSyncJob(await calendarRepo.latestGoogleSyncJob()) });
@@ -4265,7 +4160,7 @@ app.get('/api/notifications', authenticateToken, asyncRoute(async (req, res) => 
   res.json(rows.map(serializeNotification));
 }));
 
-app.post('/api/calendar-sync/daily-google-pull', googleSyncLimiter, asyncRoute(async (req, res) => {
+app.post('/api/calendar-sync/daily-google-pull', googleSyncLimiter, validateBody(googlePullSchema), asyncRoute(async (req, res) => {
   const secret = process.env.GOOGLE_CALENDAR_CRON_SECRET;
   const provided = req.headers['x-cron-secret'];
   if (!secret || provided !== secret) return res.status(401).json({ error: 'Unauthorized' });
@@ -4276,7 +4171,10 @@ app.post('/api/calendar-sync/daily-google-pull', googleSyncLimiter, asyncRoute(a
       limit: req.body?.limit || 100,
       daysPast: req.body?.daysPast ?? 1,
       daysFuture: req.body?.daysFuture ?? 14,
-      complete: true
+      complete: true,
+      mode: req.body?.mode || 'incremental',
+      timeMin: req.body?.timeMin ?? req.body?.time_min,
+      timeMax: req.body?.timeMax ?? req.body?.time_max
     });
     res.json(stats);
   } catch (error) {
@@ -4301,7 +4199,7 @@ app.get('/api/director/public-booking/settings', authenticateToken, requireDirec
   }
 });
 
-app.put('/api/director/public-booking/settings', authenticateToken, requireDirector, async (req, res) => {
+app.put('/api/director/public-booking/settings', authenticateToken, requireDirector, validateBody(publicBookingSettingsSchema), async (req, res) => {
   try {
     const enabled = req.body.enabled === true || req.body.enabled === 1 || req.body.enabled === '1';
     const setting = await setAppSetting('public_booking_enabled', enabled ? '1' : '0');
@@ -4329,7 +4227,7 @@ app.get('/api/director/google-calendar/settings', authenticateToken, requireDire
   }
 });
 
-app.put('/api/director/google-calendar/settings', authenticateToken, requireDirector, requireDirectorPassword, async (req, res) => {
+app.put('/api/director/google-calendar/settings', authenticateToken, requireDirector, requireDirectorPassword, validateBody(googleCalendarSettingsSchema), async (req, res) => {
   try {
     const current = await calendarRepo.googleSettings();
     const connectedEmail = cleanText(req.body.connectedEmail ?? req.body.connected_email, { max: 255 });
@@ -4367,7 +4265,7 @@ app.put('/api/director/google-calendar/settings', authenticateToken, requireDire
   }
 });
 
-app.post('/api/director/google-calendar/oauth/exchange', authenticateToken, requireDirector, async (req, res) => {
+app.post('/api/director/google-calendar/oauth/exchange', authenticateToken, requireDirector, validateBody(googleOAuthExchangeSchema), async (req, res) => {
   try {
     const rawCode = req.body?.code;
     const code = normalizeGoogleAuthCode(rawCode);
@@ -4526,7 +4424,7 @@ app.get('/api/director/doctors', authenticateToken, requireDirector, async (_req
   }
 });
 
-app.post('/api/director/doctors', authenticateToken, requireDirector, async (req, res) => {
+app.post('/api/director/doctors', authenticateToken, requireDirector, validateBody(doctorWriteSchema), async (req, res) => {
   try {
     const payload = doctorPayloadFromBody(req.body);
     const payloadError = doctorPayloadError(payload);
@@ -4541,7 +4439,7 @@ app.post('/api/director/doctors', authenticateToken, requireDirector, async (req
   }
 });
 
-app.put('/api/director/doctors/:id', authenticateToken, requireDirector, async (req, res) => {
+app.put('/api/director/doctors/:id', authenticateToken, requireDirector, validateBody(doctorWriteSchema), async (req, res) => {
   try {
     const id = positiveInteger(req.params.id);
     const current = await directorAdmin.findDoctor(id);
@@ -4780,7 +4678,7 @@ app.get('/api/director/codebooks', authenticateToken, requireDirector, async (re
   }
 });
 
-app.post('/api/director/codebooks', authenticateToken, requireDirector, async (req, res) => {
+app.post('/api/director/codebooks', authenticateToken, requireDirector, validateBody(codebookWriteSchema), async (req, res) => {
   try {
     const type = normalizeCodebookType(req.body.type);
     const value = cleanText(req.body.value, { max: 120, required: true });
@@ -4815,7 +4713,7 @@ app.post('/api/director/codebooks', authenticateToken, requireDirector, async (r
   }
 });
 
-app.put('/api/director/codebooks/:id', authenticateToken, requireDirector, async (req, res) => {
+app.put('/api/director/codebooks/:id', authenticateToken, requireDirector, validateBody(codebookWriteSchema), async (req, res) => {
   try {
     const id = positiveInteger(req.params.id);
     const current = await directorAdmin.findCodebookItem(id);
@@ -5027,7 +4925,7 @@ app.get('/api/director/daily-cash-report', authenticateToken, requireDirector, a
   }
 });
 
-app.put('/api/director/daily-cash-report', authenticateToken, requireDirector, async (req, res) => {
+app.put('/api/director/daily-cash-report', authenticateToken, requireDirector, validateBody(dailyCashReportSchema), async (req, res) => {
   try {
     const reportDate = normalizeReportDate(req.body.date || req.body.reportDate);
     const shift = cleanText(req.body.shift, { max: 80 }) || '';
@@ -5074,22 +4972,11 @@ app.put('/api/director/daily-cash-report', authenticateToken, requireDirector, a
   }
 });
 
-// ============ HEALTH CHECK ============
-
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'API is running',
-    database: DB_CLIENT,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// ============ STATIC FRONTEND ============
-
 const frontendRoot = path.resolve(__dirname, '..');
-app.use('/src', express.static(path.join(frontendRoot, 'src')));
-app.get(['/', '/index.html'], (_req, res) => {
-  res.sendFile(path.join(frontendRoot, 'index.html'));
+registerSystemRoutes(app, {
+  express,
+  databaseClient: DB_CLIENT,
+  frontendRoot
 });
 
 // ============ ERROR HANDLING ============

@@ -4,10 +4,12 @@ const path = require('node:path');
 const { test } = require('node:test');
 
 const serverSource = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+const googleSyncServiceSource = readFileSync(path.join(__dirname, '..', 'services', 'google-calendar-sync-service.js'), 'utf8');
 const calendarRepoSource = readFileSync(path.join(__dirname, '..', 'db', 'calendar.js'), 'utf8');
 const schemaSource = readFileSync(path.join(__dirname, '..', 'database.postgres.sql'), 'utf8');
 const directorReportsSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'director-reports.js'), 'utf8');
 const apiSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'api.js'), 'utf8');
+const calendarSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'calendar.js'), 'utf8');
 
 test('Google pull imports external calendar events instead of filtering them out', () => {
   assert.match(serverSource, /async function importAppointmentFromGoogleEvent\(event, times, colorContext\)/);
@@ -60,19 +62,30 @@ test('Google OAuth verification uses saved tokens without asking for a new code'
 });
 
 test('Manual Google pull uses a bounded date window and can complete all pages', () => {
-  assert.match(serverSource, /async function pullGoogleCalendarChanges\(\{ limit = 50, reset = false, daysPast = 1, daysFuture = 14, complete = false \} = \{\}\)/);
+  assert.match(serverSource, /async function pullGoogleCalendarChanges\(\{ limit = 50, reset = false, daysPast = 1, daysFuture = 14, complete = false/);
   assert.match(serverSource, /query\.set\('timeMax'/);
   assert.match(serverSource, /daysPast: req\.body\?\.daysPast/);
-  assert.match(serverSource, /const maxPages = complete \? 20 : 2/);
-  assert.match(apiSource, /pullGoogleCalendarChanges\(\{ reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true \} = \{\}\)/);
+  assert.match(serverSource, /const maxPages = complete \? \(rangeMode \? 100 : 20\) : 2/);
+  assert.match(apiSource, /pullGoogleCalendarChanges\(\{ reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true, mode = "incremental"/);
   assert.match(directorReportsSource, /pullGoogleCalendarChanges\(\{ reset: false, limit: 50, daysPast: 1, daysFuture: 14 \}\)/);
   assert.doesNotMatch(directorReportsSource, /pullGoogleCalendarChanges\(\{ reset: true \}\)/);
 });
 
+test('Calendar page Google sync refreshes the visible date range instead of using incremental token mode', () => {
+  assert.match(serverSource, /const rangeMode = mode === 'range'/);
+  assert.match(serverSource, /if \(!rangeMode && !usedReset && settings\.events_sync_token\)/);
+  assert.match(serverSource, /mode: rangeMode \? 'range' : 'incremental'/);
+  assert.match(serverSource, /timeMin: rangeMode \? rangeStart : null/);
+  assert.match(calendarSource, /function visibleSyncRange\(\)/);
+  assert.match(calendarSource, /mode: "range"/);
+  assert.match(calendarSource, /reset: true/);
+  assert.match(calendarSource, /NIJE zavrseno sve - pokrenite sync ponovo/);
+});
+
 test('Google pull records warnings instead of skipping all-day and conflict events', () => {
-  assert.match(serverSource, /function googleEventTimeInfo\(event\)/);
-  assert.match(serverSource, /warningCode: 'all_day_event'/);
-  assert.match(serverSource, /warningCode: 'invalid_time'/);
+  assert.match(googleSyncServiceSource, /function googleEventTimeInfo\(event\)/);
+  assert.match(googleSyncServiceSource, /warningCode: 'all_day_event'/);
+  assert.match(googleSyncServiceSource, /warningCode: 'invalid_time'/);
   assert.match(serverSource, /async function chairForGoogleEvent/);
   assert.match(serverSource, /action: warning \? 'imported_warning' : 'imported'/);
   assert.match(serverSource, /action: warning \? 'updated_warning' : 'updated'/);
@@ -82,9 +95,9 @@ test('Google pull records warnings instead of skipping all-day and conflict even
 });
 
 test('Google import can infer preferred chair from event text', () => {
-  assert.match(serverSource, /function chairIdFromGoogleEvent\(event, chairs = \[\]\)/);
-  assert.match(serverSource, /googleEventChairSearchText\(event\)/);
-  assert.match(serverSource, /\?:stolica\|chair\|s/);
+  assert.match(googleSyncServiceSource, /function chairIdFromGoogleEvent\(event, chairs = \[\]\)/);
+  assert.match(googleSyncServiceSource, /googleEventChairSearchText\(event\)/);
+  assert.match(googleSyncServiceSource, /\?:stolica\|chair\|s/);
   assert.match(serverSource, /chairIdFromGoogleEvent\(event, activeChairs\) \|\| preferredChairId/);
   assert.match(serverSource, /warningCode: 'chair_reassigned'/);
   assert.match(serverSource, /googleEventType: times\.googleEventType,\s*event/s);
