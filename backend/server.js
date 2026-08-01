@@ -26,6 +26,7 @@ const { createBillingRepository } = require('./db/billing');
 const { createRuntimeSettingsRepository } = require('./db/runtime-settings');
 const { createStartupSeedRepository } = require('./db/startup-seed');
 const { createPool, initializePostgresSchema } = require('./db/postgres');
+const { asyncRoute, sendError } = require('./route-utils');
 const {
   validateBody,
   loginSchema,
@@ -1167,6 +1168,12 @@ function appointmentDurationMinutes(startsAt, endsAt) {
   return Math.round((new Date(endsAt).getTime() - new Date(startsAt).getTime()) / 60000);
 }
 
+function boundedAppointmentDuration(value) {
+  const duration = Number(value);
+  if (!Number.isFinite(duration)) return 30;
+  return Math.max(5, Math.min(480, duration));
+}
+
 function appointmentConflict({ appointmentId = null, doctorId, chairId, startsAt, endsAt }) {
   return calendarRepo.appointmentConflict({ appointmentId, doctorId, chairId, startsAt, endsAt });
 }
@@ -1178,6 +1185,60 @@ function isAppointmentOverlapConstraintError(error) {
 
 function sendAppointmentConflictError(res) {
   return res.status(409).json({ error: 'Termin se preklapa sa postojecim zakazivanjem.' });
+}
+
+async function appointmentPayloadFromInput(data, { validatePatient = true, validateChair = true } = {}) {
+  const patientId = positiveInteger(data.patient_id ?? data.patientId);
+  const doctorId = positiveInteger(data.doctor_id ?? data.doctorId);
+  const chairId = positiveInteger(data.chair_id ?? data.chairId);
+  const procedureIdInput = positiveInteger(data.procedure_id ?? data.procedureId);
+  const procedure = await procedureByInput({
+    procedureId: procedureIdInput,
+    procedureName: data.procedure_name ?? data.procedureName
+  });
+  const procedureNameResult = validatedText(data.procedure_name ?? data.procedureName ?? procedure?.label, { field: 'Postupak', max: 255, required: true });
+  const notesResult = validatedText(data.notes, { field: 'Napomena', max: 2000 });
+  const textError = procedureNameResult.error || notesResult.error;
+  if (textError) return { status: 400, error: textError };
+
+  const procedureName = procedureNameResult.value;
+  const startsAt = normalizeIsoDateTime(data.starts_at ?? data.startsAt);
+  const durationMinutesInput = boundedAppointmentDuration(data.duration_minutes ?? data.durationMinutes ?? 30);
+  const endsAt = normalizeIsoDateTime(data.ends_at ?? data.endsAt) ||
+    (startsAt ? new Date(new Date(startsAt).getTime() + durationMinutesInput * 60000).toISOString() : null);
+  const status = normalizeAppointmentStatus(data.status);
+  const notes = notesResult.value;
+
+  if (!patientId || !doctorId || !chairId || !procedure || !procedureName || !startsAt || !endsAt) {
+    return { status: 400, error: 'Pacijent, doktor, stolica, datum i postupak su obavezni.' };
+  }
+  if (appointmentDurationMinutes(startsAt, endsAt) <= 0) {
+    return { status: 400, error: 'End time must be after start time' };
+  }
+  if (validatePatient && !(await calendarRepo.rowExists('patients', patientId))) {
+    return { status: 404, error: 'Patient not found' };
+  }
+  if (!(await activeDoctorExists(doctorId))) {
+    return { status: 404, error: 'Doctor not found' };
+  }
+  if (validateChair && !(await calendarRepo.rowExists('chairs', chairId))) {
+    return { status: 404, error: 'Chair not found' };
+  }
+
+  return {
+    value: {
+      patientId,
+      doctorId,
+      chairId,
+      procedureId: procedure.id,
+      procedureName,
+      startsAt,
+      endsAt,
+      durationMinutes: appointmentDurationMinutes(startsAt, endsAt),
+      status,
+      notes
+    }
+  };
 }
 
 function serializeAppointment(row) {
@@ -2785,50 +2846,16 @@ app.get('/api/appointments', authenticateToken, requirePermission('calendar:read
 
 app.post('/api/appointments', authenticateToken, requirePermission('calendar:write'), async (req, res) => {
   try {
-    const patientId = positiveInteger(req.body.patient_id ?? req.body.patientId);
-    const doctorId = positiveInteger(req.body.doctor_id ?? req.body.doctorId);
-    const chairId = positiveInteger(req.body.chair_id ?? req.body.chairId);
-    const procedureIdInput = positiveInteger(req.body.procedure_id ?? req.body.procedureId);
-    const procedure = await procedureByInput({
-      procedureId: procedureIdInput,
-      procedureName: req.body.procedure_name ?? req.body.procedureName
-    });
-    const procedureNameResult = validatedText(req.body.procedure_name ?? req.body.procedureName ?? procedure?.label, { field: 'Postupak', max: 255, required: true });
-    const notesResult = validatedText(req.body.notes, { field: 'Napomena', max: 2000 });
-    const textError = procedureNameResult.error || notesResult.error;
-    if (textError) return res.status(400).json({ error: textError });
-    const procedureName = procedureNameResult.value;
-    const startsAt = normalizeIsoDateTime(req.body.starts_at ?? req.body.startsAt);
-    const durationMinutes = Math.max(5, Math.min(480, Number(req.body.duration_minutes ?? req.body.durationMinutes ?? 30)));
-    const endsAt = normalizeIsoDateTime(req.body.ends_at ?? req.body.endsAt) ||
-      (startsAt ? new Date(new Date(startsAt).getTime() + durationMinutes * 60000).toISOString() : null);
-    const status = normalizeAppointmentStatus(req.body.status);
-    const notes = notesResult.value;
-
-    if (!patientId || !doctorId || !chairId || !procedure || !procedureName || !startsAt || !endsAt) {
-      return res.status(400).json({ error: 'Pacijent, doktor, stolica, datum i postupak su obavezni.' });
-    }
-    if (appointmentDurationMinutes(startsAt, endsAt) <= 0) return res.status(400).json({ error: 'End time must be after start time' });
-    if (!(await calendarRepo.rowExists('patients', patientId))) return res.status(404).json({ error: 'Patient not found' });
-    if (!(await activeDoctorExists(doctorId))) return res.status(404).json({ error: 'Doctor not found' });
-    if (!(await calendarRepo.rowExists('chairs', chairId))) return res.status(404).json({ error: 'Chair not found' });
-
-    const conflict = await appointmentConflict({ doctorId, chairId, startsAt, endsAt });
+    const payload = await appointmentPayloadFromInput(req.body);
+    if (payload.error) return res.status(payload.status).json({ error: payload.error });
+    const appointment = payload.value;
+    const conflict = await appointmentConflict(appointment);
     if (conflict) {
       return res.status(409).json({ error: 'Termin se preklapa sa postojećim zakazivanjem.', conflict });
     }
 
     const appointmentId = await calendarRepo.createAppointment({
-      patientId,
-      doctorId,
-      chairId,
-      procedureId: procedure.id,
-      procedureName,
-      startsAt,
-      endsAt,
-      durationMinutes: appointmentDurationMinutes(startsAt, endsAt),
-      status,
-      notes,
+      ...appointment,
       userId: req.user.id
     });
     await queueCalendarSync(appointmentId, 'create_google_event');
@@ -2846,50 +2873,19 @@ app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:
     const current = await appointmentById(req.params.id);
     if (!current) return res.status(404).json({ error: 'Appointment not found' });
 
-    const data = { ...current, ...req.body };
-    const patientId = positiveInteger(data.patient_id ?? data.patientId);
-    const doctorId = positiveInteger(data.doctor_id ?? data.doctorId);
-    const chairId = positiveInteger(data.chair_id ?? data.chairId);
-    const procedureIdInput = positiveInteger(data.procedure_id ?? data.procedureId);
-    const procedure = await procedureByInput({
-      procedureId: procedureIdInput,
-      procedureName: data.procedure_name ?? data.procedureName
-    });
-    const procedureNameResult = validatedText(data.procedure_name ?? data.procedureName ?? procedure?.label, { field: 'Postupak', max: 255, required: true });
-    const notesResult = validatedText(data.notes, { field: 'Napomena', max: 2000 });
-    const textError = procedureNameResult.error || notesResult.error;
-    if (textError) return res.status(400).json({ error: textError });
-    const procedureName = procedureNameResult.value;
-    const startsAt = normalizeIsoDateTime(data.starts_at ?? data.startsAt);
-    const endsAt = normalizeIsoDateTime(data.ends_at ?? data.endsAt);
-    const status = normalizeAppointmentStatus(data.status);
-    const notes = notesResult.value;
-
-    if (!patientId || !doctorId || !chairId || !procedure || !procedureName || !startsAt || !endsAt) {
-      return res.status(400).json({ error: 'Pacijent, doktor, stolica, datum i postupak su obavezni.' });
-    }
-    if (appointmentDurationMinutes(startsAt, endsAt) <= 0) return res.status(400).json({ error: 'End time must be after start time' });
-    if (!(await activeDoctorExists(doctorId))) return res.status(404).json({ error: 'Doctor not found' });
-
-    const conflict = await appointmentConflict({ appointmentId: current.id, doctorId, chairId, startsAt, endsAt });
+    const payload = await appointmentPayloadFromInput({ ...current, ...req.body });
+    if (payload.error) return res.status(payload.status).json({ error: payload.error });
+    const appointment = payload.value;
+    const conflict = await appointmentConflict({ appointmentId: current.id, ...appointment });
     if (conflict) {
       return res.status(409).json({ error: 'Termin se preklapa sa postojećim zakazivanjem.', conflict });
     }
 
     await calendarRepo.updateAppointment(current.id, {
-      patientId,
-      doctorId,
-      chairId,
-      procedureId: procedure.id,
-      procedureName,
-      startsAt,
-      endsAt,
-      durationMinutes: appointmentDurationMinutes(startsAt, endsAt),
-      status,
-      notes,
+      ...appointment,
       userId: req.user.id
     }, current.status);
-    await queueCalendarSync(current.id, status === 'cancelled' ? 'cancel_google_event' : 'update_google_event');
+    await queueCalendarSync(current.id, appointment.status === 'cancelled' ? 'cancel_google_event' : 'update_google_event');
     processCalendarSyncRed({ limit: 5 });
     res.json(serializeAppointment(await appointmentById(current.id)));
   } catch (error) {
@@ -4224,25 +4220,15 @@ app.post('/api/auth/2fa/disable', authenticateToken, requireDirector, async (req
   }
 });
 
-app.get('/api/director/calendar-sync', authenticateToken, requireDirector, async (_req, res) => {
-  try {
-    const rows = await calendarRepo.calendarSyncRows(50);
-    res.json(rows);
-  } catch (error) {
-    console.error('Get sync queue error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+app.get('/api/director/calendar-sync', authenticateToken, requireDirector, asyncRoute(async (_req, res) => {
+  const rows = await calendarRepo.calendarSyncRows(50);
+  res.json(rows);
+}));
 
-app.post('/api/director/calendar-sync/retry', authenticateToken, requireDirector, async (_req, res) => {
-  try {
-    const processed = await processCalendarSyncRed({ limit: 25 });
-    res.json({ processed });
-  } catch (error) {
-    console.error('Retry sync queue error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+app.post('/api/director/calendar-sync/retry', authenticateToken, requireDirector, asyncRoute(async (_req, res) => {
+  const processed = await processCalendarSyncRed({ limit: 25 });
+  res.json({ processed });
+}));
 
 async function handleManualGooglePull(req, res) {
   try {
@@ -4257,10 +4243,10 @@ async function handleManualGooglePull(req, res) {
     });
     res.json(stats);
   } catch (error) {
-    console.error('Pull Google Calendar changes error:', error);
-    res.status(error.status || googleCalendarRouteStatus(error)).json({
-      error: error.message || 'Google Calendar pull failed',
-      runningJob: error.runningJob || null
+    sendError(res, error, {
+      fallbackStatus: googleCalendarRouteStatus(error),
+      fallbackMessage: 'Google Calendar pull failed',
+      logLabel: 'Pull Google Calendar changes error:'
     });
   }
 }
@@ -4268,28 +4254,18 @@ async function handleManualGooglePull(req, res) {
 app.post('/api/director/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), handleManualGooglePull);
 app.post('/api/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), handleManualGooglePull);
 
-app.get('/api/calendar-sync/google/status', authenticateToken, requirePermission('calendar:read'), async (_req, res) => {
-  try {
-    res.json({ latest: serializeGoogleSyncJob(await calendarRepo.latestGoogleSyncJob()) });
-  } catch (error) {
-    console.error('Get Google sync status error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+app.get('/api/calendar-sync/google/status', authenticateToken, requirePermission('calendar:read'), asyncRoute(async (_req, res) => {
+  res.json({ latest: serializeGoogleSyncJob(await calendarRepo.latestGoogleSyncJob()) });
+}));
 
-app.get('/api/notifications', authenticateToken, async (req, res) => {
-  try {
-    const sinceId = positiveInteger(req.query.since_id ?? req.query.sinceId) || 0;
-    const limit = Math.max(1, Math.min(50, Number(req.query.limit || 20)));
-    const rows = await calendarRepo.notificationsSince({ sinceId, limit });
-    res.json(rows.map(serializeNotification));
-  } catch (error) {
-    console.error('Get notifications error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+app.get('/api/notifications', authenticateToken, asyncRoute(async (req, res) => {
+  const sinceId = positiveInteger(req.query.since_id ?? req.query.sinceId) || 0;
+  const limit = Math.max(1, Math.min(50, Number(req.query.limit || 20)));
+  const rows = await calendarRepo.notificationsSince({ sinceId, limit });
+  res.json(rows.map(serializeNotification));
+}));
 
-app.post('/api/calendar-sync/daily-google-pull', googleSyncLimiter, async (req, res) => {
+app.post('/api/calendar-sync/daily-google-pull', googleSyncLimiter, asyncRoute(async (req, res) => {
   const secret = process.env.GOOGLE_CALENDAR_CRON_SECRET;
   const provided = req.headers['x-cron-secret'];
   if (!secret || provided !== secret) return res.status(401).json({ error: 'Unauthorized' });
@@ -4304,13 +4280,13 @@ app.post('/api/calendar-sync/daily-google-pull', googleSyncLimiter, async (req, 
     });
     res.json(stats);
   } catch (error) {
-    console.error('Daily Google Calendar pull error:', error);
-    res.status(error.status || googleCalendarRouteStatus(error)).json({
-      error: error.message || 'Google Calendar pull failed',
-      runningJob: error.runningJob || null
+    sendError(res, error, {
+      fallbackStatus: googleCalendarRouteStatus(error),
+      fallbackMessage: 'Google Calendar pull failed',
+      logLabel: 'Daily Google Calendar pull error:'
     });
   }
-});
+}));
 
 app.get('/api/director/public-booking/settings', authenticateToken, requireDirector, async (_req, res) => {
   try {
