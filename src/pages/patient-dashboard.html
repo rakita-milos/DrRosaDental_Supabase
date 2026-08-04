@@ -24,7 +24,6 @@
         <a href="new-entry.html" class="nav-link">Novi unos</a>
         <a href="new-patient.html" class="nav-link">Novi pacijent</a>
         <a href="all-records.html" class="nav-link">Evidencija</a>
-        <a href="public-booking.html" class="nav-link">Onlajn zakazivanje</a>
         <a id="director-panel-link" href="director-panel.html" class="nav-link" style="display: none;">Direktor panel</a>
         <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
@@ -40,11 +39,11 @@
           </div>
           <div class="patient-action-toolbar" aria-label="Akcije pacijenta">
             <a id="new-entry-for-patient" href="new-entry.html" class="primary-btn">Nova poseta</a>
-            <a id="schedule-patient-link" href="calendar.html" class="secondary-btn">Zakazi</a>
-            <button id="quick-document-tab-btn" class="secondary-btn" type="button">Dokument</button>
+            <a id="schedule-patient-link" href="calendar.html" class="secondary-btn">Zakazi termin</a>
             <a id="edit-patient-link" href="new-patient.html" class="secondary-btn">Uredi</a>
             <button id="delete-patient-btn" class="danger-btn" type="button">Obrisi</button>
           </div>
+          <p id="patient-schedule-message" class="form-alert" role="status"></p>
         </div>
         <div class="hero-stats" id="patient-summary-cards"></div>
       </section>
@@ -345,9 +344,10 @@
                 <textarea id="document-description" rows="2"></textarea>
               </label>
               <label class="full-width">
-                Otpremanje fajla
+                <span id="document-file-label">Otpremanje fajla</span>
                 <input id="document-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.dcm,.dicom,application/pdf,image/jpeg,image/png,image/webp,application/dicom" />
               </label>
+              <div class="document-current-file full-width" id="document-current-file" hidden></div>
             </div>
             <div class="form-actions">
               <button class="primary-btn" id="upload-document-btn" type="submit">Otpremi fajl</button>
@@ -581,6 +581,91 @@
         </div>
       </section>
 
+      <div class="appointment-modal" id="patient-appointment-panel" hidden role="dialog" aria-modal="true" aria-labelledby="patient-appointment-panel-title">
+        <div class="appointment-modal-backdrop" data-close-patient-appointment-modal></div>
+        <section class="appointment-dialog">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Termin pacijenta</p>
+              <h2 id="patient-appointment-panel-title">Zakazi termin</h2>
+            </div>
+            <button id="close-patient-appointment-modal" class="secondary-btn" type="button" aria-label="Zatvori">X</button>
+          </div>
+          <div id="patient-appointment-alert" class="form-alert" aria-live="polite"></div>
+          <div id="patient-appointment-context" class="entry-patient-context"></div>
+          <form id="patient-appointment-form" class="appointment-form-grid">
+            <div class="appointment-form-section appointment-title-section">
+              <label class="full-width">
+                Naziv termina
+                <input id="patient-appointment-title" type="text" maxlength="255" placeholder="Naziv termina" required />
+              </label>
+            </div>
+            <div class="appointment-form-section appointment-patient-section">
+              <label class="full-width">
+                Pacijent
+                <input id="patient-appointment-patient-name" type="text" readonly />
+              </label>
+            </div>
+            <div class="appointment-form-section appointment-time-section">
+              <label>
+                Datum
+                <input id="patient-appointment-date" type="date" required />
+              </label>
+              <label>
+                Vreme
+                <input id="patient-appointment-time" type="time" required />
+              </label>
+              <label>
+                Trajanje
+                <select id="patient-appointment-duration">
+                  <option value="15">15 min</option>
+                  <option value="30" selected>30 min</option>
+                  <option value="45">45 min</option>
+                  <option value="60">60 min</option>
+                  <option value="90">90 min</option>
+                  <option value="120">120 min</option>
+                </select>
+              </label>
+            </div>
+            <div class="appointment-form-section appointment-resource-section">
+              <label>
+                Doktor
+                <select id="patient-appointment-doctor" required></select>
+              </label>
+              <label>
+                Stolica
+                <select id="patient-appointment-chair" required></select>
+              </label>
+              <label>
+                Status
+                <select id="patient-appointment-status">
+                  <option value="scheduled">Zakazano</option>
+                  <option value="confirmed">Potvrdjeno</option>
+                  <option value="arrived">Dosao</option>
+                  <option value="completed">Zavrseno</option>
+                  <option value="cancelled">Otkazano</option>
+                  <option value="no_show">Nije dosao</option>
+                </select>
+              </label>
+            </div>
+            <div class="appointment-form-section appointment-service-section">
+              <label>
+                Postupak
+                <select id="patient-appointment-procedure" required></select>
+              </label>
+              <label class="full-width">
+                Napomena
+                <textarea id="patient-appointment-notes" rows="3"></textarea>
+              </label>
+            </div>
+            <div class="form-actions appointment-actions">
+              <button class="primary-btn" type="submit">Sacuvaj termin</button>
+              <button id="dismiss-patient-appointment-btn" class="secondary-btn" type="button">Odustani</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
     </main>
   </div>
 
@@ -590,6 +675,7 @@
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/tooth-condition-editor.js"></script>
   <script src="../scripts/treatment-history.js"></script>
-  <script src="../scripts/patient-dashboard.js?v=patient-workcenter-20260727"></script>
+  <script src="../scripts/appointment-modal.js?v=patient-scheduler-20260804"></script>
+  <script src="../scripts/patient-dashboard.js?v=patient-scheduler-20260804"></script>
 </body>
 </html>

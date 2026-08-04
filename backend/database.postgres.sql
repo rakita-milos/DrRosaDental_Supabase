@@ -154,6 +154,10 @@ CREATE TABLE IF NOT EXISTS appointments (
   google_event_id TEXT,
   google_sync_status TEXT NOT NULL DEFAULT 'not_synced',
   google_event_type TEXT NOT NULL DEFAULT 'appointment',
+  google_title TEXT,
+  google_patient_match_status TEXT,
+  google_patient_match_note TEXT,
+  patient_match_locked BOOLEAN NOT NULL DEFAULT false,
   google_sync_warning TEXT,
   google_sync_warning_code TEXT,
   visit_record_id INTEGER REFERENCES visit_records(id) ON DELETE SET NULL,
@@ -628,6 +632,14 @@ ALTER TABLE appointments
   ADD COLUMN IF NOT EXISTS google_sync_warning TEXT;
 ALTER TABLE appointments
   ADD COLUMN IF NOT EXISTS google_sync_warning_code TEXT;
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS google_title TEXT;
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS google_patient_match_status TEXT;
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS google_patient_match_note TEXT;
+ALTER TABLE appointments
+  ADD COLUMN IF NOT EXISTS patient_match_locked BOOLEAN NOT NULL DEFAULT false;
 
 CREATE OR REPLACE FUNCTION prevent_appointment_overlap()
 RETURNS trigger AS $$

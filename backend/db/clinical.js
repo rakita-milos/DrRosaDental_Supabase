@@ -93,6 +93,9 @@ function createPostgresClinicalRepository(pool) {
     clinicalNotesByPatient(patientId) {
       return queryMany(pool, 'SELECT * FROM clinical_notes WHERE patient_id = ? ORDER BY created_at DESC, id DESC', [patientId]);
     },
+    internalCommentsByPatient(patientId) {
+      return queryMany(pool, 'SELECT * FROM clinical_notes WHERE patient_id = ? AND title = ? ORDER BY created_at DESC, id DESC', [patientId, 'Interni komentar']);
+    },
     findClinicalNote(id) {
       return queryOne(pool, 'SELECT * FROM clinical_notes WHERE id = ?', [id]);
     },

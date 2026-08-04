@@ -7,6 +7,7 @@ const serverSource = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8
 const routeUtilsSource = readFileSync(path.join(__dirname, '..', 'route-utils.js'), 'utf8');
 const appointmentServiceSource = readFileSync(path.join(__dirname, '..', 'services', 'appointment-service.js'), 'utf8');
 const systemRoutesSource = readFileSync(path.join(__dirname, '..', 'routes', 'system-routes.js'), 'utf8');
+const clinicalRepoSource = readFileSync(path.join(__dirname, '..', 'db', 'clinical.js'), 'utf8');
 
 test('route utils provide reusable async and error helpers', () => {
   assert.match(routeUtilsSource, /function asyncRoute\(handler\)/);
@@ -39,6 +40,23 @@ test('critical calendar write routes use request body schemas', () => {
   assert.match(serverSource, /app\.put\('\/api\/appointments\/:id', authenticateToken, requirePermission\('calendar:write'\), validateBody\(appointmentWriteSchema\)/);
   assert.match(serverSource, /app\.patch\('\/api\/appointments\/:id\/status', authenticateToken, requirePermission\('calendar:write'\), validateBody\(appointmentStatusSchema\)/);
   assert.match(serverSource, /app\.post\('\/api\/calendar-sync\/pull-google', googleSyncLimiter, authenticateToken, requirePermission\('calendar:write'\), validateBody\(googlePullSchema\)/);
+});
+
+test('staff internal comments use patient permissions instead of full clinical write access', () => {
+  assert.match(serverSource, /app\.get\('\/api\/patients\/:id\/internal-comments', authenticateToken, requirePermission\('patients:read'\)/);
+  assert.match(serverSource, /app\.post\('\/api\/patients\/:id\/internal-comments', authenticateToken, requirePermission\('patients:write'\)/);
+  assert.match(serverSource, /title: 'Interni komentar'/);
+  assert.match(serverSource, /action: 'internal_comment_created'/);
+  assert.match(clinicalRepoSource, /internalCommentsByPatient\(patientId\)/);
+  assert.match(clinicalRepoSource, /WHERE patient_id = \? AND title = \?/);
+});
+
+test('public booking requires a global feature flag in addition to director settings', () => {
+  assert.match(serverSource, /function publicBookingFeatureAvailable\(\)/);
+  assert.match(serverSource, /process\.env\.PUBLIC_BOOKING_FEATURE_ENABLED \|\| '0'/);
+  assert.match(serverSource, /return publicBookingFeatureAvailable\(\) && await appSetting\('public_booking_enabled', '0'\) === '1'/);
+  assert.match(serverSource, /featureAvailable: publicBookingFeatureAvailable\(\)/);
+  assert.match(serverSource, /requirePublicBookingEnabled/);
 });
 
 test('system routes are registered from a dedicated route module', () => {

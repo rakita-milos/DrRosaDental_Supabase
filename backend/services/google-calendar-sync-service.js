@@ -10,6 +10,23 @@ function createGoogleCalendarSyncService({
     return { startsAt, endsAt, googleEventType: 'appointment', warning: null, warningCode: null };
   }
 
+  function normalizeGoogleEventText(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  function isGoogleDoctorAbsenceEvent(event) {
+    const text = normalizeGoogleEventText([
+      event?.summary,
+      event?.description
+    ].filter(Boolean).join(' '));
+    return /\b(go|godisnji|godisnji odmor|odmor)\b/.test(text);
+  }
+
   function googleEventTimeInfo(event) {
     const timed = googleEventTimes(event);
     if (timed) return timed;
@@ -19,6 +36,15 @@ function createGoogleCalendarSyncService({
     if (startDate) {
       const startsAt = normalizeIsoDateTime(`${startDate}T00:00:00.000Z`);
       const endsAt = normalizeIsoDateTime(`${endDate}T00:00:00.000Z`) || normalizeIsoDateTime(`${startDate}T23:59:00.000Z`);
+      if (isGoogleDoctorAbsenceEvent(event)) {
+        return {
+          startsAt,
+          endsAt: endsAt && new Date(endsAt) > new Date(startsAt) ? endsAt : new Date(new Date(startsAt).getTime() + 24 * 60 * 60000).toISOString(),
+          googleEventType: 'doctor_absence',
+          warning: null,
+          warningCode: null
+        };
+      }
       return {
         startsAt,
         endsAt: endsAt && new Date(endsAt) > new Date(startsAt) ? endsAt : new Date(new Date(startsAt).getTime() + 24 * 60 * 60000).toISOString(),
@@ -83,6 +109,7 @@ function createGoogleCalendarSyncService({
   return {
     googleEventTimes,
     googleEventTimeInfo,
+    isGoogleDoctorAbsenceEvent,
     googleEventProcedureName,
     googleEventChairSearchText,
     chairIdFromGoogleEvent

@@ -24,6 +24,7 @@ async function requireAccess() {
 }
 
 const body = document.getElementById("all-records-body");
+const cardsBody = document.getElementById("all-records-cards");
 const summaryCards = document.getElementById("summary-cards");
 const searchInput = document.getElementById("search-input");
 const statusFilter = document.getElementById("status-filter");
@@ -39,6 +40,7 @@ const exportPdfBtn = document.getElementById("export-pdf-btn");
 const procedureCatalog = window.DrRosaProcedureCatalog;
 
 let allRecords = [];
+let allPatients = [];
 let allAppointments = [];
 let currentExportRows = [];
 
@@ -78,6 +80,10 @@ function formatCurrencyAmounts(amounts) {
     : "0.00";
 }
 
+function patientFullName(patient) {
+  return patient.fullName || `${patient.firstName || patient.first_name || ""} ${patient.lastName || patient.last_name || ""}`.trim();
+}
+
 function nextAppointmentForPatient(patient) {
   const now = Date.now();
   return allAppointments
@@ -107,9 +113,11 @@ function populateActivityFilter() {
 
 function populatePatientFilter() {
   if (!searchInput) return;
-  const patients = Array.from(new Set(allRecords.map(record => record.patient).filter(Boolean)))
-    .sort((a, b) => a.localeCompare(b));
-  searchInput.innerHTML = option("", "Svi pacijenti") + patients.map(patient => option(patient)).join("");
+  const patients = allPatients
+    .map(patient => ({ id: patient.id, name: patientFullName(patient) }))
+    .filter(patient => patient.id && patient.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  searchInput.innerHTML = option("", "Svi pacijenti") + patients.map(patient => option(String(patient.id), patient.name)).join("");
 }
 
 function populateProcedureFilter() {
@@ -166,86 +174,119 @@ function matchesProcedure(record, procedure) {
   });
 }
 
-function renderSummary(records) {
+function buildPatientRows(patients, records) {
   const patientMap = {};
-  records.forEach((record) => {
-    if (!patientMap[record.patient]) {
-      patientMap[record.patient] = { visits: 0, hasDebt: false };
-    }
-    patientMap[record.patient].visits += 1;
-    if (isDebt(record)) patientMap[record.patient].hasDebt = true;
+
+  patients.forEach(patient => {
+    const name = patientFullName(patient);
+    if (!patient.id || !name) return;
+    patientMap[`id:${patient.id}`] = {
+      patientId: patient.id,
+      patient: name,
+      lastVisit: "",
+      lastProcedure: "-",
+      visits: 0,
+      hasDebt: false,
+      totalDebt: {},
+      currencies: new Set(),
+      shifts: new Map(),
+      records: []
+    };
   });
 
-  const uniquePatients = Object.values(patientMap);
-  const totalPatients = uniquePatients.length;
-  const returnedPatients = uniquePatients.filter(patient => patient.visits > 1).length;
-  const debtorPatients = uniquePatients.filter(patient => patient.hasDebt).length;
-
-  summaryCards.innerHTML = `
-    <div class="hero-stats-card"><p class="eyebrow">Ukupno pacijenata</p><span>${totalPatients}</span></div>
-    <div class="hero-stats-card"><p class="eyebrow">Redovni pacijenti</p><span>${returnedPatients}</span></div>
-    <div class="hero-stats-card"><p class="eyebrow">Dužnici</p><span>${debtorPatients}</span></div>
-    <div class="hero-stats-card"><p class="eyebrow">Novi pacijenti</p><span>${totalPatients - returnedPatients}</span></div>
-  `;
-}
-
-function renderRecords(records) {
-  body.innerHTML = "";
-  const patientMap = {};
-
-  records.forEach((record) => {
+  records.forEach(record => {
     const patientKey = record.patientId ? `id:${record.patientId}` : `name:${record.patient}`;
     if (!patientMap[patientKey]) {
       patientMap[patientKey] = {
         patientId: record.patientId,
         patient: record.patient,
-        lastVisit: record.lastVisit,
-        lastProcedure: record.procedure || "-",
+        lastVisit: "",
+        lastProcedure: "-",
         visits: 0,
         hasDebt: false,
         totalDebt: {},
         currencies: new Set(),
-        shifts: new Map()
+        shifts: new Map(),
+        records: []
       };
     }
-    patientMap[patientKey].visits += 1;
-    patientMap[patientKey].currencies.add(record.currency || "EUR");
+    const row = patientMap[patientKey];
+    row.records.push(record);
+    row.visits += 1;
+    row.currencies.add(record.currency || "EUR");
     const shift = record.shift || "Prva smena";
-    patientMap[patientKey].shifts.set(shift, (patientMap[patientKey].shifts.get(shift) || 0) + 1);
+    row.shifts.set(shift, (row.shifts.get(shift) || 0) + 1);
     if (isDebt(record)) {
-      patientMap[patientKey].hasDebt = true;
-      addCurrencyAmount(patientMap[patientKey].totalDebt, record.currency || "EUR", record.amountDue || 0);
+      row.hasDebt = true;
+      addCurrencyAmount(row.totalDebt, record.currency || "EUR", record.amountDue || 0);
     }
-    if (new Date(record.lastVisit) > new Date(patientMap[patientKey].lastVisit)) {
-      patientMap[patientKey].lastVisit = record.lastVisit;
-      patientMap[patientKey].lastProcedure = record.procedure || "-";
+    if (!row.lastVisit || new Date(record.lastVisit) > new Date(row.lastVisit)) {
+      row.lastVisit = record.lastVisit;
+      row.lastProcedure = record.procedure || "-";
     }
   });
 
-  const uniquePatients = Object.values(patientMap);
-  currentExportRows = uniquePatients.map(patient => [
+  return Object.values(patientMap).sort((a, b) => a.patient.localeCompare(b.patient));
+}
+
+function renderSummary(patientRows) {
+  const totalPatients = patientRows.length;
+  const patientsWithVisits = patientRows.filter(patient => patient.visits > 0).length;
+  const debtorPatients = patientRows.filter(patient => patient.hasDebt).length;
+  const patientsWithoutVisits = patientRows.filter(patient => patient.visits === 0).length;
+
+  summaryCards.innerHTML = `
+    <div class="hero-stats-card"><p class="eyebrow">Ukupno pacijenata</p><span>${totalPatients}</span></div>
+    <div class="hero-stats-card"><p class="eyebrow">Sa posetama</p><span>${patientsWithVisits}</span></div>
+    <div class="hero-stats-card"><p class="eyebrow">Duznici</p><span>${debtorPatients}</span></div>
+    <div class="hero-stats-card"><p class="eyebrow">Bez posete</p><span>${patientsWithoutVisits}</span></div>
+  `;
+}
+
+function paymentStatusForPatient(patient) {
+  if (patient.visits === 0) return "Nema poseta";
+  return patient.hasDebt ? "Dugovanje" : "Placeno";
+}
+
+function paymentClassForPatient(patient) {
+  if (patient.visits === 0) return "";
+  return patient.hasDebt ? "status-dugovanje" : "status-placeno";
+}
+
+function patientQueryString(patient) {
+  return patient.patientId
+    ? `patientId=${encodeURIComponent(patient.patientId)}`
+    : `patient=${encodeURIComponent(patient.patient)}`;
+}
+
+function renderRecords(patientRows) {
+  body.innerHTML = "";
+  if (cardsBody) cardsBody.innerHTML = "";
+
+  currentExportRows = patientRows.map(patient => [
     patient.patient,
     formatDate(patient.lastVisit),
     formatDate(nextAppointmentForPatient(patient)?.startsAt || nextAppointmentForPatient(patient)?.starts_at),
     patient.lastProcedure || "-",
     patient.visits,
     "-",
-    patient.hasDebt ? "Dugovanje" : "Plaćeno",
-    Array.from(patient.currencies).join(" / "),
+    paymentStatusForPatient(patient),
+    Array.from(patient.currencies).join(" / ") || "-",
     Array.from(patient.shifts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "-",
     formatCurrencyAmounts(patient.totalDebt),
     "Otvori"
   ]);
 
-  if (uniquePatients.length === 0) {
+  if (patientRows.length === 0) {
     body.innerHTML = `<tr><td colspan="8" class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</td></tr>`;
+    if (cardsBody) cardsBody.innerHTML = `<p class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</p>`;
     return;
   }
 
-  uniquePatients.forEach((patient) => {
+  patientRows.forEach((patient) => {
     const nextAppointment = nextAppointmentForPatient(patient);
-    const paymentStatus = patient.hasDebt ? "Dugovanje" : "Plaćeno";
-    const paymentClass = patient.hasDebt ? "status-dugovanje" : "status-plaćeno";
+    const paymentStatus = paymentStatusForPatient(patient);
+    const paymentClass = paymentClassForPatient(patient);
     const row = document.createElement("tr");
     row.append(
       window.DrRosaSecurity.cell(patient.patient),
@@ -258,9 +299,7 @@ function renderRecords(records) {
     );
     const actionCell = document.createElement("td");
     actionCell.className = "table-actions";
-    const patientQuery = patient.patientId
-      ? `patientId=${encodeURIComponent(patient.patientId)}`
-      : `patient=${encodeURIComponent(patient.patient)}`;
+    const patientQuery = patientQueryString(patient);
     const link = document.createElement("a");
     link.href = `patient-dashboard.html?${patientQuery}`;
     link.className = "secondary-btn";
@@ -279,9 +318,37 @@ function renderRecords(records) {
     actionCell.append(actionGroup);
     row.appendChild(actionCell);
     body.appendChild(row);
+
+    if (cardsBody) {
+      const nextAppointmentDate = formatDate(nextAppointment?.startsAt || nextAppointment?.starts_at);
+      const debtAmount = formatCurrencyAmounts(patient.totalDebt);
+      const card = document.createElement("article");
+      card.className = `record-mobile-card ${patient.hasDebt ? "has-debt" : ""}`;
+      card.innerHTML = `
+        <div class="record-mobile-card-header">
+          <div>
+            <span>Pacijent</span>
+            <strong>${window.DrRosaSecurity.escapeHtml(patient.patient)}</strong>
+          </div>
+          <em class="${paymentClass}">${window.DrRosaSecurity.escapeHtml(paymentStatus)}</em>
+        </div>
+        <dl class="record-mobile-card-grid">
+          <div><dt>Poslednja poseta</dt><dd>${window.DrRosaSecurity.escapeHtml(formatDate(patient.lastVisit))}</dd></div>
+          <div><dt>Sledeci termin</dt><dd>${window.DrRosaSecurity.escapeHtml(nextAppointmentDate)}</dd></div>
+          <div><dt>Procedura</dt><dd>${window.DrRosaSecurity.escapeHtml(patient.lastProcedure || "-")}</dd></div>
+          <div><dt>Poseta</dt><dd>${window.DrRosaSecurity.escapeHtml(patient.visits)}</dd></div>
+          <div><dt>Dugovanje</dt><dd>${window.DrRosaSecurity.escapeHtml(debtAmount)}</dd></div>
+        </dl>
+        <div class="record-action-group">
+          <a class="secondary-btn" href="patient-dashboard.html?${patientQuery}">Otvori</a>
+          <a class="secondary-btn" href="new-entry.html?${patientQuery}">Nova poseta</a>
+          <a class="secondary-btn" href="calendar.html?${patientQuery}">Zakazi</a>
+        </div>
+      `;
+      cardsBody.appendChild(card);
+    }
   });
 }
-
 function matchesPeriod(recordDate, period) {
   if (!period) return true;
   const date = new Date(recordDate);
@@ -294,7 +361,11 @@ function matchesPeriod(recordDate, period) {
   return true;
 }
 
-function filterRecords(records) {
+function patientHasRecordMatching(patient, matcher) {
+  return patient.records.some(matcher);
+}
+
+function filterPatients(patientRows) {
   const patient = searchInput.value.trim();
   const status = statusFilter?.value || "";
   const doctor = doctorFilter?.value || "";
@@ -305,24 +376,27 @@ function filterRecords(records) {
   const payment = paymentFilter?.value || "";
   const appointment = appointmentFilter?.value || "";
 
-  return records.filter((record) => {
-    const nextAppointment = nextAppointmentForPatient({ patientId: record.patientId, patient: record.patient });
-    const matchesPatient = !patient || record.patient === patient;
-    const matchesStatus = !status || fold(record.status) === fold(status);
-    const matchesDoctor = !doctor || fold(record.doctor) === fold(doctor) || fold(record.doctor).includes(fold(doctor));
-    const matchesDate = !date || record.lastVisit === date;
-    const matchesActivity = !activity || procedureCatalog.matchesActivity(record, activity);
-    const matchesProcedureValue = matchesProcedure(record, procedure);
-    const matchesPayment = !payment || (payment === "debtors" ? isDebt(record) : fold(record.paymentStatus) === fold(payment));
+  return patientRows.filter(row => {
+    const nextAppointment = nextAppointmentForPatient(row);
+    const matchesPatient = !patient || String(row.patientId) === patient || row.patient === patient;
+    const matchesStatus = !status || patientHasRecordMatching(row, record => fold(record.status) === fold(status));
+    const matchesDoctor = !doctor || patientHasRecordMatching(row, record => fold(record.doctor) === fold(doctor) || fold(record.doctor).includes(fold(doctor)));
+    const matchesDate = !date || patientHasRecordMatching(row, record => record.lastVisit === date);
+    const matchesActivity = !activity || patientHasRecordMatching(row, record => procedureCatalog.matchesActivity(record, activity));
+    const matchesProcedureValue = !procedure || patientHasRecordMatching(row, record => matchesProcedure(record, procedure));
+    const matchesPayment = !payment || (payment === "debtors"
+      ? row.hasDebt
+      : patientHasRecordMatching(row, record => fold(record.paymentStatus) === fold(payment)));
     const matchesAppointment = !appointment
       || (appointment === "has_upcoming" && Boolean(nextAppointment))
       || (appointment === "no_upcoming" && !nextAppointment);
-    return matchesPatient && matchesStatus && matchesDoctor && matchesDate && matchesActivity && matchesProcedureValue && matchesPayment && matchesAppointment && matchesPeriod(record.lastVisit, period);
+    const matchesPeriodValue = !period || patientHasRecordMatching(row, record => matchesPeriod(record.lastVisit, period));
+    return matchesPatient && matchesStatus && matchesDoctor && matchesDate && matchesActivity && matchesProcedureValue && matchesPayment && matchesAppointment && matchesPeriodValue;
   });
 }
 
 function refresh() {
-  const filtered = filterRecords(allRecords);
+  const filtered = filterPatients(buildPatientRows(allPatients, allRecords));
   renderSummary(filtered);
   renderRecords(filtered);
 }
@@ -354,12 +428,14 @@ exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
   await procedureCatalog.loadFromApi?.();
   await populateCodebookFilters();
   try {
-    [allRecords, allAppointments] = await Promise.all([
+    [allPatients, allRecords, allAppointments] = await Promise.all([
+      window.DrRosaApi.getPatients(),
       window.DrRosaApi.getRecords(),
       window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : []
     ]);
   } catch (error) {
     console.error("Records load error:", error);
+    allPatients = [];
     allRecords = [];
   }
   populatePatientFilter();

@@ -3,6 +3,7 @@ let currentReportExport = { title: "Direktor izveštaj", headers: [], rows: [] }
 let activeExcelSheet = "PAZARI";
 let codebookItems = [];
 let doctorAdminItems = [];
+let doctorGoogleColors = [];
 let currentDailyCashReport = null;
 let googleOAuthReconnectMode = false;
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
@@ -409,7 +410,12 @@ function doctorAdminElements() {
     phone: document.getElementById("doctor-phone"),
     googleColorId: document.getElementById("doctor-google-color-id"),
     calendarColor: document.getElementById("doctor-calendar-color"),
+    calendarColorPicker: document.getElementById("doctor-calendar-color-picker"),
     calendarTextColor: document.getElementById("doctor-calendar-text-color"),
+    calendarTextColorPicker: document.getElementById("doctor-calendar-text-color-picker"),
+    googleColorSwatches: document.getElementById("doctor-google-color-swatches"),
+    googleColorStatus: document.getElementById("doctor-google-color-status"),
+    colorPreview: document.getElementById("doctor-color-preview"),
     active: document.getElementById("doctor-active"),
     reset: document.getElementById("doctor-reset"),
     message: document.getElementById("doctor-admin-message"),
@@ -424,6 +430,87 @@ function showDoctorAdminMessage(message, isError = false) {
   elements.message.classList.toggle("error", Boolean(isError));
 }
 
+function normalizeDoctorHexColor(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const withHash = raw.startsWith("#") ? raw : `#${raw}`;
+  return /^#[0-9a-fA-F]{6}$/.test(withHash) ? withHash.toLowerCase() : raw;
+}
+
+function isValidDoctorHexColor(value) {
+  return /^#[0-9a-fA-F]{6}$/.test(String(value || "").trim());
+}
+
+function setDoctorColorValues({ background, foreground, googleColorId } = {}) {
+  const elements = doctorAdminElements();
+  const bg = normalizeDoctorHexColor(background || elements.calendarColor?.value || "#1891f0");
+  const fg = normalizeDoctorHexColor(foreground || elements.calendarTextColor?.value || "#ffffff");
+  if (elements.calendarColor) elements.calendarColor.value = bg;
+  if (elements.calendarColorPicker && isValidDoctorHexColor(bg)) elements.calendarColorPicker.value = bg;
+  if (elements.calendarTextColor) elements.calendarTextColor.value = fg;
+  if (elements.calendarTextColorPicker && isValidDoctorHexColor(fg)) elements.calendarTextColorPicker.value = fg;
+  if (googleColorId !== undefined && elements.googleColorId) elements.googleColorId.value = googleColorId || "";
+  updateDoctorColorPreview();
+  renderDoctorGoogleColorSwatches();
+}
+
+function updateDoctorColorPreview() {
+  const elements = doctorAdminElements();
+  if (!elements.colorPreview) return;
+  const bg = normalizeDoctorHexColor(elements.calendarColor?.value || "#1891f0");
+  const fg = normalizeDoctorHexColor(elements.calendarTextColor?.value || "#ffffff");
+  elements.colorPreview.style.background = isValidDoctorHexColor(bg) ? bg : "#f8fafc";
+  elements.colorPreview.style.color = isValidDoctorHexColor(fg) ? fg : "#0f172a";
+  elements.colorPreview.textContent = isValidDoctorHexColor(bg) && isValidDoctorHexColor(fg)
+    ? "Primer termina"
+    : "HEX nije validan";
+}
+
+function renderDoctorGoogleColorSwatches() {
+  const elements = doctorAdminElements();
+  if (!elements.googleColorSwatches) return;
+  if (!doctorGoogleColors.length) {
+    elements.googleColorSwatches.innerHTML = "";
+    return;
+  }
+  const selectedId = String(elements.googleColorId?.value || "");
+  elements.googleColorSwatches.innerHTML = doctorGoogleColors.map(color => `
+    <button
+      class="doctor-google-color-swatch ${String(color.colorId) === selectedId ? "active" : ""}"
+      type="button"
+      title="Google color ID ${escapeHtml(color.colorId)}"
+      data-google-color-id="${escapeHtml(color.colorId)}"
+      data-background="${escapeHtml(color.background)}"
+      data-foreground="${escapeHtml(color.foreground || "#1d1d1d")}"
+      style="background:${escapeHtml(color.background)}; color:${escapeHtml(color.foreground || "#1d1d1d")};"
+    >${escapeHtml(color.colorId)}</button>
+  `).join("");
+}
+
+async function loadDoctorGoogleColors() {
+  const elements = doctorAdminElements();
+  if (!elements.googleColorSwatches || !window.DrRosaApi?.getGoogleCalendarColors) return;
+  if (elements.googleColorSwatches.dataset.loaded === "1") return;
+  elements.googleColorSwatches.dataset.loaded = "1";
+  if (elements.googleColorStatus) elements.googleColorStatus.textContent = "Ucitavam Google boje...";
+  try {
+    const result = await window.DrRosaApi.getGoogleCalendarColors();
+    doctorGoogleColors = Array.isArray(result.eventColors) ? result.eventColors : [];
+    renderDoctorGoogleColorSwatches();
+    if (elements.googleColorStatus) {
+      elements.googleColorStatus.textContent = doctorGoogleColors.length
+        ? "Klik na boju popunjava Google ID i HEX vrednosti."
+        : "Google boje nisu vracene. Unesite HEX rucno.";
+    }
+  } catch (error) {
+    doctorGoogleColors = [];
+    renderDoctorGoogleColorSwatches();
+    if (elements.googleColorStatus) {
+      elements.googleColorStatus.textContent = error.message || "Google boje nisu dostupne. Unesite HEX rucno.";
+    }
+  }
+}
+
 function resetDoctorForm() {
   const elements = doctorAdminElements();
   if (!elements.form) return;
@@ -434,8 +521,7 @@ function resetDoctorForm() {
   elements.email.value = "";
   elements.phone.value = "";
   elements.googleColorId.value = "";
-  elements.calendarColor.value = "#1891f0";
-  elements.calendarTextColor.value = "#ffffff";
+  setDoctorColorValues({ background: "#1891f0", foreground: "#ffffff", googleColorId: "" });
   elements.active.checked = true;
   showDoctorAdminMessage("");
 }
@@ -448,9 +534,11 @@ function fillDoctorForm(doctor) {
   elements.license.value = doctor.licenseNumber || doctor.license_number || "";
   elements.email.value = doctor.email || "";
   elements.phone.value = doctor.phone || "";
-  elements.googleColorId.value = doctor.googleColorId || doctor.google_color_id || "";
-  elements.calendarColor.value = doctor.calendarColor || doctor.calendar_color || "#1891f0";
-  elements.calendarTextColor.value = doctor.calendarTextColor || doctor.calendar_text_color || "#ffffff";
+  setDoctorColorValues({
+    background: doctor.calendarColor || doctor.calendar_color || "#1891f0",
+    foreground: doctor.calendarTextColor || doctor.calendar_text_color || "#ffffff",
+    googleColorId: doctor.googleColorId || doctor.google_color_id || ""
+  });
   elements.active.checked = doctor.isActive !== false;
   showDoctorAdminMessage("Izmena postojeceg doktora.");
 }
@@ -464,9 +552,24 @@ function readDoctorForm() {
     email: elements.email.value.trim() || null,
     phone: elements.phone.value.trim() || null,
     googleColorId: elements.googleColorId.value.trim() || null,
-    calendarColor: elements.calendarColor.value || null,
-    calendarTextColor: elements.calendarTextColor.value || null,
+    calendarColor: normalizeDoctorHexColor(elements.calendarColor.value) || null,
+    calendarTextColor: normalizeDoctorHexColor(elements.calendarTextColor.value) || null,
     isActive: elements.active.checked
+  };
+}
+
+function doctorPayloadFromExisting(doctor, overrides = {}) {
+  return {
+    name: doctor.name || "",
+    specialization: doctor.specialization || null,
+    licenseNumber: doctor.licenseNumber || doctor.license_number || null,
+    email: doctor.email || null,
+    phone: doctor.phone || null,
+    googleColorId: doctor.googleColorId || doctor.google_color_id || null,
+    calendarColor: doctor.calendarColor || doctor.calendar_color || null,
+    calendarTextColor: doctor.calendarTextColor || doctor.calendar_text_color || null,
+    isActive: doctor.isActive !== false,
+    ...overrides
   };
 }
 
@@ -474,20 +577,44 @@ function renderDoctorAdminTable() {
   const elements = doctorAdminElements();
   if (!elements.table) return;
   const rows = [...doctorAdminItems].sort((a, b) => Number(a.isActive === false) - Number(b.isActive === false) || a.name.localeCompare(b.name));
-  elements.table.innerHTML = rows.length ? rows.map(doctor => `
-    <tr>
-      <td>${escapeHtml(doctor.name)}</td>
-      <td>${escapeHtml(doctor.specialization || "-")}</td>
-      <td>${escapeHtml(doctor.licenseNumber || "-")}</td>
-      <td>${escapeHtml([doctor.email, doctor.phone].filter(Boolean).join(" / ") || "-")}</td>
-      <td><span class="doctor-color-swatch" style="background:${escapeHtml(doctor.calendarColor || "#1891f0")}; color:${escapeHtml(doctor.calendarTextColor || "#ffffff")};">Aa</span> ${escapeHtml(doctor.googleColorId || "-")}</td>
-      <td>${doctor.isActive === false ? "Neaktivno" : "Aktivno"}</td>
-      <td>
-        <button class="secondary-btn edit-doctor-btn" type="button" data-doctor-id="${doctor.id}">Uredi</button>
-        <button class="danger-btn deactivate-doctor-btn" type="button" data-doctor-id="${doctor.id}" ${doctor.isActive === false ? "disabled" : ""}>Deaktiviraj</button>
+  elements.table.innerHTML = rows.length ? rows.map(doctor => {
+    const isInactive = doctor.isActive === false;
+    return `
+    <tr class="doctor-admin-row ${isInactive ? "is-inactive" : ""}">
+      <td data-label="Doktor">
+        <div class="doctor-admin-name-cell">
+          <strong>${escapeHtml(doctor.name)}</strong>
+          <span class="doctor-status-pill ${isInactive ? "inactive" : "active"}">${isInactive ? "Neaktivan" : "Aktivan"}</span>
+        </div>
+      </td>
+      <td data-label="Specijalizacija">${escapeHtml(doctor.specialization || "-")}</td>
+      <td data-label="Licenca">${escapeHtml(doctor.licenseNumber || "-")}</td>
+      <td data-label="Kontakt">
+        <div class="doctor-admin-contact">
+          <span>${escapeHtml(doctor.email || "-")}</span>
+          <span>${escapeHtml(doctor.phone || "-")}</span>
+        </div>
+      </td>
+      <td data-label="Boja">
+        <div class="doctor-admin-color-cell">
+          <span class="doctor-color-swatch" style="background:${escapeHtml(doctor.calendarColor || "#1891f0")}; color:${escapeHtml(doctor.calendarTextColor || "#ffffff")};">Aa</span>
+          <span class="doctor-color-meta">
+            <span>Google ID: ${escapeHtml(doctor.googleColorId || "-")}</span>
+            <span>${escapeHtml(doctor.calendarColor || "-")} / ${escapeHtml(doctor.calendarTextColor || "-")}</span>
+          </span>
+        </div>
+      </td>
+      <td data-label="Akcije">
+        <div class="doctor-admin-actions">
+          <button class="secondary-btn edit-doctor-btn" type="button" data-doctor-id="${doctor.id}">Uredi</button>
+          ${isInactive
+      ? `<button class="primary-btn activate-doctor-btn" type="button" data-doctor-id="${doctor.id}">Aktiviraj</button>`
+      : `<button class="danger-btn deactivate-doctor-btn" type="button" data-doctor-id="${doctor.id}">Deaktiviraj</button>`}
+        </div>
       </td>
     </tr>
-  `).join("") : `<tr><td colspan="7" class="empty-row">Nema doktora za prikaz.</td></tr>`;
+  `;
+  }).join("") : `<tr><td colspan="6" class="empty-row">Nema doktora za prikaz.</td></tr>`;
 }
 
 async function loadDoctorAdmin() {
@@ -515,6 +642,16 @@ async function saveDoctorAdmin(event) {
     elements.name.focus();
     return;
   }
+  if (payload.calendarColor && !isValidDoctorHexColor(payload.calendarColor)) {
+    showDoctorAdminMessage("Unesite boju u HEX formatu, npr. #dc2127.", true);
+    elements.calendarColor.focus();
+    return;
+  }
+  if (payload.calendarTextColor && !isValidDoctorHexColor(payload.calendarTextColor)) {
+    showDoctorAdminMessage("Unesite boju teksta u HEX formatu, npr. #1d1d1d.", true);
+    elements.calendarTextColor.focus();
+    return;
+  }
   try {
     if (elements.id.value) {
       await window.DrRosaApi.updateDoctor(elements.id.value, payload);
@@ -534,25 +671,80 @@ function initializeDoctorAdmin() {
   const elements = doctorAdminElements();
   if (!elements.form || elements.form.dataset.ready) return;
   elements.form.dataset.ready = "true";
+  setDoctorColorValues({
+    background: elements.calendarColor?.value || "#1891f0",
+    foreground: elements.calendarTextColor?.value || "#ffffff",
+    googleColorId: elements.googleColorId?.value || ""
+  });
+  loadDoctorGoogleColors();
+  elements.calendarColor?.addEventListener("change", event => {
+    const normalized = normalizeDoctorHexColor(event.target.value);
+    event.target.value = normalized;
+    if (elements.calendarColorPicker && isValidDoctorHexColor(normalized)) elements.calendarColorPicker.value = normalized;
+    updateDoctorColorPreview();
+  });
+  elements.calendarColor?.addEventListener("input", updateDoctorColorPreview);
+  elements.calendarTextColor?.addEventListener("change", event => {
+    const normalized = normalizeDoctorHexColor(event.target.value);
+    event.target.value = normalized;
+    if (elements.calendarTextColorPicker && isValidDoctorHexColor(normalized)) elements.calendarTextColorPicker.value = normalized;
+    updateDoctorColorPreview();
+  });
+  elements.calendarTextColor?.addEventListener("input", updateDoctorColorPreview);
+  elements.calendarColorPicker?.addEventListener("input", event => {
+    setDoctorColorValues({ background: event.target.value });
+  });
+  elements.calendarTextColorPicker?.addEventListener("input", event => {
+    setDoctorColorValues({ foreground: event.target.value });
+  });
+  elements.googleColorId?.addEventListener("input", renderDoctorGoogleColorSwatches);
+  elements.googleColorSwatches?.addEventListener("click", event => {
+    const swatch = event.target.closest(".doctor-google-color-swatch");
+    if (!swatch) return;
+    setDoctorColorValues({
+      background: swatch.dataset.background,
+      foreground: swatch.dataset.foreground,
+      googleColorId: swatch.dataset.googleColorId
+    });
+  });
   elements.form.addEventListener("submit", saveDoctorAdmin);
   elements.reset?.addEventListener("click", resetDoctorForm);
   elements.table?.addEventListener("click", async event => {
     const editButton = event.target.closest(".edit-doctor-btn");
     const deactivateButton = event.target.closest(".deactivate-doctor-btn");
+    const activateButton = event.target.closest(".activate-doctor-btn");
     if (editButton) {
       const doctor = doctorAdminItems.find(item => String(item.id) === String(editButton.dataset.doctorId));
       if (doctor) fillDoctorForm(doctor);
       return;
     }
+    if (activateButton) {
+      const doctor = doctorAdminItems.find(item => String(item.id) === String(activateButton.dataset.doctorId));
+      if (!doctor) return;
+      activateButton.disabled = true;
+      try {
+        await window.DrRosaApi.updateDoctor(doctor.id, doctorPayloadFromExisting(doctor, { isActive: true }));
+        resetDoctorForm();
+        await refreshDoctorsAfterAdminChange("Doktor je aktiviran.");
+      } catch (error) {
+        showDoctorAdminMessage(error.message || "Doktor nije aktiviran.", true);
+      } finally {
+        activateButton.disabled = false;
+      }
+      return;
+    }
     if (!deactivateButton) return;
     const doctor = doctorAdminItems.find(item => String(item.id) === String(deactivateButton.dataset.doctorId));
     if (!doctor || !confirm(`Deaktivirati doktora ${doctor.name}?`)) return;
+    deactivateButton.disabled = true;
     try {
       const result = await window.DrRosaApi.deactivateDoctor(doctor.id);
       resetDoctorForm();
       await refreshDoctorsAfterAdminChange(result.message || "Doktor je deaktiviran.");
     } catch (error) {
       showDoctorAdminMessage(error.message || "Doktor nije deaktiviran.", true);
+    } finally {
+      deactivateButton.disabled = false;
     }
   });
 }

@@ -54,6 +54,37 @@ function createPostgresPatientsRepository(pool) {
       `, [id]);
     },
 
+    findDuplicatePatient(patient, excludeId = null) {
+      return queryOne(pool, `
+        SELECT id, first_name, last_name, date_of_birth, email, phone
+        FROM patients
+        WHERE lower(btrim(first_name)) = lower(btrim(?))
+          AND lower(btrim(last_name)) = lower(btrim(?))
+          AND (?::integer IS NULL OR id <> ?::integer)
+          AND (
+            (?::text IS NOT NULL AND date_of_birth = ?::text)
+            OR (?::text <> '' AND lower(btrim(COALESCE(email, ''))) = lower(btrim(?::text)))
+            OR (?::text <> '' AND regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') = regexp_replace(?::text, '\\D', '', 'g'))
+            OR (?::text IS NULL AND ?::text = '' AND ?::text = '')
+          )
+        LIMIT 1
+      `, [
+        patient.firstName,
+        patient.lastName,
+        excludeId,
+        excludeId,
+        patient.dateOfBirth,
+        patient.dateOfBirth,
+        patient.email || '',
+        patient.email || '',
+        patient.phone || '',
+        patient.phone || '',
+        patient.dateOfBirth,
+        patient.email || '',
+        patient.phone || ''
+      ]);
+    },
+
     async updatePatient(id, patient) {
       await execute(pool, `
         UPDATE patients

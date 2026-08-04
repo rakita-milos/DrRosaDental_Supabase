@@ -30,6 +30,15 @@ function appointmentSelectSql(whereClause) {
   `;
 }
 
+function phoneLookupKeys(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  const keys = new Set();
+  if (digits) keys.add(digits);
+  if (digits.startsWith('381') && digits.length > 5) keys.add(`0${digits.slice(3)}`);
+  if (digits.startsWith('0') && digits.length > 5) keys.add(`381${digits.slice(1)}`);
+  return Array.from(keys);
+}
+
 function createPostgresCalendarRepository(pool) {
   return {
     listActiveChairs() {
@@ -74,9 +83,12 @@ function createPostgresCalendarRepository(pool) {
         UPDATE appointments
         SET patient_id = ?, doctor_id = ?, chair_id = ?, procedure_id = ?, procedure_name = ?,
             starts_at = ?, ends_at = ?, duration_minutes = ?, status = ?, notes = ?,
+            patient_match_locked = CASE WHEN ? THEN true ELSE patient_match_locked END,
+            google_patient_match_status = CASE WHEN ? THEN 'manual' ELSE google_patient_match_status END,
+            google_patient_match_note = CASE WHEN ? THEN 'Pacijent je rucno izabran u aplikaciji.' ELSE google_patient_match_note END,
             updated_by = ?, updated_at = now()
         WHERE id = ?
-      `, [...appointmentUpdateParams(appointment), id]);
+      `, [...appointmentUpdateParams(appointment), Boolean(appointment.lockPatientMatch), Boolean(appointment.lockPatientMatch), Boolean(appointment.lockPatientMatch), id]);
       if (oldStatus !== appointment.status) {
         await execute(pool, 'INSERT INTO appointment_status_history (appointment_id, old_status, new_status, changed_by) VALUES (?, ?, ?, ?)', [id, oldStatus, appointment.status, appointment.userId]);
       }
@@ -125,6 +137,10 @@ function createPostgresCalendarRepository(pool) {
       return queryMany(pool, 'SELECT id, name FROM chairs WHERE is_active = true ORDER BY id');
     },
 
+    activeDoctors() {
+      return queryMany(pool, 'SELECT id, name FROM doctors WHERE is_active = true ORDER BY id');
+    },
+
     defaultActiveDoctor() {
       return queryOne(pool, 'SELECT id FROM doctors WHERE is_active = true ORDER BY id LIMIT 1');
     },
@@ -145,6 +161,28 @@ function createPostgresCalendarRepository(pool) {
 
     findPatientByEmail(email) {
       return queryOne(pool, 'SELECT * FROM patients WHERE lower(email) = lower(?) LIMIT 1', [email]);
+    },
+
+    findPatientsForGoogleTitle({ firstName = '', lastName = '', phone = '' }) {
+      const phoneKeys = phoneLookupKeys(phone);
+      const filters = [];
+      const params = [];
+      if (phoneKeys.length) {
+        filters.push("regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') = ANY(?::text[])");
+        params.push(phoneKeys);
+      }
+      if (firstName && lastName) {
+        filters.push('(lower(btrim(first_name)) = lower(btrim(?)) AND lower(btrim(last_name)) = lower(btrim(?)))');
+        params.push(firstName, lastName);
+      }
+      if (!filters.length) return [];
+      return queryMany(pool, `
+        SELECT id, first_name, last_name, phone, email
+        FROM patients
+        WHERE (${filters.join(' OR ')})
+        ORDER BY created_at DESC
+        LIMIT 10
+      `, params);
     },
 
     async ensureGoogleImportPatient() {
@@ -283,14 +321,15 @@ function createPostgresCalendarRepository(pool) {
       `, [startsAt, endsAt, durationMinutes, procedureName, notes, googleEventId, status, id]);
     },
 
-    updateFromGoogleWithWarning({ id, startsAt, endsAt, durationMinutes, procedureName, notes, googleEventId, status, chairId, googleEventType = 'appointment', warning = null, warningCode = null }) {
+    updateFromGoogleWithWarning({ id, startsAt, endsAt, durationMinutes, procedureName, notes, googleEventId, status, doctorId, chairId, googleEventType = 'appointment', warning = null, warningCode = null, patientId = null, googleTitle = null, patientMatchStatus = null, patientMatchNote = null, patientMatchLocked = false }) {
       return execute(pool, `
         UPDATE appointments
-        SET chair_id = ?, starts_at = ?, ends_at = ?, duration_minutes = ?, procedure_name = ?, notes = ?,
+        SET patient_id = ?, doctor_id = ?, chair_id = ?, starts_at = ?, ends_at = ?, duration_minutes = ?, procedure_name = ?, notes = ?,
             google_event_id = ?, google_sync_status = ?, google_event_type = ?, google_sync_warning = ?,
-            google_sync_warning_code = ?, status = ?, updated_at = now()
+            google_sync_warning_code = ?, google_title = ?, google_patient_match_status = ?,
+            google_patient_match_note = ?, patient_match_locked = ?, status = ?, updated_at = now()
         WHERE id = ?
-      `, [chairId, startsAt, endsAt, durationMinutes, procedureName, notes, googleEventId, warning ? 'warning' : 'synced', googleEventType, warning, warningCode, status, id]);
+      `, [patientId, doctorId, chairId, startsAt, endsAt, durationMinutes, procedureName, notes, googleEventId, warning ? 'warning' : 'synced', googleEventType, warning, warningCode, googleTitle, patientMatchStatus, patientMatchNote, Boolean(patientMatchLocked), status, id]);
     },
 
     async importAppointmentFromGoogle(appointment) {
@@ -299,9 +338,10 @@ function createPostgresCalendarRepository(pool) {
           patient_id, doctor_id, chair_id, procedure_id, procedure_name,
           starts_at, ends_at, duration_minutes, status, notes,
           google_event_id, google_sync_status, google_event_type, google_sync_warning,
-          google_sync_warning_code, created_by, updated_by
+          google_sync_warning_code, google_title, google_patient_match_status,
+          google_patient_match_note, patient_match_locked, created_by, updated_by
         )
-        VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+        VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
       `, [
         appointment.patientId,
         appointment.doctorId,
@@ -316,7 +356,11 @@ function createPostgresCalendarRepository(pool) {
         appointment.warning ? 'warning' : 'synced',
         appointment.googleEventType || 'appointment',
         appointment.warning || null,
-        appointment.warningCode || null
+        appointment.warningCode || null,
+        appointment.googleTitle || null,
+        appointment.patientMatchStatus || null,
+        appointment.patientMatchNote || null,
+        Boolean(appointment.patientMatchLocked)
       ]);
       await execute(pool, 'INSERT INTO appointment_status_history (appointment_id, old_status, new_status, changed_by) VALUES (?, NULL, ?, NULL)', [id, appointment.status]);
       return Number(id);
@@ -452,7 +496,17 @@ function createPostgresCalendarRepository(pool) {
       `, [type, title, message, metadata ? JSON.stringify(metadata) : null, userId]);
     },
 
-    notificationsSince({ sinceId = 0, limit = 20 } = {}) {
+    notificationsSince({ sinceId = 0, limit = 20, latest = false } = {}) {
+      if (latest) {
+        return queryMany(pool, `
+          SELECT n.*, u.name as created_by_name
+          FROM app_notifications n
+          LEFT JOIN users u ON u.id = n.created_by
+          ORDER BY n.id DESC
+          LIMIT ?
+        `, [limit]);
+      }
+
       return queryMany(pool, `
         SELECT n.*, u.name as created_by_name
         FROM app_notifications n

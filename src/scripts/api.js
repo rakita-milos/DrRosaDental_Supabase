@@ -321,6 +321,10 @@
     });
   }
 
+  async function getGoogleCalendarColors() {
+    return request("/director/google-calendar/colors");
+  }
+
   async function retryCalendarSync() {
     return request("/director/calendar-sync/retry", { method: "POST" });
   }
@@ -336,10 +340,11 @@
     return request("/calendar-sync/google/status");
   }
 
-  async function getNotifications({ sinceId = 0, limit = 20 } = {}) {
+  async function getNotifications({ sinceId = 0, limit = 20, latest = false } = {}) {
     const query = new URLSearchParams();
     if (sinceId) query.set("sinceId", sinceId);
     if (limit) query.set("limit", limit);
+    if (latest) query.set("latest", "true");
     return request(`/notifications${query.toString() ? `?${query}` : ""}`);
   }
 
@@ -484,6 +489,17 @@
 
   async function getClinicalNotes(patientId) {
     return request(`/patients/${patientId}/clinical-notes`);
+  }
+
+  async function getPatientInternalComments(patientId) {
+    return request(`/patients/${patientId}/internal-comments`);
+  }
+
+  async function createPatientInternalComment(patientId, comment) {
+    return request(`/patients/${patientId}/internal-comments`, {
+      method: "POST",
+      body: JSON.stringify(comment)
+    });
   }
 
   async function createClinicalNote(patientId, note) {
@@ -790,6 +806,50 @@
     });
   }
 
+  function actionButtonFor(target, selector) {
+    if (!target) return null;
+    if (selector) return target.querySelector?.(selector) || document.querySelector(selector);
+    if (target.matches?.("button, a")) return target;
+    return target.querySelector?.("button[type='submit'], .primary-btn, .secondary-btn, .danger-btn") || null;
+  }
+
+  async function withActionLock(target, action, options = {}) {
+    if (!target || typeof action !== "function") return action?.();
+    if (target.dataset.drrosaBusy === "1") return undefined;
+    const button = actionButtonFor(target, options.buttonSelector);
+    if (button?.dataset.drrosaBusy === "1") return undefined;
+
+    const originalText = button?.textContent;
+    const wasDisabled = button?.disabled;
+    target.dataset.drrosaBusy = "1";
+    target.setAttribute?.("aria-busy", "true");
+    if (button) {
+      button.dataset.drrosaBusy = "1";
+      button.disabled = true;
+      button.classList.add("is-loading");
+      if (options.loadingText) button.textContent = options.loadingText;
+    }
+
+    try {
+      return await action();
+    } finally {
+      if (!options.keepLocked) {
+        delete target.dataset.drrosaBusy;
+        target.removeAttribute?.("aria-busy");
+        if (button) {
+          delete button.dataset.drrosaBusy;
+          button.disabled = Boolean(wasDisabled);
+          button.classList.remove("is-loading");
+          if (options.loadingText && originalText != null) button.textContent = originalText;
+        }
+      }
+    }
+  }
+
+  window.DrRosaUi = {
+    withActionLock
+  };
+
   window.DrRosaApi = {
     login,
     logout,
@@ -833,6 +893,7 @@
     deleteCodebookItem,
     getGoogleCalendarSettings,
     updateGoogleCalendarSettings,
+    getGoogleCalendarColors,
     retryCalendarSync,
     pullGoogleCalendarChanges,
     getGoogleCalendarSyncStatus,
@@ -859,6 +920,8 @@
     deleteClinicalChartEntry,
     getClinicalNoteTemplates,
     getClinicalNotes,
+    getPatientInternalComments,
+    createPatientInternalComment,
     createClinicalNote,
     updateClinicalNote,
     deleteClinicalNote,
@@ -931,14 +994,33 @@
     if (window.DrRosaNotificationsStarted || location.pathname.endsWith("/login.html")) return;
     window.DrRosaNotificationsStarted = true;
     let lastId = Number(localStorage.getItem("drrosa-last-notification-id") || 0);
+    const startedAt = Date.now();
+    const historicalToastGraceMs = 5000;
+    const baselineReady = lastId > 0
+      ? Promise.resolve()
+      : getNotifications({ latest: true, limit: 1 })
+        .then(notifications => {
+          const newestId = Math.max(0, ...notifications.map(notification => Number(notification.id || 0)));
+          if (newestId > 0) {
+            lastId = newestId;
+            localStorage.setItem("drrosa-last-notification-id", String(lastId));
+          }
+        })
+        .catch(() => {
+          // Notification baseline must never interrupt clinical workflows.
+        });
 
     async function poll() {
       if (!getSession()) return;
       try {
+        await baselineReady;
         const notifications = await getNotifications({ sinceId: lastId, limit: 10 });
         notifications.forEach(notification => {
           lastId = Math.max(lastId, Number(notification.id || 0));
-          showGlobalNotification(notification);
+          const createdAt = Date.parse(notification.createdAt || "");
+          if (Number.isFinite(createdAt) && createdAt >= startedAt - historicalToastGraceMs) {
+            showGlobalNotification(notification);
+          }
         });
         localStorage.setItem("drrosa-last-notification-id", String(lastId));
       } catch (_error) {

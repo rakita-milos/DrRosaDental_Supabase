@@ -32,16 +32,14 @@ const escapeHtml = window.DrRosaSecurity.escapeHtml;
 const escapeAttribute = window.DrRosaSecurity.escapeAttribute;
 const previewElements = {
   name: document.getElementById("preview-name"),
-  visit: document.getElementById("preview-visit"),
   procedure: document.getElementById("preview-procedure"),
-  status: document.getElementById("preview-status"),
+  teethCount: document.getElementById("preview-teeth-count"),
   paymentStatus: document.getElementById("preview-payment-status"),
+  totalAmount: document.getElementById("preview-total-amount"),
   amountPaid: document.getElementById("preview-amount-paid"),
   amountDue: document.getElementById("preview-amount-due"),
-  currency: document.getElementById("preview-currency"),
-  paymentParts: document.getElementById("preview-payment-parts"),
-  shift: document.getElementById("preview-shift"),
-  note: document.getElementById("preview-note")
+  debtRow: document.getElementById("preview-debt-row"),
+  noteBadge: document.getElementById("preview-note-badge")
 };
 
 const inputs = {
@@ -130,6 +128,8 @@ function showAlert(message, type = "success", options = {}) {
 function setupEntryStepNavigation() {
   const stepLinks = [...document.querySelectorAll(".entry-step-strip a[href^='#']")];
   if (!stepLinks.length) return;
+  let manualStepTarget = "";
+  let manualStepLockTimer = 0;
 
   const sectionEntries = stepLinks
     .map(link => ({ link, section: document.querySelector(link.getAttribute("href")) }))
@@ -144,11 +144,31 @@ function setupEntryStepNavigation() {
     });
   }
 
+  function clearManualStepLock() {
+    manualStepTarget = "";
+    window.clearTimeout(manualStepLockTimer);
+    manualStepLockTimer = 0;
+  }
+
+  function lockManualStep(sectionId) {
+    manualStepTarget = sectionId;
+    window.clearTimeout(manualStepLockTimer);
+    manualStepLockTimer = window.setTimeout(clearManualStepLock, 900);
+  }
+
+  function scrollToEntrySection(section) {
+    lockManualStep(section.id);
+    setActiveStep(section.id);
+    if (window.location.hash !== `#${section.id}`) {
+      window.history.replaceState(null, "", `#${section.id}`);
+    }
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   sectionEntries.forEach(({ link, section }) => {
     link.addEventListener("click", event => {
       event.preventDefault();
-      setActiveStep(section.id);
-      section.scrollIntoView({ behavior: "smooth", block: "start" });
+      scrollToEntrySection(section);
     });
   });
 
@@ -157,6 +177,14 @@ function setupEntryStepNavigation() {
   if (!("IntersectionObserver" in window)) return;
 
   const observer = new IntersectionObserver(entries => {
+    if (manualStepTarget) {
+      const targetEntry = entries.find(entry => entry.target.id === manualStepTarget && entry.isIntersecting);
+      if (targetEntry && targetEntry.intersectionRatio >= 0.28) {
+        setActiveStep(manualStepTarget);
+        clearManualStepLock();
+      }
+      return;
+    }
     const visibleEntry = entries
       .filter(entry => entry.isIntersecting)
       .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
@@ -184,23 +212,31 @@ function controlLabel(control) {
   return label.replace(/\s+/g, " ");
 }
 
+function selectedTreatmentTeethCount() {
+  return Object.keys(teethTreatments).filter(tooth => treatmentListForTooth(tooth).length > 0).length;
+}
+
 function updatePreview() {
   const procedureText = inputs.procedure.value.trim();
   const activityText = inputs.procedureActivity.value.trim();
   const summary = paymentSummary();
-  previewElements.name.textContent = inputs.patient.value.trim() || "-";
-  previewElements.visit.textContent = formatDate(inputs.lastVisit.value);
-  previewElements.procedure.textContent = procedureText ? `${activityText ? `${activityText} / ` : ""}${procedureText}` : (hasToothTreatments() ? "Rad po zubima" : "-");
-  previewElements.status.textContent = inputs.status.value;
-  previewElements.paymentStatus.textContent = inputs.paymentStatus.value;
+  const hasDebt = summary.debt > 0.009;
+  previewElements.name.textContent = inputs.patient.value.trim() || "Pacijent nije izabran";
+  previewElements.procedure.textContent = procedureText
+    ? `${activityText ? `${activityText} / ` : ""}${procedureText}`
+    : (hasToothTreatments() ? "Rad po zubima" : "Rad nije dodat");
+  previewElements.teethCount.textContent = String(selectedTreatmentTeethCount());
+  previewElements.paymentStatus.textContent = summary.status || inputs.paymentStatus.value;
+  previewElements.totalAmount.textContent = formatMoney(summary.total, summary.currency);
   previewElements.amountPaid.textContent = formatMoney(summary.paid, summary.currency);
-  previewElements.amountDue.textContent = formatMoney(summary.debt, summary.currency);
-  previewElements.currency.textContent = inputs.currency.value;
-  if (previewElements.paymentParts) {
-    previewElements.paymentParts.textContent = paymentParts.length ? paymentParts.map(paymentPartLabel).join(" / ") : "-";
+  previewElements.amountDue.textContent = hasDebt ? formatMoney(summary.debt, summary.currency) : "Bez duga";
+  if (previewElements.debtRow) {
+    previewElements.debtRow.classList.toggle("has-debt", hasDebt);
+    previewElements.debtRow.classList.toggle("is-clear", !hasDebt);
   }
-  previewElements.shift.textContent = inputs.shift.value;
-  previewElements.note.textContent = inputs.note.value.trim() || "-";
+  if (previewElements.noteBadge) {
+    previewElements.noteBadge.hidden = !inputs.note.value.trim();
+  }
 }
 
 function patientName(patient) {
@@ -216,6 +252,29 @@ function selectedPatient() {
     return patients.find(patient => String(patient.id) === String(patientIdParam));
   }
   return findPatientByName(inputs.patient.value.trim());
+}
+
+function hasProcedureFallbackValue() {
+  return Boolean(inputs.procedureActivity?.value || inputs.procedure?.value);
+}
+
+function setProcedureFallbackVisible(isVisible) {
+  const block = document.getElementById("procedure-fallback-block");
+  const button = document.getElementById("toggle-procedure-fallback");
+  if (!block || !button) return;
+  block.hidden = !isVisible;
+  button.setAttribute("aria-expanded", isVisible ? "true" : "false");
+  button.textContent = isVisible ? "Sakrij postupak bez mape" : "Prikaži postupak bez mape";
+}
+
+function setupProcedureFallbackToggle() {
+  const button = document.getElementById("toggle-procedure-fallback");
+  if (!button) return;
+  setProcedureFallbackVisible(hasProcedureFallbackValue());
+  button.addEventListener("click", () => {
+    const block = document.getElementById("procedure-fallback-block");
+    setProcedureFallbackVisible(Boolean(block?.hidden));
+  });
 }
 
 function patientDashboardUrl(patient, record) {
@@ -253,6 +312,7 @@ function lockPatientFromQuery() {
     `;
   }
   closePatientSuggestions();
+  updatePreview();
 }
 
 function findDoctorByName(name) {
@@ -340,6 +400,10 @@ function populateProcedureSelect(activitySelect, procedureSelect, placeholder = 
 
 function setSelectValue(select, value) {
   if (!select || !value) return;
+  if (!select.options) {
+    select.value = value;
+    return;
+  }
   if (!Array.from(select.options).some(item => item.value === value)) {
     select.appendChild(new Option(value, value));
   }
@@ -367,6 +431,13 @@ async function populateCodebookSelects() {
       if (!select) return;
       if (type === "currency") {
         currencyUtils?.setCurrencies(items);
+      }
+      if (!select.options) {
+        setSelectValue(select, select.value || items[0].value);
+        if (type === "currency") {
+          select.dataset.previousCurrency = select.value || "EUR";
+        }
+        return;
       }
       const current = select.value;
       select.innerHTML = items.map(item => {
@@ -512,6 +583,24 @@ function paymentSummary() {
   return { total, paid: clampedPaid, rawPaid: paid, debt, status, currency };
 }
 
+function paymentPartFromRow(row) {
+  const index = Number(row.dataset.paymentIndex);
+  return normalizedPaymentPart({
+    amount: row.querySelector(".payment-part-amount")?.value,
+    currency: row.querySelector(".payment-part-currency")?.value,
+    paymentMethod: row.querySelector(".payment-part-method")?.value,
+    paymentDate: row.querySelector(".payment-part-date")?.value,
+    notes: paymentParts[index]?.notes || ""
+  });
+}
+
+function syncPaymentPartsFromDom() {
+  if (!inputs.paymentPartsList) return;
+  const rows = Array.from(inputs.paymentPartsList.querySelectorAll(".payment-part-row"));
+  if (!rows.length) return;
+  paymentParts = rows.map(paymentPartFromRow);
+}
+
 function renderPaymentParts() {
   if (!inputs.paymentPartsList) return;
   const currencies = availableCurrencyCodes();
@@ -525,6 +614,7 @@ function renderPaymentParts() {
     const methodOptions = rowMethods.map(method => `<option value="${escapeHtml(method.value)}"${method.value === normalized.paymentMethod ? " selected" : ""}>${escapeHtml(method.label)}</option>`).join("");
     return `
       <div class="payment-part-row" data-payment-index="${index}">
+        <span class="payment-part-number">#${index + 1}</span>
         <label>
           Iznos
           <input class="payment-part-amount" type="number" min="0" step="0.01" value="${Number(normalized.amount || 0) || ""}" />
@@ -543,11 +633,7 @@ function renderPaymentParts() {
           Datum
           <input class="payment-part-date" type="date" value="${escapeHtml(normalized.paymentDate)}" />
         </label>
-        <label class="payment-part-notes">
-          Napomena
-          <input class="payment-part-note" type="text" maxlength="1000" value="${escapeHtml(normalized.notes)}" />
-        </label>
-        <button class="danger-btn payment-part-remove" type="button" aria-label="Obrisi uplatu">x</button>
+        <button class="danger-btn payment-part-remove" type="button" aria-label="Obrisi uplatu">×</button>
       </div>
     `;
   }).join("") : `<div class="payment-empty-state">Nema dodatih uplata. Dug ce biti jednak ukupnoj ceni.</div>`;
@@ -555,13 +641,7 @@ function renderPaymentParts() {
   inputs.paymentPartsList.querySelectorAll(".payment-part-row").forEach(row => {
     const index = Number(row.dataset.paymentIndex);
     const updatePart = () => {
-      paymentParts[index] = normalizedPaymentPart({
-        amount: row.querySelector(".payment-part-amount")?.value,
-        currency: row.querySelector(".payment-part-currency")?.value,
-        paymentMethod: row.querySelector(".payment-part-method")?.value,
-        paymentDate: row.querySelector(".payment-part-date")?.value,
-        notes: row.querySelector(".payment-part-note")?.value
-      });
+      paymentParts[index] = paymentPartFromRow(row);
       updatePaymentCalculation({ render: false });
       updatePreview();
     };
@@ -977,6 +1057,7 @@ inputs.totalAmount?.addEventListener("input", () => {
 });
 
 inputs.addPaymentPart?.addEventListener("click", () => {
+  syncPaymentPartsFromDom();
   paymentParts.push(normalizedPaymentPart({ currency: paymentCurrency() }));
   updatePaymentCalculation();
   updatePreview();
@@ -1157,6 +1238,7 @@ inputs.patient.addEventListener("change", () => {
   renderInitialConditionSummary();
   updateTeethSummary();
   updateToothHighlights();
+  updatePreview();
 });
 
 inputs.patient.addEventListener("input", () => {
@@ -1167,6 +1249,7 @@ inputs.patient.addEventListener("input", () => {
   renderPatientSuggestions();
   updateTeethSummary();
   updateToothHighlights();
+  updatePreview();
 });
 
 inputs.patient.addEventListener("focus", () => {
@@ -1176,6 +1259,7 @@ inputs.patient.addEventListener("focus", () => {
 
 inputs.patient.addEventListener("blur", () => {
   inputs.patient.value = inputs.patient.value.replace(/\s+/g, " ").trim();
+  updatePreview();
   setTimeout(() => {
     if (!document.activeElement?.closest(".patient-autocomplete-field")) closePatientSuggestions();
   }, 120);
@@ -1366,8 +1450,10 @@ form.addEventListener("submit", async (event) => {
     if (recordParam) {
       openRecordInForm(allRecords.find(record => String(record.id) === String(recordParam)));
     }
+    setupProcedureFallbackToggle();
   } catch (error) {
     console.error("Form setup error:", error);
+    setupProcedureFallbackToggle();
   }
   updatePreview();
   updateTeethSummary();

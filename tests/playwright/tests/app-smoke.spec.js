@@ -19,11 +19,12 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => localStorage.clear());
 });
 
-test("public booking page loads without authentication", async ({ page }) => {
+test("public booking page is unavailable while the feature is disabled", async ({ page }) => {
   await page.goto("/src/pages/public-booking.html");
   await expect(page.locator("#public-booking-form")).toBeVisible();
-  await expect(page.locator("#booking-first-name")).toBeVisible();
-  await expect(page.locator("#booking-slot")).toBeVisible();
+  await expect(page.locator("#booking-message")).toContainText("Onlajn zakazivanje trenutno nije dostupno.");
+  await expect(page.locator("#booking-first-name")).toBeHidden();
+  await expect(page.locator("#booking-slot")).toBeHidden();
 });
 
 test.describe("page smoke by role", () => {

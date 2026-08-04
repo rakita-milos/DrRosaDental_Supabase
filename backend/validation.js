@@ -231,6 +231,9 @@ const medicalProfileSchema = Joi.object({
 });
 
 const documentUpdateSchema = Joi.object({
+  fileBase64: Joi.string().base64({ paddingRequired: false }).optional(),
+  originalFilename: Joi.string().max(255).optional(),
+  mimeType: Joi.string().valid(...ALLOWED_DOCUMENT_MIME).optional(),
   visitRecordId: Joi.number().integer().positive().optional().allow(null),
   visit_record_id: Joi.number().integer().positive().optional().allow(null),
   documentType: Joi.string().max(40).optional().allow('', null),
@@ -249,7 +252,7 @@ const documentUpdateSchema = Joi.object({
   dicom_study_uid: Joi.string().max(120).optional().allow('', null),
   claimAttachmentReady: Joi.boolean().optional(),
   claim_attachment_ready: Joi.boolean().optional()
-});
+}).with('fileBase64', ['originalFilename', 'mimeType']);
 
 const recordUpdateSchema = recordCreateSchema.fork(['patient_id', 'doctor_id', 'visit_date'], schema => schema.optional());
 
@@ -295,10 +298,10 @@ const doctorWriteSchema = Joi.object({
   is_active: Joi.boolean().optional(),
   googleColorId: Joi.string().max(40).optional().allow('', null),
   google_color_id: Joi.string().max(40).optional().allow('', null),
-  calendarColor: Joi.string().max(7).optional().allow('', null),
-  calendar_color: Joi.string().max(7).optional().allow('', null),
-  calendarTextColor: Joi.string().max(7).optional().allow('', null),
-  calendar_text_color: Joi.string().max(7).optional().allow('', null)
+  calendarColor: Joi.string().max(20).optional().allow('', null),
+  calendar_color: Joi.string().max(20).optional().allow('', null),
+  calendarTextColor: Joi.string().max(20).optional().allow('', null),
+  calendar_text_color: Joi.string().max(20).optional().allow('', null)
 });
 
 const codebookWriteSchema = Joi.object({

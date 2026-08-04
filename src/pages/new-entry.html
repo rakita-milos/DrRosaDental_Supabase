@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Novi unos | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css?v=responsive-20260727" />
+  <link rel="stylesheet" href="../styles/styles.css?v=entry-payment-sync-20260804" />
 </head>
 <body>
   <div class="app-shell">
@@ -24,7 +24,6 @@
         <a href="new-entry.html" class="nav-link" aria-current="page">Novi unos</a>
         <a id="new-patient-link" href="new-patient.html" class="nav-link">Novi pacijent</a>
         <a href="all-records.html" class="nav-link">Evidencija</a>
-        <a href="public-booking.html" class="nav-link">Onlajn zakazivanje</a>
         <a id="director-panel-link" href="director-panel.html" class="nav-link" style="display: none;">Direktor panel</a>
         <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
@@ -204,12 +203,13 @@
             <p class="eyebrow">Detalji posete</p>
             <h2>Status, postupak bez zuba i naplata</h2>
           </div>
+          <button class="secondary-btn" id="toggle-procedure-fallback" type="button" aria-expanded="false" aria-controls="procedure-fallback-block">Prikaži postupak bez mape</button>
         </div>
 
 
         <form id="new-entry-form">
           <div class="input-grid">
-            <div class="entry-form-block procedure-fallback full-width">
+            <div class="entry-form-block procedure-fallback full-width" id="procedure-fallback-block" hidden>
               <div class="entry-form-block-header">
                 <span>Postupak bez mape zuba</span>
               </div>
@@ -228,43 +228,18 @@
                 </label>
               </div>
             </div>
-            <label>
-              Status
-              <select id="status" name="status" required>
-                <option value="Zakazano">Zakazano</option>
-                <option value="U toku">U toku</option>
-                <option value="Završeno">Završeno</option>
-                <option value="Otkazano">Otkazano</option>
-              </select>
-            </label>
-            <label>
-              Plaćanje
-              <select id="payment-status" name="paymentStatus" required>
+            <div class="entry-technical-payment-fields" hidden>
+              <input id="status" name="status" type="hidden" value="Završeno" />
+              <select id="payment-status" name="paymentStatus" aria-hidden="true" tabindex="-1">
                 <option value="Plaćeno">Plaćeno</option>
                 <option value="Dugovanje">Dugovanje</option>
                 <option value="Delimično">Delimično</option>
               </select>
-            </label>
-            <label>
-              Valuta plaćanja
-              <select id="currency" name="currency" required>
-                <option value="EUR">EUR</option>
-                <option value="RSD">RSD</option>
-                <option value="USD">USD</option>
-              </select>
-            </label>
-            <label>
-              Plaćeno
+              <input id="currency" name="currency" type="hidden" value="EUR" />
               <input id="amount-paid" name="amountPaid" type="hidden" value="0" />
-            </label>
-            <label>
-              Iznos duga
-              <input id="amount-due" name="amountDue" type="number" min="0" step="0.01" placeholder="0.00" readonly />
-            </label>
-            <label>
-              Ukupno za naplatu
-              <input id="total-amount" name="totalAmount" type="number" min="0" step="0.01" placeholder="0.00" />
-            </label>
+              <input id="amount-due" name="amountDue" type="hidden" value="0" />
+              <input id="total-amount" name="totalAmount" type="hidden" value="0" />
+            </div>
             <div class="payment-builder full-width">
               <div class="payment-builder-header">
                 <div>
@@ -285,6 +260,55 @@
               Napomena
               <textarea id="note" name="note" rows="4" placeholder="Kontrola za 2 nedelje"></textarea>
             </label>
+            <section class="summary-panel entry-summary-panel full-width" id="entry-summary-section">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Pregled</p>
+                  <h2>Rezime unosa</h2>
+                </div>
+              </div>
+
+              <div class="preview-card entry-summary-card" id="entry-summary-card">
+                <div class="entry-summary-identity">
+                <div class="entry-summary-main">
+                  <p class="preview-label">Pacijent</p>
+                  <h3 id="preview-name">Pacijent nije izabran</h3>
+                  <p class="entry-summary-muted" id="preview-procedure">Rad nije dodat</p>
+                </div>
+
+                <div class="entry-summary-grid">
+                  <div class="entry-summary-item">
+                    <span>Zubi</span>
+                    <strong id="preview-teeth-count">0</strong>
+                  </div>
+                </div>
+                </div>
+
+                <div class="entry-summary-money">
+                  <div class="entry-summary-item">
+                    <span>Ukupno</span>
+                    <strong id="preview-total-amount">0.00 EUR</strong>
+                  </div>
+                  <div class="entry-summary-item">
+                    <span>Plaćeno</span>
+                    <strong id="preview-amount-paid">0.00 EUR</strong>
+                  </div>
+
+                  <div class="entry-summary-debt is-clear" id="preview-debt-row">
+                    <span>Dug</span>
+                    <strong id="preview-amount-due">Bez duga</strong>
+                  </div>
+                  <div class="entry-summary-payment-status">
+                    <span>Status</span>
+                    <strong id="preview-payment-status">Plaćeno</strong>
+                  </div>
+                </div>
+
+                <div class="entry-summary-badges">
+                  <span class="summary-badge muted" id="preview-note-badge" hidden>Napomena dodata</span>
+                </div>
+              </div>
+            </section>
           </div>
 
           <div id="save-status" class="save-status" aria-live="assertive"></div>
@@ -295,41 +319,6 @@
           </div>
         </form>
       </section>
-
-      <aside class="summary-panel" id="entry-summary-section">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Pregled</p>
-            <h2>Brzi pregled</h2>
-          </div>
-        </div>
-
-        <div class="preview-card">
-          <p class="preview-label">Pacijent</p>
-          <h3 id="preview-name">-</h3>
-          <p class="preview-label">Poslednja poseta</p>
-          <p id="preview-visit">-</p>
-          <p class="preview-label">Postupak</p>
-          <p id="preview-procedure">-</p>
-          <p class="preview-label">Status</p>
-          <p id="preview-status">Zakazano</p>
-          <p class="preview-label">Plaćanje</p>
-          <p id="preview-payment-status">Plaćeno</p>
-          <p class="preview-label">Plaćeno</p>
-          <p id="preview-amount-paid">0.00</p>
-          <p class="preview-label">Iznos duga</p>
-          <p id="preview-amount-due">0.00</p>
-          <p class="preview-label">Valuta plaćanja</p>
-          <p id="preview-currency">EUR</p>
-          <p class="preview-label">Uplate</p>
-          <p id="preview-payment-parts">-</p>
-          <p class="preview-label">Smena</p>
-          <p id="preview-shift">Prva smena</p>
-          <p class="preview-label">Napomena</p>
-          <p id="preview-note">-</p>
-        </div>
-
-      </aside>
       </div>
     </main>
   </div>
@@ -341,6 +330,6 @@
   <script src="../scripts/procedure-catalog.js"></script>
   <script src="../scripts/tooth-condition-editor.js"></script>
   <script src="../scripts/treatment-history.js"></script>
-  <script src="../scripts/new-entry.js?v=entry-redirect-20260726"></script>
+  <script src="../scripts/new-entry.js?v=entry-payment-sync-20260804"></script>
 </body>
 </html>

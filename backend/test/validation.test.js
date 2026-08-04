@@ -62,6 +62,22 @@ test('patient document schema validates file upload payload', () => {
   assert.equal(error, undefined);
 });
 
+test('document update schema accepts optional replacement file only with metadata', () => {
+  const { error } = documentUpdateSchema.validate({
+    title: 'Novi naziv',
+    fileBase64: Buffer.from('%PDF-1.7').toString('base64'),
+    originalFilename: 'file.pdf',
+    mimeType: 'application/pdf'
+  });
+  assert.equal(error, undefined);
+
+  const missingMetadata = documentUpdateSchema.validate({
+    title: 'Novi naziv',
+    fileBase64: Buffer.from('%PDF-1.7').toString('base64')
+  });
+  assert(missingMetadata.error instanceof Error);
+});
+
 test('import scan schema accepts optional metadata', () => {
   const { error } = importScanSchema.validate({
     documentType: 'rtg'
@@ -143,6 +159,7 @@ test('critical write schemas accept expected director and clinical payloads', ()
   }).error, undefined);
   assert.equal(googleOAuthExchangeSchema.validate({ code: '4/abc' }).error, undefined);
   assert.equal(doctorWriteSchema.validate({ name: 'Dr Rosa', email: 'rosa@example.com', calendarColor: '#ffffff' }).error, undefined);
+  assert.equal(doctorWriteSchema.validate({ name: 'Dr Rosa', email: 'rosa@example.com', calendarColor: 'dc2127', calendarTextColor: '1d1d1d' }).error, undefined);
   assert.equal(codebookWriteSchema.validate({ type: 'procedure', value: 'kontrola', label: 'Kontrola', price: 10 }).error, undefined);
   assert.equal(dailyCashReportSchema.validate({
     date: '2026-08-01',

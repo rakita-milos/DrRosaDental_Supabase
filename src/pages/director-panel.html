@@ -23,7 +23,6 @@
         <a href="new-entry.html" class="nav-link">Novi unos</a>
         <a href="new-patient.html" class="nav-link">Novi pacijent</a>
         <a href="all-records.html" class="nav-link">Evidencija</a>
-        <a href="public-booking.html" class="nav-link">Onlajn zakazivanje</a>
         <a href="director-panel.html" class="nav-link" aria-current="page">Direktor panel</a>
         <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
@@ -209,7 +208,7 @@
             </div>
           </div>
 
-          <form id="doctor-admin-form" class="admin-codebook-form">
+          <form id="doctor-admin-form" class="admin-codebook-form doctor-admin-form">
             <input type="hidden" id="doctor-id" />
             <div class="input-grid">
               <label>
@@ -237,17 +236,36 @@
                 <input id="doctor-google-color-id" type="text" placeholder="npr. 7 ili label ID" />
               </label>
               <label>
-                Boja u kalendaru
-                <input id="doctor-calendar-color" type="color" value="#1891f0" />
+                HEX boja u kalendaru
+                <input id="doctor-calendar-color" type="text" inputmode="text" placeholder="#1891f0" value="#1891f0" />
               </label>
               <label>
-                Boja teksta
-                <input id="doctor-calendar-text-color" type="color" value="#ffffff" />
+                Odaberi boju
+                <input id="doctor-calendar-color-picker" type="color" value="#1891f0" />
+              </label>
+              <label>
+                HEX boja teksta
+                <input id="doctor-calendar-text-color" type="text" inputmode="text" placeholder="#ffffff" value="#ffffff" />
+              </label>
+              <label>
+                Odaberi boju teksta
+                <input id="doctor-calendar-text-color-picker" type="color" value="#ffffff" />
               </label>
               <label class="checkbox-label">
                 <input id="doctor-active" type="checkbox" checked />
                 Aktivan doktor
               </label>
+            </div>
+            <div class="doctor-color-tools">
+              <div>
+                <span class="form-field-caption">Google boje</span>
+                <div id="doctor-google-color-swatches" class="doctor-google-color-swatches" aria-live="polite"></div>
+                <small id="doctor-google-color-status" class="muted-text"></small>
+              </div>
+              <div>
+                <span class="form-field-caption">Preview</span>
+                <div id="doctor-color-preview" class="doctor-color-preview">Primer termina</div>
+              </div>
             </div>
             <div class="form-actions">
               <button type="submit">Sačuvaj doktora</button>
@@ -256,8 +274,8 @@
             <p id="doctor-admin-message" class="form-alert" role="status"></p>
           </form>
 
-          <div class="table-wrap">
-            <table>
+          <div class="table-wrap doctor-admin-table-wrap">
+            <table class="doctor-admin-table">
               <thead>
                 <tr>
                   <th>Doktor</th>
@@ -265,7 +283,6 @@
                   <th>Licenca</th>
                   <th>Kontakt</th>
                   <th>Boja</th>
-                  <th>Status</th>
                   <th>Akcije</th>
                 </tr>
               </thead>

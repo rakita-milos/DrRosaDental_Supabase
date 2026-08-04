@@ -348,8 +348,12 @@ function setAppSetting(key, value) {
   return runtimeSettings.setAppSetting({ key, value });
 }
 
+function publicBookingFeatureAvailable() {
+  return String(process.env.PUBLIC_BOOKING_FEATURE_ENABLED || '0') === '1';
+}
+
 async function isPublicBookingEnabled() {
-  return await appSetting('public_booking_enabled', '1') === '1';
+  return publicBookingFeatureAvailable() && await appSetting('public_booking_enabled', '0') === '1';
 }
 
 async function requirePublicBookingEnabled(_req, res, next) {
@@ -986,9 +990,10 @@ function cleanText(value, { max = 255, required = false } = {}) {
 }
 
 function normalizeHexColor(value) {
-  const color = cleanText(value, { max: 7 });
+  const color = cleanText(value, { max: 20 });
   if (!color) return null;
-  return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : color;
+  const withHash = color.startsWith('#') ? color : `#${color}`;
+  return /^#[0-9a-fA-F]{6}$/.test(withHash) ? withHash.toLowerCase() : color;
 }
 
 function normalizeGoogleAuthCode(value) {
@@ -1226,6 +1231,10 @@ function serializeAppointment(row) {
     googleEventId: row.google_event_id,
     googleSyncStatus: row.google_sync_status,
     googleEventType: row.google_event_type || 'appointment',
+    googleTitle: row.google_title || '',
+    googlePatientMatchStatus: row.google_patient_match_status || '',
+    googlePatientMatchNote: row.google_patient_match_note || '',
+    patientMatchLocked: Boolean(row.patient_match_locked),
     googleSyncWarning: row.google_sync_warning || '',
     googleSyncWarningCode: row.google_sync_warning_code || '',
     visitRecordId: row.visit_record_id,
@@ -1391,9 +1400,89 @@ function googleEventColor(event, colorContext = {}) {
   const color = colorId ? colorContext.eventColors?.[colorId] : null;
   return {
     googleColorId: eventLabelId || colorId || null,
+    eventLabelId,
+    colorId,
     background: cleanText(label?.backgroundColor || color?.background, { max: 20 }),
     foreground: cleanText(color?.foreground, { max: 20 })
   };
+}
+
+function combineGoogleWarnings(...warnings) {
+  const parts = warnings
+    .map(warning => cleanText(warning, { max: 500 }))
+    .filter(Boolean);
+  return parts.length ? parts.join(' ') : null;
+}
+
+function combineGoogleWarningCodes(...codes) {
+  const parts = codes
+    .map(code => cleanText(code, { max: 80 }))
+    .filter(Boolean);
+  const conflictCode = parts.find(code => ['doctor_conflict', 'chair_conflict', 'chair_reassigned'].includes(code));
+  return conflictCode || parts[0] || null;
+}
+
+async function doctorForGoogleEvent(event, colorContext, { fallbackDoctorId = null } = {}) {
+  const googleColor = googleEventColor(event, colorContext);
+  const hasGoogleColor = Boolean(googleColor.googleColorId || googleColor.background);
+  let matchedDoctor = null;
+  if (hasGoogleColor) {
+    matchedDoctor = await calendarRepo.doctorByGoogleColor({
+      googleColorId: googleColor.googleColorId,
+      calendarColor: googleColor.background
+    });
+    if (!matchedDoctor?.id && googleColor.colorId && googleColor.colorId !== googleColor.googleColorId) {
+      matchedDoctor = await calendarRepo.doctorByGoogleColor({
+        googleColorId: googleColor.colorId,
+        calendarColor: googleColor.background
+      });
+    }
+  }
+
+  if (matchedDoctor?.id) {
+    return { doctor: matchedDoctor, warning: null, warningCode: null, googleColor };
+  }
+
+  const titleDoctor = await doctorFromGoogleTitle(event);
+  if (titleDoctor?.id) {
+    return { doctor: titleDoctor, warning: null, warningCode: null, googleColor };
+  }
+
+  const fallbackDoctor = fallbackDoctorId ? { id: fallbackDoctorId } : await calendarRepo.defaultActiveDoctor();
+  const fallbackLabel = fallbackDoctorId ? 'postojecem doktoru' : 'podrazumevanom doktoru';
+  const colorLabel = [googleColor.eventLabelId, googleColor.colorId, googleColor.background].filter(Boolean).join(' / ');
+  return {
+    doctor: fallbackDoctor,
+    warning: hasGoogleColor
+      ? `Google boja ${colorLabel} nije povezana ni sa jednim aktivnim doktorom. Termin je dodeljen ${fallbackLabel}.`
+      : null,
+    warningCode: hasGoogleColor ? 'google_doctor_color_unmapped' : null,
+    googleColor
+  };
+}
+
+function normalizeDoctorMatchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(?:dr|doktor|doktorka|doktorica|spec)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+async function doctorFromGoogleTitle(event) {
+  const title = normalizeDoctorMatchText([event?.summary, event?.description].filter(Boolean).join(' '));
+  if (!title) return null;
+  const doctors = await calendarRepo.activeDoctors();
+  const matches = doctors.filter(doctor => {
+    const name = normalizeDoctorMatchText(doctor.name);
+    if (!name) return false;
+    if (title.includes(name)) return true;
+    const tokens = name.split(/\s+/).filter(token => token.length >= 3);
+    return tokens.length >= 2 && tokens.every(token => title.includes(token));
+  });
+  return matches.length === 1 ? matches[0] : null;
 }
 
 async function queueCalendarSync(appointmentId, action) {
@@ -1459,6 +1548,170 @@ function googleImportNotes(event) {
   return cleanText(parts.join('\n'), { max: 2000 });
 }
 
+function googleNonAppointmentNotes(event, googleEventType = 'google_event') {
+  const typeLabel = googleEventType === 'doctor_absence'
+    ? 'Godišnji/odsustvo doktora'
+    : 'Google napomena';
+  const parts = [
+    `Uvezeno iz Google Calendar-a kao: ${typeLabel}.`,
+    'Ovaj dogadjaj ne blokira stolice i ne tretira se kao termin pacijenta.',
+    `Google naslov: ${cleanText(event?.summary, { max: 255 }) || 'Bez naslova'}`
+  ];
+  const description = cleanText(event?.description, { max: 1500 });
+  if (description) parts.push(`Google opis: ${description}`);
+  const location = cleanText(event?.location, { max: 255 });
+  if (location) parts.push(`Google lokacija: ${location}`);
+  return cleanText(parts.join('\n'), { max: 2000 });
+}
+
+function googleNotesForEvent(event, googleEventType = 'appointment') {
+  return googleEventType === 'appointment'
+    ? googleImportNotes(event)
+    : googleNonAppointmentNotes(event, googleEventType);
+}
+
+function normalizePatientMatchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function normalizePhoneDigits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function phoneMatchKeys(value) {
+  const digits = normalizePhoneDigits(value);
+  const keys = new Set();
+  if (digits) keys.add(digits);
+  if (digits.startsWith('381') && digits.length > 5) keys.add(`0${digits.slice(3)}`);
+  if (digits.startsWith('0') && digits.length > 5) keys.add(`381${digits.slice(1)}`);
+  return keys;
+}
+
+function googleTitleLooksLikeNonPatientEvent(title) {
+  const text = normalizePatientMatchText(title);
+  return /\b(go|godisnji|godisnji odmor|odmor|blokada|praznik)\b/.test(text);
+}
+
+function parseGooglePatientCandidate(title) {
+  const rawTitle = cleanText(title, { max: 255 }) || '';
+  const phone = rawTitle.match(/\+?\d[\d\s()./-]{5,}\d/)?.[0] || '';
+  const withoutPhone = rawTitle
+    .replace(phone, ' ')
+    .replace(/[;,:()[\]{}]+/g, ' ')
+    .replace(/\b(?:d|z|zub|stolica|s)\s*\d+\b/gi, ' ')
+    .replace(/\b\d{1,2}(?:[.,]\d{1,2})*\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const tokens = withoutPhone
+    .split(/\s+/)
+    .map(token => token.replace(/[^\p{L}'-]/gu, ''))
+    .filter(token => token.length >= 2);
+  return {
+    title: rawTitle,
+    firstName: tokens[0] || '',
+    lastName: tokens[1] || '',
+    phone: normalizePhoneDigits(phone)
+  };
+}
+
+async function patientMatchForGoogleEvent(event, googleEventType = 'appointment', current = null) {
+  const googleTitle = cleanText(event?.summary, { max: 255 }) || '';
+  if (current?.patient_match_locked) {
+    return {
+      patientId: current.patient_id,
+      status: 'manual',
+      note: 'Pacijent je rucno izabran i Google sync ga ne menja.',
+      locked: true,
+      googleTitle
+    };
+  }
+
+  const fallbackPatientId = await calendarRepo.ensureGoogleImportPatient();
+  if (googleEventType !== 'appointment' || googleTitleLooksLikeNonPatientEvent(googleTitle)) {
+    return {
+      patientId: fallbackPatientId,
+      status: 'ignored',
+      note: 'Ovo je Google dogadjaj, nije termin pacijenta.',
+      locked: false,
+      googleTitle
+    };
+  }
+
+  const candidate = parseGooglePatientCandidate(googleTitle);
+  if (!candidate.firstName && !candidate.lastName && !candidate.phone) {
+    return {
+      patientId: fallbackPatientId,
+      status: 'not_found',
+      note: 'Pacijent nije pronadjen u kartonima. Izaberite pacijenta rucno.',
+      locked: false,
+      googleTitle
+    };
+  }
+
+  const patients = await calendarRepo.findPatientsForGoogleTitle(candidate);
+  const candidatePhoneKeys = phoneMatchKeys(candidate.phone);
+  const phoneMatches = candidatePhoneKeys.size
+    ? patients.filter(patient => {
+      const patientKeys = phoneMatchKeys(patient.phone);
+      return Array.from(candidatePhoneKeys).some(key => patientKeys.has(key));
+    })
+    : [];
+  if (phoneMatches.length === 1) {
+    return {
+      patientId: phoneMatches[0].id,
+      status: 'matched',
+      note: 'Pacijent je automatski povezan na osnovu telefona iz Google naslova.',
+      locked: false,
+      googleTitle
+    };
+  }
+  if (phoneMatches.length > 1) {
+    return {
+      patientId: fallbackPatientId,
+      status: 'ambiguous',
+      note: 'Pronadjeno je vise pacijenata sa istim telefonom. Izaberite tacnog pacijenta.',
+      locked: false,
+      googleTitle
+    };
+  }
+
+  const expectedName = normalizePatientMatchText(`${candidate.firstName} ${candidate.lastName}`);
+  const nameMatches = expectedName
+    ? patients.filter(patient => normalizePatientMatchText(`${patient.first_name} ${patient.last_name}`) === expectedName)
+    : [];
+  if (nameMatches.length === 1) {
+    return {
+      patientId: nameMatches[0].id,
+      status: 'matched',
+      note: 'Pacijent je automatski povezan na osnovu Google naslova.',
+      locked: false,
+      googleTitle
+    };
+  }
+  if (nameMatches.length > 1) {
+    return {
+      patientId: fallbackPatientId,
+      status: 'ambiguous',
+      note: 'Pronadjeno je vise mogucih pacijenata. Izaberite tacnog pacijenta.',
+      locked: false,
+      googleTitle
+    };
+  }
+
+  return {
+    patientId: fallbackPatientId,
+    status: 'not_found',
+    note: 'Pacijent nije pronadjen u kartonima. Izaberite pacijenta rucno.',
+    locked: false,
+    googleTitle
+  };
+}
+
 function appendGoogleWarning(notes, warning) {
   if (!warning) return notes;
   return cleanText(`Upozorenje: ${warning}\n${notes || ''}`, { max: 2000 });
@@ -1508,14 +1761,9 @@ async function chairForGoogleEvent({ appointmentId = null, preferredChairId = nu
 async function importAppointmentFromGoogleEvent(event, times, colorContext) {
   if (event.status === 'cancelled') return { action: 'skipped_missing_local' };
 
-  const patientId = await calendarRepo.ensureGoogleImportPatient();
-  const googleColor = googleEventColor(event, colorContext);
-  const doctor = googleColor.googleColorId || googleColor.background
-    ? await calendarRepo.doctorByGoogleColor({
-      googleColorId: googleColor.googleColorId,
-      calendarColor: googleColor.background
-    }) || await calendarRepo.defaultActiveDoctor()
-    : await calendarRepo.defaultActiveDoctor();
+  const patientMatch = await patientMatchForGoogleEvent(event, times.googleEventType);
+  const doctorChoice = await doctorForGoogleEvent(event, colorContext);
+  const doctor = doctorChoice.doctor;
   const chairChoice = await chairForGoogleEvent({
     startsAt: times.startsAt,
     endsAt: times.endsAt,
@@ -1529,13 +1777,13 @@ async function importAppointmentFromGoogleEvent(event, times, colorContext) {
   const doctorOverlap = times.googleEventType === 'appointment'
     ? await doctorConflict({ doctorId: doctor.id, startsAt: times.startsAt, endsAt: times.endsAt })
     : null;
-  const warning = times.warning || chairChoice.warning || (doctorOverlap
+  const warning = combineGoogleWarnings(times.warning, doctorChoice.warning, chairChoice.warning, doctorOverlap
     ? `Doktor vec ima termin #${doctorOverlap.id} u istom vremenu. Proveriti raspored.`
     : null);
-  const warningCode = times.warningCode || chairChoice.warningCode || (doctorOverlap ? 'doctor_conflict' : null);
-  const notes = appendGoogleWarning(googleImportNotes(event), warning);
+  const warningCode = combineGoogleWarningCodes(times.warningCode, doctorChoice.warningCode, chairChoice.warningCode, doctorOverlap ? 'doctor_conflict' : null);
+  const notes = appendGoogleWarning(googleNotesForEvent(event, times.googleEventType), warning);
   const appointmentId = await calendarRepo.importAppointmentFromGoogle({
-    patientId,
+    patientId: patientMatch.patientId,
     doctorId: doctor.id,
     chairId: chair.id,
     procedureName,
@@ -1547,7 +1795,11 @@ async function importAppointmentFromGoogleEvent(event, times, colorContext) {
     googleEventId: cleanText(event.id, { max: 255 }),
     googleEventType: times.googleEventType,
     warning,
-    warningCode
+    warningCode,
+    googleTitle: patientMatch.googleTitle,
+    patientMatchStatus: patientMatch.status,
+    patientMatchNote: patientMatch.note,
+    patientMatchLocked: patientMatch.locked
   });
 
   return { action: warning ? 'imported_warning' : 'imported', appointmentId, warningCode };
@@ -1572,6 +1824,9 @@ async function updateAppointmentFromGoogleEvent(event, colorContext) {
   }
 
   const times = googleEventTimeInfo(event);
+  const patientMatch = await patientMatchForGoogleEvent(event, times.googleEventType, current);
+  const doctorChoice = await doctorForGoogleEvent(event, colorContext, { fallbackDoctorId: current.doctor_id });
+  const doctor = doctorChoice.doctor;
   const chairChoice = await chairForGoogleEvent({
     appointmentId: current.id,
     preferredChairId: current.chair_id,
@@ -1581,27 +1836,33 @@ async function updateAppointmentFromGoogleEvent(event, colorContext) {
     event
   });
   const doctorOverlap = times.googleEventType === 'appointment'
-    ? await doctorConflict({ appointmentId: current.id, doctorId: current.doctor_id, startsAt: times.startsAt, endsAt: times.endsAt })
+    ? await doctorConflict({ appointmentId: current.id, doctorId: doctor?.id || current.doctor_id, startsAt: times.startsAt, endsAt: times.endsAt })
     : null;
-  const warning = times.warning || chairChoice.warning || (doctorOverlap
+  const warning = combineGoogleWarnings(times.warning, doctorChoice.warning, chairChoice.warning, doctorOverlap
     ? `Doktor vec ima termin #${doctorOverlap.id} u istom vremenu. Proveriti raspored.`
     : null);
-  const warningCode = times.warningCode || chairChoice.warningCode || (doctorOverlap ? 'doctor_conflict' : null);
+  const warningCode = combineGoogleWarningCodes(times.warningCode, doctorChoice.warningCode, chairChoice.warningCode, doctorOverlap ? 'doctor_conflict' : null);
 
   const isDrRosaEvent = event?.extendedProperties?.private?.drrosaSource === 'drrosa';
   const procedureName = googleEventProcedureName(event, current.procedure_name);
   const baseNotes = isDrRosaEvent
     ? cleanText(event.description, { max: 2000 })
-    : googleImportNotes(event);
+    : googleNotesForEvent(event, times.googleEventType);
   const notes = appendGoogleWarning(baseNotes, warning);
   const status = normalizeAppointmentStatus(current.status);
   const changed = current.starts_at !== times.startsAt
     || current.ends_at !== times.endsAt
+    || String(current.patient_id) !== String(patientMatch.patientId)
     || current.procedure_name !== procedureName
     || (current.notes || null) !== notes
     || current.google_event_id !== event.id
+    || String(current.doctor_id) !== String(doctor?.id || current.doctor_id)
     || String(current.chair_id) !== String(chairChoice.chair?.id)
     || (current.google_event_type || 'appointment') !== times.googleEventType
+    || (current.google_title || null) !== (patientMatch.googleTitle || null)
+    || (current.google_patient_match_status || null) !== (patientMatch.status || null)
+    || (current.google_patient_match_note || null) !== (patientMatch.note || null)
+    || Boolean(current.patient_match_locked) !== Boolean(patientMatch.locked)
     || (current.google_sync_warning || null) !== (warning || null)
     || (current.google_sync_warning_code || null) !== (warningCode || null);
 
@@ -1616,10 +1877,16 @@ async function updateAppointmentFromGoogleEvent(event, colorContext) {
     notes,
     googleEventId: event.id,
     status,
+    patientId: patientMatch.patientId,
+    doctorId: doctor?.id || current.doctor_id,
     chairId: chairChoice.chair?.id || current.chair_id,
     googleEventType: times.googleEventType,
     warning,
-    warningCode
+    warningCode,
+    googleTitle: patientMatch.googleTitle,
+    patientMatchStatus: patientMatch.status,
+    patientMatchNote: patientMatch.note,
+    patientMatchLocked: patientMatch.locked
   });
   return { action: warning ? 'updated_warning' : 'updated', appointmentId, warningCode };
 }
@@ -1903,8 +2170,6 @@ function serializeDocument(row) {
 }
 
 function safeExtension(filename, mimeType) {
-  const ext = path.extname(filename || '').toLowerCase();
-  if (ALLOWED_SCAN_EXTENSIONS.has(ext)) return ext;
   if (mimeType === 'application/pdf') return '.pdf';
   if (mimeType === 'image/jpeg') return '.jpg';
   if (mimeType === 'image/png') return '.png';
@@ -1925,7 +2190,6 @@ function mimeFromExtension(filename) {
 
 function detectedDocumentMime(buffer, filename) {
   if (!buffer || buffer.length < 4) return null;
-  const ext = path.extname(filename || '').toLowerCase();
   if (buffer.subarray(0, 4).toString() === '%PDF') return 'application/pdf';
   if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
   if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
@@ -1935,7 +2199,6 @@ function detectedDocumentMime(buffer, filename) {
     && buffer.subarray(8, 12).toString() === 'WEBP'
   ) return 'image/webp';
   if (buffer.length > 132 && buffer.subarray(128, 132).toString() === 'DICM') return 'application/dicom';
-  if (ext === '.dcm' || ext === '.dicom') return 'application/dicom';
   return null;
 }
 
@@ -1956,6 +2219,37 @@ function uniqueStoredFilename(originalFilename, mimeType) {
   return `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
 }
 
+async function validateAndStorePatientDocumentFile({ patientId, originalFilename, declaredMime, buffer }) {
+  if (!ALLOWED_DOCUMENT_MIME.has(declaredMime)) {
+    const error = new Error('Dozvoljeni su PDF, JPG, PNG, WEBP i DICOM fajlovi.');
+    error.status = 400;
+    throw error;
+  }
+  if (!buffer || buffer.length === 0 || buffer.length > MAX_DOCUMENT_SIZE) {
+    const error = new Error('Fajl mora biti manji od 10 MB.');
+    error.status = 400;
+    throw error;
+  }
+  const detectedMime = detectedDocumentMime(buffer, originalFilename);
+  if (!documentMimeMatches({ declaredMime, detectedMime })) {
+    const error = new Error('Sadrzaj fajla ne odgovara dozvoljenom tipu dokumenta.');
+    error.status = 400;
+    throw error;
+  }
+
+  const storedFilename = uniqueStoredFilename(originalFilename, detectedMime);
+  const targetPath = path.join(await patientUploadDir(patientId), storedFilename);
+  await fsp.writeFile(targetPath, buffer, { flag: 'wx' });
+  return {
+    originalFilename: cleanText(originalFilename, { max: 255, required: true }),
+    storedFilename,
+    filePath: targetPath,
+    mimeType: detectedMime,
+    fileSize: buffer.length,
+    fileHash: crypto.createHash('sha256').update(buffer).digest('hex')
+  };
+}
+
 async function savePatientDocument({ patientId, visitRecordId, documentType, title, description, documentDate, originalFilename, mimeType, buffer, source, userId, imagingModality, toothNumber, acquisitionDate, dicomStudyUid, claimAttachmentReady }) {
   if (!(await patientsRepo.findPatientById(patientId))) {
     const error = new Error('Patient not found');
@@ -1967,27 +2261,12 @@ async function savePatientDocument({ patientId, visitRecordId, documentType, tit
     error.status = 404;
     throw error;
   }
-  if (!ALLOWED_DOCUMENT_MIME.has(mimeType)) {
-    const error = new Error('Dozvoljeni su PDF, JPG, PNG, WEBP i DICOM fajlovi.');
-    error.status = 400;
-    throw error;
-  }
-  if (!buffer || buffer.length === 0 || buffer.length > MAX_DOCUMENT_SIZE) {
-    const error = new Error('Fajl mora biti manji od 10 MB.');
-    error.status = 400;
-    throw error;
-  }
-  const detectedMime = detectedDocumentMime(buffer, originalFilename);
-  if (!documentMimeMatches({ declaredMime: mimeType, detectedMime })) {
-    const error = new Error('Sadrzaj fajla ne odgovara dozvoljenom tipu dokumenta.');
-    error.status = 400;
-    throw error;
-  }
-
-  const storedFilename = uniqueStoredFilename(originalFilename, mimeType);
-  const targetPath = path.join(await patientUploadDir(patientId), storedFilename);
-  await fsp.writeFile(targetPath, buffer, { flag: 'wx' });
-  const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+  const storedFile = await validateAndStorePatientDocumentFile({
+    patientId,
+    originalFilename,
+    declaredMime: mimeType,
+    buffer
+  });
 
   return serializeDocument(await patientDocumentsRepo.createDocument({
     patientId,
@@ -1996,12 +2275,12 @@ async function savePatientDocument({ patientId, visitRecordId, documentType, tit
     title: cleanText(title || originalFilename, { max: 160, required: true }),
     description: cleanText(description, { max: 1000 }),
     documentDate: cleanText(documentDate, { max: 20 }),
-    originalFilename: cleanText(originalFilename, { max: 255, required: true }),
-    storedFilename,
-    filePath: targetPath,
-    mimeType,
-    fileSize: buffer.length,
-    fileHash: hash,
+    originalFilename: storedFile.originalFilename,
+    storedFilename: storedFile.storedFilename,
+    filePath: storedFile.filePath,
+    mimeType: storedFile.mimeType,
+    fileSize: storedFile.fileSize,
+    fileHash: storedFile.fileHash,
     source: source || 'upload',
     uploadedBy: userId,
     imagingModality: cleanText(imagingModality, { max: 40 }),
@@ -2240,6 +2519,14 @@ app.post('/api/patients', authenticateToken, requirePermission('patients:write')
     if (!patientPayload.firstName || !patientPayload.lastName) {
       return res.status(400).json({ error: 'First name and last name required' });
     }
+    const duplicate = await patientsRepo.findDuplicatePatient(patientPayload);
+    if (duplicate) {
+      return res.status(409).json({
+        error: 'Pacijent sa istim podacima već postoji.',
+        duplicatePatientId: duplicate.id,
+        duplicatePatientName: [duplicate.first_name, duplicate.last_name].filter(Boolean).join(' ')
+      });
+    }
 
     const patient = await patientsRepo.createPatient(patientPayload);
     res.status(201).json(patient);
@@ -2412,6 +2699,7 @@ app.get('/api/documents/:id/view', authenticateToken, requirePermission('documen
     } catch {
       return res.status(404).json({ error: 'File not found' });
     }
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Type', row.mime_type);
     res.setHeader('Content-Disposition', `inline; filename="${row.original_filename.replace(/"/g, '')}"`);
     res.sendFile(row.file_path);
@@ -2431,6 +2719,7 @@ app.get('/api/documents/:id/download', authenticateToken, requirePermission('doc
     } catch {
       return res.status(404).json({ error: 'File not found' });
     }
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.download(row.file_path, row.original_filename);
   } catch (error) {
     console.error('Download document error:', error);
@@ -2456,6 +2745,16 @@ app.put('/api/documents/:id', authenticateToken, requirePermission('documents:wr
     const documentId = positiveInteger(req.params.id);
     const current = await patientDocumentsRepo.findActiveById(documentId);
     if (!current) return res.status(404).json({ error: 'Dokument nije pronadjen' });
+    let replacementFile = null;
+    if (req.body.fileBase64) {
+      const base64 = String(req.body.fileBase64 || '').replace(/^data:[^;]+;base64,/, '');
+      replacementFile = await validateAndStorePatientDocumentFile({
+        patientId: current.patient_id,
+        originalFilename: req.body.originalFilename || req.body.original_filename,
+        declaredMime: req.body.mimeType || req.body.mime_type,
+        buffer: Buffer.from(base64, 'base64')
+      });
+    }
 
     const updated = await patientDocumentsRepo.updateDocument(documentId, {
       visitRecordId: positiveInteger(req.body.visitRecordId || req.body.visit_record_id) || null,
@@ -2469,7 +2768,8 @@ app.put('/api/documents/:id', authenticateToken, requirePermission('documents:wr
       dicomStudyUid: cleanText(req.body.dicomStudyUid ?? req.body.dicom_study_uid ?? current.dicom_study_uid, { max: 120 }),
       claimAttachmentReady: req.body.claimAttachmentReady === undefined && req.body.claim_attachment_ready === undefined
         ? current.claim_attachment_ready
-        : normalizeBoolean(req.body.claimAttachmentReady ?? req.body.claim_attachment_ready)
+        : normalizeBoolean(req.body.claimAttachmentReady ?? req.body.claim_attachment_ready),
+      ...(replacementFile || {})
     });
     await auditLog({ userId: req.user.id, action: 'document_updated', entityType: 'document', entityId: documentId, req });
     res.json(serializeDocument(updated));
@@ -2775,6 +3075,7 @@ app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:
 
     await calendarRepo.updateAppointment(current.id, {
       ...appointment,
+      lockPatientMatch: Boolean(current.google_event_id) && String(current.patient_id) !== String(appointment.patientId),
       userId: req.user.id
     }, current.status);
     await queueCalendarSync(current.id, appointment.status === 'cancelled' ? 'cancel_google_event' : 'update_google_event');
@@ -2857,6 +3158,7 @@ app.get('/api/public/booking/status', publicBookingReadLimiter, async (_req, res
   try {
     res.json({
       enabled: await isPublicBookingEnabled(),
+      featureAvailable: publicBookingFeatureAvailable(),
       captcha: {
         required: turnstileConfigured(),
         siteKey: String(process.env.TURNSTILE_SITE_KEY || '').trim() || null
@@ -3250,6 +3552,35 @@ app.get('/api/patients/:id/clinical-notes', authenticateToken, requirePermission
   if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
   const rows = await clinicalRepo.clinicalNotesByPatient(patientId);
   res.json(rows.map(serializeClinicalNote));
+});
+
+app.get('/api/patients/:id/internal-comments', authenticateToken, requirePermission('patients:read'), async (req, res) => {
+  const patientId = positiveInteger(req.params.id);
+  if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
+  const rows = await clinicalRepo.internalCommentsByPatient(patientId);
+  res.json(rows.map(serializeClinicalNote));
+});
+
+app.post('/api/patients/:id/internal-comments', authenticateToken, requirePermission('patients:write'), async (req, res) => {
+  try {
+    const patientId = positiveInteger(req.params.id);
+    if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
+    const row = await clinicalRepo.createClinicalNote({
+      patientId,
+      visitRecordId: null,
+      templateId: null,
+      title: 'Interni komentar',
+      body: cleanText(req.body.body, { max: 8000, required: true }),
+      signedBy: cleanText(req.body.signedBy || req.body.signed_by || req.user.name || 'Osoblje', { max: 160 }),
+      signedAt: new Date().toISOString(),
+      createdBy: req.user.id
+    });
+    await auditLog({ userId: req.user.id, action: 'internal_comment_created', entityType: 'patient', entityId: patientId, req });
+    res.status(201).json(serializeClinicalNote(row));
+  } catch (error) {
+    console.error('Create internal comment error:', error);
+    res.status(500).json({ error: 'Interni komentar nije sacuvan.' });
+  }
 });
 
 app.post('/api/patients/:id/clinical-notes', authenticateToken, requirePermission('clinical:write'), async (req, res) => {
@@ -4156,7 +4487,8 @@ app.get('/api/calendar-sync/google/status', authenticateToken, requirePermission
 app.get('/api/notifications', authenticateToken, asyncRoute(async (req, res) => {
   const sinceId = positiveInteger(req.query.since_id ?? req.query.sinceId) || 0;
   const limit = Math.max(1, Math.min(50, Number(req.query.limit || 20)));
-  const rows = await calendarRepo.notificationsSince({ sinceId, limit });
+  const latest = String(req.query.latest || '').toLowerCase() === 'true';
+  const rows = await calendarRepo.notificationsSince({ sinceId, limit, latest });
   res.json(rows.map(serializeNotification));
 }));
 
@@ -4191,6 +4523,7 @@ app.get('/api/director/public-booking/settings', authenticateToken, requireDirec
     const setting = await runtimeSettings.appSetting('public_booking_enabled');
     res.json({
       enabled: await isPublicBookingEnabled(),
+      featureAvailable: publicBookingFeatureAvailable(),
       updatedAt: setting?.updated_at || null
     });
   } catch (error) {
@@ -4204,7 +4537,9 @@ app.put('/api/director/public-booking/settings', authenticateToken, requireDirec
     const enabled = req.body.enabled === true || req.body.enabled === 1 || req.body.enabled === '1';
     const setting = await setAppSetting('public_booking_enabled', enabled ? '1' : '0');
     res.json({
-      enabled,
+      enabled: await isPublicBookingEnabled(),
+      configuredEnabled: enabled,
+      featureAvailable: publicBookingFeatureAvailable(),
       updatedAt: setting?.updated_at || null
     });
   } catch (error) {
@@ -4224,6 +4559,34 @@ app.get('/api/director/google-calendar/settings', authenticateToken, requireDire
   } catch (error) {
     console.error('Get Google Calendar settings error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/director/google-calendar/colors', authenticateToken, requireDirector, async (_req, res) => {
+  try {
+    const settings = await calendarRepo.googleSettings();
+    if (!settings?.calendar_id) {
+      return res.status(400).json({ error: 'Google Calendar ID is required.' });
+    }
+
+    const colors = await callGoogleCalendar(settings, 'GET', '/colors');
+    const eventColors = Object.entries(colors?.event || {}).map(([colorId, color]) => ({
+      colorId,
+      background: cleanText(color?.background, { max: 20 }),
+      foreground: cleanText(color?.foreground, { max: 20 })
+    })).filter(color => color.colorId && color.background);
+
+    res.json({
+      updated: colors?.updated || '',
+      eventColors
+    });
+  } catch (error) {
+    console.error('Get Google Calendar colors error:', error);
+    res.status(googleCalendarRouteStatus(error)).json({
+      error: error.status === 403
+        ? 'Google boje nisu dostupne za trenutnu OAuth dozvolu. Unesite HEX rucno ili ponovo povezite Google nalog sa dozvolom za citanje boja.'
+        : error.message || 'Google Calendar colors failed'
+    });
   }
 });
 

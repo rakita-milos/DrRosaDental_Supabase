@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kalendar termina | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css?v=responsive-20260727" />
+  <link rel="stylesheet" href="../styles/styles.css?v=calendar-view-state-20260803" />
 </head>
 <body>
   <div class="app-shell">
@@ -24,7 +24,6 @@
         <a href="new-entry.html" class="nav-link">Novi unos</a>
         <a href="new-patient.html" class="nav-link">Novi pacijent</a>
         <a href="all-records.html" class="nav-link">Evidencija</a>
-        <a href="public-booking.html" class="nav-link">Onlajn zakazivanje</a>
         <a id="director-panel-link" href="director-panel.html" class="nav-link" style="display: none;">Direktor panel</a>
         <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
@@ -93,8 +92,15 @@
           </div>
           <div id="appointment-alert" class="form-alert" aria-live="polite"></div>
           <div id="appointment-patient-context" class="entry-patient-context" hidden></div>
+          <div id="appointment-google-patient-match" class="google-patient-match-message" hidden></div>
           <form id="appointment-form" class="appointment-form-grid">
             <input type="hidden" id="appointment-id" />
+            <div class="appointment-form-section appointment-title-section">
+              <label class="full-width">
+                Naziv termina
+                <input id="appointment-title" type="text" maxlength="255" placeholder="Naziv iz Google Calendar-a ili ručni naziv termina" required />
+              </label>
+            </div>
             <div class="appointment-form-section appointment-patient-section">
               <label class="full-width">
                 Pacijent
@@ -170,6 +176,6 @@
   <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/script.js"></script>
-  <script src="../scripts/calendar.js?v=appointment-modal-20260724"></script>
+  <script src="../scripts/calendar.js?v=calendar-view-state-20260803"></script>
 </body>
 </html>
