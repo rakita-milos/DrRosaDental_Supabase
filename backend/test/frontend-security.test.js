@@ -8,6 +8,7 @@ const serverSource = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8
 const calendarDbSource = readFileSync(path.join(__dirname, '..', 'db', 'calendar.js'), 'utf8');
 const securitySource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'security-utils.js'), 'utf8');
 const calendarSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'calendar.js'), 'utf8');
+const indexPageSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'pages', 'index.html'), 'utf8');
 const dashboardSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'script.js'), 'utf8');
 const allRecordsSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'all-records.js'), 'utf8');
 const allRecordsPageSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'pages', 'all-records.html'), 'utf8');
@@ -81,6 +82,14 @@ test('shared API caches reference dropdown data and invalidates it after admin c
   assert.match(apiSource, /clearReferenceCache\("doctors"\)/);
   assert.match(apiSource, /clearReferenceCache\("codebooks"\)/);
   assert.match(apiSource, /clearReferenceCache,/);
+});
+
+test('shared API supports query parameters for large clinical lists', () => {
+  assert.match(apiSource, /function queryString\(params = \{\}\)/);
+  assert.match(apiSource, /async function getPatients\(params = \{\}\)/);
+  assert.match(apiSource, /request\(`\/patients\$\{query \? `\?\$\{query\}` : ""\}`\)/);
+  assert.match(apiSource, /async function getRecords\(params = \{\}\)/);
+  assert.match(apiSource, /request\(`\/records\$\{query \? `\?\$\{query\}` : ""\}`\)/);
 });
 
 test('calendar week view groups slots and agenda by chair', () => {
@@ -332,6 +341,31 @@ test('dashboard dynamic cards escape patient-facing text', () => {
   assert.match(dashboardSource, /window\.DrRosaSecurity\.escapeHtml\(appointmentPatientName\(appointment\)\)/);
   assert.match(dashboardSource, /window\.DrRosaSecurity\.escapeHtml\(procedure\)/);
   assert.match(dashboardSource, /window\.DrRosaSecurity\.escapeHtml\(alert\.text\)/);
+});
+
+test('dashboard primary KPI links are part of the patient evidence hero', () => {
+  const heroStart = indexPageSource.indexOf('class="hero-card dashboard-hero"');
+  const operationsStart = indexPageSource.indexOf('class="dashboard-operations-grid"');
+  const heroMarkup = indexPageSource.slice(heroStart, operationsStart);
+  assert.ok(heroStart >= 0);
+  assert.ok(operationsStart > heroStart);
+  assert.match(heroMarkup, /class="dashboard-hero-copy"/);
+  assert.match(heroMarkup, /class="dashboard-next-card"/);
+  assert.match(heroMarkup, /id="dashboard-next-chairs"/);
+  assert.match(heroMarkup, /class="dashboard-kpi-grid"/);
+  assert.match(heroMarkup, /id="patients-count"/);
+  assert.match(heroMarkup, /id="appointments-count"/);
+  assert.match(heroMarkup, /id="procedures-count"/);
+  assert.match(heroMarkup, /id="debtors-count"/);
+  assert.doesNotMatch(indexPageSource, /id="next-appointment-time"/);
+  assert.match(dashboardSource, /function renderNextAppointmentsByChair\(appointments, chairs = \[\]\)/);
+  assert.match(dashboardSource, /window\.DrRosaApi\.getChairs/);
+  assert.match(dashboardSource, /getElementById\("dashboard-next-chairs"\)/);
+  assert.match(dashboardSource, /appointmentChairId\(appointment\)/);
+  assert.strictEqual((indexPageSource.match(/id="patients-count"/g) || []).length, 1);
+  assert.strictEqual((indexPageSource.match(/id="appointments-count"/g) || []).length, 1);
+  assert.strictEqual((indexPageSource.match(/id="procedures-count"/g) || []).length, 1);
+  assert.strictEqual((indexPageSource.match(/id="debtors-count"/g) || []).length, 1);
 });
 
 test('form option and autocomplete attributes use attribute escaping', () => {

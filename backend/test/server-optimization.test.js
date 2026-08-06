@@ -8,6 +8,10 @@ const routeUtilsSource = readFileSync(path.join(__dirname, '..', 'route-utils.js
 const appointmentServiceSource = readFileSync(path.join(__dirname, '..', 'services', 'appointment-service.js'), 'utf8');
 const systemRoutesSource = readFileSync(path.join(__dirname, '..', 'routes', 'system-routes.js'), 'utf8');
 const clinicalRepoSource = readFileSync(path.join(__dirname, '..', 'db', 'clinical.js'), 'utf8');
+const recordsRepoSource = readFileSync(path.join(__dirname, '..', 'db', 'records-payments.js'), 'utf8');
+const patientsRepoSource = readFileSync(path.join(__dirname, '..', 'db', 'patients.js'), 'utf8');
+const calendarRepoSource = readFileSync(path.join(__dirname, '..', 'db', 'calendar.js'), 'utf8');
+const postgresSchemaSource = readFileSync(path.join(__dirname, '..', 'database.postgres.sql'), 'utf8');
 
 test('route utils provide reusable async and error helpers', () => {
   assert.match(routeUtilsSource, /function asyncRoute\(handler\)/);
@@ -65,4 +69,61 @@ test('system routes are registered from a dedicated route module', () => {
   assert.match(systemRoutesSource, /app\.use\('\/src'/);
   assert.match(serverSource, /const \{ registerSystemRoutes \} = require\('\.\/routes\/system-routes'\)/);
   assert.match(serverSource, /registerSystemRoutes\(app, \{/);
+});
+
+test('records endpoint hydrates treatments and payments in batches', () => {
+  const recordsRoute = serverSource.match(/app\.get\('\/api\/records'[\s\S]*?\n\}\);/)?.[0] || '';
+  assert.match(recordsRepoSource, /treatmentsForRecords\(visitRecordIds\)/);
+  assert.match(recordsRepoSource, /paymentPartsForRecords\(visitRecordIds\)/);
+  assert.match(recordsRepoSource, /WHERE visit_record_id = ANY\(\?::int\[\]\)/);
+  assert.match(recordsRoute, /Promise\.all\(\[/);
+  assert.match(recordsRoute, /treatmentsByRecord/);
+  assert.match(recordsRoute, /paymentsByRecord/);
+  assert.doesNotMatch(recordsRoute, /await recordsPaymentsRepo\.treatmentsForRecord/);
+  assert.doesNotMatch(recordsRoute, /await recordsPaymentsRepo\.paymentPartsForRecord/);
+});
+
+test('patients and records list endpoints support bounded pagination search parameters', () => {
+  assert.match(serverSource, /function paginationFromQuery\(query/);
+  assert.match(serverSource, /Math\.min\(requestedLimit, maxLimit\)/);
+  assert.match(serverSource, /patientsRepo\.listPatients\(paginationFromQuery\(req\.query/);
+  assert.match(serverSource, /recordsPaymentsRepo\.listRecords\(paginationFromQuery\(req\.query/);
+  assert.match(patientsRepoSource, /listPatients\(\{ search = '', limit = null, offset = 0 \} = \{\}\)/);
+  assert.match(recordsRepoSource, /function recordsListSql\(\{ search = '', limit = null, offset = 0 \} = \{\}\)/);
+  assert.match(patientsRepoSource, /LIMIT \? OFFSET \?/);
+  assert.match(recordsRepoSource, /LIMIT \? OFFSET \?/);
+});
+
+test('patient delete dependency check covers clinical and billing tables', () => {
+  assert.match(patientsRepoSource, /appointments/);
+  assert.match(patientsRepoSource, /patient_documents/);
+  assert.match(patientsRepoSource, /clinical_chart_entries/);
+  assert.match(patientsRepoSource, /clinical_notes/);
+  assert.match(patientsRepoSource, /invoices/);
+  assert.match(patientsRepoSource, /insurance_claims/);
+  assert.match(patientsRepoSource, /patient_ledger_entries/);
+  assert.match(serverSource, /Object\.values\(related\)\.some\(count => Number\(count\) > 0\)/);
+  assert.match(serverSource, /related/);
+});
+
+test('dynamic row existence helpers are table-whitelisted', () => {
+  assert.match(recordsRepoSource, /const ROW_EXISTS_TABLES = new Set\(\['patients'\]\)/);
+  assert.match(calendarRepoSource, /const ROW_EXISTS_TABLES = new Set\(\['patients', 'doctors', 'chairs', 'codebook_items'\]\)/);
+  assert.match(recordsRepoSource, /if \(!ROW_EXISTS_TABLES\.has\(table\)\) throw new Error/);
+  assert.match(calendarRepoSource, /if \(!ROW_EXISTS_TABLES\.has\(table\)\) throw new Error/);
+});
+
+test('cron Google pull uses timing-safe secret comparison', () => {
+  assert.match(serverSource, /function timingSafeSecretEqual\(actual, expected\)/);
+  assert.match(serverSource, /crypto\.timingSafeEqual\(actualBuffer, expectedBuffer\)/);
+  assert.match(serverSource, /if \(!timingSafeSecretEqual\(provided, secret\)\) return res\.status\(401\)/);
+  assert.doesNotMatch(serverSource, /provided !== secret/);
+});
+
+test('patient duplicate and lookup searches have matching functional indexes', () => {
+  assert.match(postgresSchemaSource, /idx_patients_name_normalized/);
+  assert.match(postgresSchemaSource, /lower\(btrim\(first_name\)\), lower\(btrim\(last_name\)\)/);
+  assert.match(postgresSchemaSource, /idx_patients_email_normalized/);
+  assert.match(postgresSchemaSource, /idx_patients_phone_digits/);
+  assert.match(postgresSchemaSource, /regexp_replace\(COALESCE\(phone, ''\), '\\D', '', 'g'\)/);
 });

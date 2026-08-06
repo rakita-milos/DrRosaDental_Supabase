@@ -1057,6 +1057,27 @@ function positiveInteger(value) {
   return Number.isInteger(number) && number > 0 ? number : null;
 }
 
+function paginationFromQuery(query, { maxLimit = 200 } = {}) {
+  const requestedLimit = Number(query.limit);
+  const requestedOffset = Number(query.offset);
+  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+    ? Math.min(requestedLimit, maxLimit)
+    : null;
+  const offset = Number.isInteger(requestedOffset) && requestedOffset > 0 ? requestedOffset : 0;
+  return {
+    search: cleanText(query.search || query.q, { max: 120 }) || '',
+    limit,
+    offset
+  };
+}
+
+function timingSafeSecretEqual(actual, expected) {
+  if (!actual || !expected) return false;
+  const actualBuffer = Buffer.from(String(actual));
+  const expectedBuffer = Buffer.from(String(expected));
+  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
 const APPOINTMENT_STATUSES = new Set(['scheduled', 'confirmed', 'arrived', 'completed', 'cancelled', 'no_show']);
 const BLOCKING_APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'arrived'];
 
@@ -2132,6 +2153,17 @@ const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
 const uploadRoot = path.resolve(__dirname, process.env.UPLOAD_DIR || './uploads');
 const scannerInboxDir = path.resolve(__dirname, process.env.SCANNER_IMPORT_DIR || './data/scanner-inbox');
 
+function storedDocumentPath(filePath) {
+  const resolved = path.resolve(String(filePath || ''));
+  const allowedRoot = `${uploadRoot}${path.sep}`;
+  if (resolved !== uploadRoot && !resolved.startsWith(allowedRoot)) {
+    const error = new Error('Document path is outside upload storage.');
+    error.status = 403;
+    throw error;
+  }
+  return resolved;
+}
+
 function normalizeDocumentType(value) {
   const type = cleanText(value, { max: 40 }) || 'other';
   return DOCUMENT_TYPES.has(type) ? type : 'other';
@@ -2508,9 +2540,9 @@ app.post('/api/auth/change-password', authenticateToken, validateBody(changePass
 
 // ============ PATIENTS ENDPOINTS ============
 
-app.get('/api/patients', authenticateToken, requirePermission('patients:read'), async (_req, res) => {
+app.get('/api/patients', authenticateToken, requirePermission('patients:read'), async (req, res) => {
   try {
-    const patients = await patientsRepo.listPatients();
+    const patients = await patientsRepo.listPatients(paginationFromQuery(req.query, { maxLimit: 500 }));
     res.json(patients);
   } catch (error) {
     console.error('Get patients error:', error);
@@ -2578,13 +2610,10 @@ app.delete('/api/patients/:id', authenticateToken, requirePermission('patients:w
     if (!current) return res.status(404).json({ error: 'Patient not found' });
 
     const related = await patientsRepo.patientDeleteCounts(patientId);
-    if (related.records > 0 || related.payments > 0) {
+    if (Object.values(related).some(count => Number(count) > 0)) {
       return res.status(409).json({
         error: 'Pacijent ima povezanu istoriju/posete i ne može biti obrisan dok se ti zapisi ne uklone.',
-        related: {
-          records: related.records,
-          payments: related.payments
-        }
+        related
       });
     }
 
@@ -2710,15 +2739,16 @@ app.get('/api/documents/:id/view', authenticateToken, requirePermission('documen
     const documentId = positiveInteger(req.params.id);
     const row = await patientDocumentsRepo.findActiveById(documentId);
     if (!row) return res.status(404).json({ error: 'Document not found' });
+    const filePath = storedDocumentPath(row.file_path);
     try {
-      await fsp.access(row.file_path);
+      await fsp.access(filePath);
     } catch {
       return res.status(404).json({ error: 'File not found' });
     }
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Type', row.mime_type);
     res.setHeader('Content-Disposition', `inline; filename="${row.original_filename.replace(/"/g, '')}"`);
-    res.sendFile(row.file_path);
+    res.sendFile(filePath);
   } catch (error) {
     console.error('View document error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -2730,13 +2760,14 @@ app.get('/api/documents/:id/download', authenticateToken, requirePermission('doc
     const documentId = positiveInteger(req.params.id);
     const row = await patientDocumentsRepo.findActiveById(documentId);
     if (!row) return res.status(404).json({ error: 'Document not found' });
+    const filePath = storedDocumentPath(row.file_path);
     try {
-      await fsp.access(row.file_path);
+      await fsp.access(filePath);
     } catch {
       return res.status(404).json({ error: 'File not found' });
     }
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.download(row.file_path, row.original_filename);
+    res.download(filePath, row.original_filename);
   } catch (error) {
     console.error('Download document error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -2855,15 +2886,32 @@ app.post('/api/documents/:id/imaging/analyze', authenticateToken, requirePermiss
 
 // ============ VISIT RECORDS ENDPOINTS ============
 
-app.get('/api/records', authenticateToken, requirePermission('records:read'), async (_req, res) => {
+app.get('/api/records', authenticateToken, requirePermission('records:read'), async (req, res) => {
   try {
-    const records = await recordsPaymentsRepo.listRecords();
+    const records = await recordsPaymentsRepo.listRecords(paginationFromQuery(req.query, { maxLimit: 300 }));
+    const recordIds = records.map(record => Number(record.id)).filter(Boolean);
+    const [allTreatmentRows, allPaymentRows] = await Promise.all([
+      recordsPaymentsRepo.treatmentsForRecords(recordIds),
+      recordsPaymentsRepo.paymentPartsForRecords(recordIds)
+    ]);
+    const treatmentsByRecord = new Map();
+    const paymentsByRecord = new Map();
+    allTreatmentRows.forEach(treatment => {
+      const key = Number(treatment.visit_record_id);
+      if (!treatmentsByRecord.has(key)) treatmentsByRecord.set(key, []);
+      treatmentsByRecord.get(key).push(treatment);
+    });
+    allPaymentRows.forEach(part => {
+      const key = Number(part.visit_record_id);
+      if (!paymentsByRecord.has(key)) paymentsByRecord.set(key, []);
+      paymentsByRecord.get(key).push(part);
+    });
     const hydrated = [];
     for (const record of records) {
       const treatments = {};
       const generalTreatments = [];
       let treatmentTotal = 0;
-      const treatmentRows = await recordsPaymentsRepo.treatmentsForRecord(record.id);
+      const treatmentRows = treatmentsByRecord.get(Number(record.id)) || [];
       treatmentRows.forEach(treatment => {
         treatmentTotal += Math.max(0, Number(treatment.price || 0) - Number(treatment.discount || 0));
         const item = {
@@ -2884,7 +2932,7 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), as
         treatments[treatment.tooth_number].push(item);
       });
       const inferredPaid = Math.max(0, treatmentTotal - Number(record.amount_due || 0));
-      const paymentRows = await recordsPaymentsRepo.paymentPartsForRecord(record.id);
+      const paymentRows = paymentsByRecord.get(Number(record.id)) || [];
       const paymentParts = paymentRows.map(part => ({
         id: part.id,
         amount: Number(part.amount || 0),
@@ -4521,7 +4569,7 @@ app.get('/api/notifications', authenticateToken, asyncRoute(async (req, res) => 
 app.post('/api/calendar-sync/daily-google-pull', googleSyncLimiter, validateBody(googlePullSchema), asyncRoute(async (req, res) => {
   const secret = process.env.GOOGLE_CALENDAR_CRON_SECRET;
   const provided = req.headers['x-cron-secret'];
-  if (!secret || provided !== secret) return res.status(401).json({ error: 'Unauthorized' });
+  if (!timingSafeSecretEqual(provided, secret)) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const stats = await runGooglePullWithLock({
       userId: null,

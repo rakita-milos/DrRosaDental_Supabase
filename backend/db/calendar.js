@@ -6,6 +6,7 @@ const {
   withTransaction
 } = require('./postgres');
 const BLOCKING_STATUSES = ['scheduled', 'confirmed', 'arrived'];
+const ROW_EXISTS_TABLES = new Set(['patients', 'doctors', 'chairs', 'codebook_items']);
 
 function createCalendarRepository({ pgPool }) {
   if (!pgPool) throw new Error('pgPool is required for postgres calendar repository.');
@@ -64,6 +65,7 @@ function createPostgresCalendarRepository(pool) {
     },
 
     async rowExists(table, id) {
+      if (!ROW_EXISTS_TABLES.has(table)) throw new Error('Unsupported rowExists table.');
       const row = await queryOne(pool, `SELECT id FROM ${table} WHERE id = ?`, [id]);
       return Boolean(row);
     },

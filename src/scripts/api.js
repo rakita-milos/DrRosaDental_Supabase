@@ -162,8 +162,17 @@
     }
   }
 
-  async function getPatients() {
-    const patients = await request("/patients");
+  function queryString(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") query.set(key, value);
+    });
+    return query.toString();
+  }
+
+  async function getPatients(params = {}) {
+    const query = queryString(params);
+    const patients = await request(`/patients${query ? `?${query}` : ""}`);
     return patients.map(patient => ({
       ...patient,
       firstName: patient.first_name,
@@ -301,11 +310,8 @@
   }
 
   async function getAppointments(params = {}) {
-    const query = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== "") query.set(key, value);
-    });
-    return request(`/appointments${query.toString() ? `?${query}` : ""}`);
+    const query = queryString(params);
+    return request(`/appointments${query ? `?${query}` : ""}`);
   }
 
   async function createAppointment(appointment) {
@@ -652,8 +658,9 @@
     return request(`/documents/${documentId}/imaging/analyze`, { method: "POST" });
   }
 
-  async function getRecords() {
-    const records = await request("/records");
+  async function getRecords(params = {}) {
+    const query = queryString(params);
+    const records = await request(`/records${query ? `?${query}` : ""}`);
     return records.map(normalizeRecord);
   }
 

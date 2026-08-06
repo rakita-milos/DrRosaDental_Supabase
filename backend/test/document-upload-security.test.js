@@ -26,3 +26,12 @@ test('document replacement goes through the same binary validation and updates f
   assert.match(patientDocumentsRepoSource, /original_filename = \?, stored_filename = \?, file_path = \?, mime_type = \?, file_size = \?, file_hash = \?/);
   assert.match(patientDocumentsRepoSource, /document\.filePath \? \[/);
 });
+
+test('document view and download constrain stored paths to upload storage', () => {
+  assert.match(serverSource, /function storedDocumentPath\(filePath\)/);
+  assert.match(serverSource, /path\.resolve\(String\(filePath \|\| ''\)\)/);
+  assert.match(serverSource, /!resolved\.startsWith\(allowedRoot\)/);
+  assert.match(serverSource, /const filePath = storedDocumentPath\(row\.file_path\)/);
+  assert.match(serverSource, /res\.sendFile\(filePath\)/);
+  assert.match(serverSource, /res\.download\(filePath, row\.original_filename\)/);
+});

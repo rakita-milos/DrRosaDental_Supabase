@@ -56,6 +56,14 @@ function appointmentPatientName(appointment) {
   return appointment.patientName || appointment.patient_name || appointment.patient || "-";
 }
 
+function appointmentChairId(appointment) {
+  return appointment.chairId || appointment.chair_id;
+}
+
+function appointmentChairName(appointment) {
+  return appointment.chairName || appointment.chair_name || "Stolica";
+}
+
 function patientName(patient) {
   return patient.fullName || [patient.firstName || patient.first_name, patient.lastName || patient.last_name].filter(Boolean).join(" ");
 }
@@ -140,15 +148,55 @@ function procedureCount(records) {
   }, 0);
 }
 
-function renderDashboardStats({ patients, appointments, records }) {
+function renderNextAppointmentsByChair(appointments, chairs = []) {
+  const container = document.getElementById("dashboard-next-chairs");
+  if (!container) return;
+  const upcoming = upcomingAppointments(appointments)
+    .sort((a, b) => new Date(appointmentStart(a)) - new Date(appointmentStart(b)));
+  const chairItems = chairs.length
+    ? chairs
+    : Array.from(new Map(upcoming
+      .map(appointment => [appointmentChairId(appointment) || appointmentChairName(appointment), {
+        id: appointmentChairId(appointment) || appointmentChairName(appointment),
+        name: appointmentChairName(appointment)
+      }])
+      .filter(([id]) => id)).values());
+  const visibleChairs = chairItems.length ? chairItems : [
+    { id: "chair-1", name: "Stolica 1" },
+    { id: "chair-2", name: "Stolica 2" }
+  ];
+
+  container.innerHTML = visibleChairs.map(chair => {
+    const nextAppointment = upcoming.find(appointment => String(appointmentChairId(appointment)) === String(chair.id)
+      || (!appointmentChairId(appointment) && appointmentChairName(appointment) === chair.name));
+    if (!nextAppointment) {
+      return `
+        <a class="dashboard-next-chair is-free" href="calendar.html">
+          <span>${window.DrRosaSecurity.escapeHtml(chair.name)}</span>
+          <strong>Slobodno</strong>
+          <small>Nema sledeceg termina</small>
+        </a>
+      `;
+    }
+    const procedure = nextAppointment.procedureName || nextAppointment.procedure_name || nextAppointment.googleTitle || nextAppointment.google_title || "Termin";
+    return `
+      <a class="dashboard-next-chair" href="calendar.html">
+        <span>${window.DrRosaSecurity.escapeHtml(chair.name)}</span>
+        <strong>${window.DrRosaSecurity.escapeHtml(timeLabel(appointmentStart(nextAppointment)))}</strong>
+        <small>${window.DrRosaSecurity.escapeHtml(appointmentPatientName(nextAppointment))}</small>
+        <em>${window.DrRosaSecurity.escapeHtml(procedure)}</em>
+      </a>
+    `;
+  }).join("");
+}
+
+function renderDashboardStats({ patients, appointments, records, chairs = [] }) {
   const patientCount = patients.length;
   const appointmentCount = upcomingAppointments(appointments).length;
   const procedures = procedureCount(records);
   const todaysAppointments = appointments.filter(appointment => isToday(appointmentStart(appointment)));
   const completedToday = records.filter(record => isToday(record.lastVisit) && String(record.status || "").toLowerCase().includes("zavr")).length;
   const debtToday = records.filter(record => isToday(record.lastVisit) && paymentIsDebt(record)).length;
-  const nextAppointment = upcomingAppointments(appointments)
-    .sort((a, b) => new Date(a.startsAt || a.starts_at) - new Date(b.startsAt || b.starts_at))[0];
 
   setCount("patients-count", patientCount);
   setCount("appointments-count", appointmentCount);
@@ -156,11 +204,7 @@ function renderDashboardStats({ patients, appointments, records }) {
   setCount("today-appointments-count", todaysAppointments.length);
   setCount("today-completed-count", completedToday);
   setCount("today-debt-count", debtToday);
-  const nextAppointmentTime = document.getElementById("next-appointment-time");
-  if (nextAppointmentTime) {
-    const startsAt = appointmentStart(nextAppointment || {});
-    nextAppointmentTime.textContent = startsAt ? formatDate(startsAt) : "-";
-  }
+  renderNextAppointmentsByChair(appointments, chairs);
 }
 
 function renderTodaySchedule(appointments, records) {
@@ -269,17 +313,18 @@ function renderDashboardAlerts({ patients, records, appointments }) {
   if (!document.getElementById("today-schedule-list")) return;
   if (!await requireAccess()) return;
   try {
-    const [patients, records, appointments] = await Promise.all([
+    const [patients, records, appointments, chairs] = await Promise.all([
       window.DrRosaApi.getPatients(),
       window.DrRosaApi.getRecords(),
-      window.DrRosaApi.getAppointments()
+      window.DrRosaApi.getAppointments(),
+      window.DrRosaApi.getChairs ? window.DrRosaApi.getChairs().catch(() => []) : []
     ]);
-    renderDashboardStats({ patients, appointments, records });
+    renderDashboardStats({ patients, appointments, records, chairs });
     renderDueSummary(records);
     renderTodaySchedule(appointments, records);
     renderDashboardAlerts({ patients, records, appointments });
   } catch (error) {
-    renderDashboardStats({ patients: [], appointments: [], records: [] });
+    renderDashboardStats({ patients: [], appointments: [], records: [], chairs: [] });
     renderTodaySchedule([], []);
     renderDashboardAlerts({ patients: [], appointments: [], records: [] });
     console.error("Dashboard load error:", error);

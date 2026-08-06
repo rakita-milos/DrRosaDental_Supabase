@@ -690,6 +690,9 @@ CREATE TRIGGER trg_prevent_appointment_overlap
   EXECUTE FUNCTION prevent_appointment_overlap();
 
 CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(first_name, last_name);
+CREATE INDEX IF NOT EXISTS idx_patients_name_normalized ON patients(lower(btrim(first_name)), lower(btrim(last_name)));
+CREATE INDEX IF NOT EXISTS idx_patients_email_normalized ON patients(lower(btrim(COALESCE(email, ''))));
+CREATE INDEX IF NOT EXISTS idx_patients_phone_digits ON patients(regexp_replace(COALESCE(phone, ''), '\D', '', 'g'));
 CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits(reset_at);
 CREATE INDEX IF NOT EXISTS idx_visit_records_patient ON visit_records(patient_id);
 CREATE INDEX IF NOT EXISTS idx_visit_records_doctor ON visit_records(doctor_id);

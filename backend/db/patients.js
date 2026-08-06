@@ -32,13 +32,32 @@ function patientInsertParams(patient) {
 
 function createPostgresPatientsRepository(pool) {
   return {
-    listPatients() {
-      return queryMany(pool, `
+    listPatients({ search = '', limit = null, offset = 0 } = {}) {
+      const params = [];
+      let sql = `
         SELECT id, first_name, last_name, date_of_birth, gender, email, phone, address,
                emergency_contact, medical_history, created_at
         FROM patients
-        ORDER BY created_at DESC
-      `);
+      `;
+      const cleanedSearch = String(search || '').trim();
+      if (cleanedSearch) {
+        const phoneSearch = cleanedSearch.replace(/\D/g, '');
+        params.push(`%${cleanedSearch}%`, `%${cleanedSearch}%`, `%${cleanedSearch}%`, phoneSearch, `%${phoneSearch}%`);
+        sql += `
+          WHERE (
+            first_name ILIKE ?
+            OR last_name ILIKE ?
+            OR email ILIKE ?
+            OR (?::text <> '' AND regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') ILIKE ?)
+          )
+        `;
+      }
+      sql += ' ORDER BY created_at DESC';
+      if (Number.isInteger(limit) && limit > 0) {
+        params.push(limit, Math.max(0, Number(offset) || 0));
+        sql += ' LIMIT ? OFFSET ?';
+      }
+      return queryMany(pool, sql, params);
     },
 
     findPatientById(id) {
@@ -118,11 +137,37 @@ function createPostgresPatientsRepository(pool) {
       const rows = await queryOne(pool, `
         SELECT
           (SELECT COUNT(*)::int FROM visit_records WHERE patient_id = ?) as records,
-          (SELECT COUNT(*)::int FROM payments WHERE patient_id = ?) as payments
-      `, [id, id]);
+          (SELECT COUNT(*)::int FROM appointments WHERE patient_id = ?) as appointments,
+          (SELECT COUNT(*)::int FROM payments WHERE patient_id = ?) as payments,
+          (SELECT COUNT(*)::int FROM payment_parts WHERE patient_id = ?) as payment_parts,
+          (SELECT COUNT(*)::int FROM patient_documents WHERE patient_id = ? AND is_deleted = false) as documents,
+          (SELECT COUNT(*)::int FROM patient_medical_profiles WHERE patient_id = ?) as medical_profiles,
+          (SELECT COUNT(*)::int FROM public_booking_requests WHERE patient_id = ?) as public_booking_requests,
+          (SELECT COUNT(*)::int FROM treatment_plans WHERE patient_id = ?) as treatment_plans,
+          (SELECT COUNT(*)::int FROM perio_charts WHERE patient_id = ?) as perio_charts,
+          (SELECT COUNT(*)::int FROM clinical_chart_entries WHERE patient_id = ?) as clinical_chart_entries,
+          (SELECT COUNT(*)::int FROM clinical_notes WHERE patient_id = ?) as clinical_notes,
+          (SELECT COUNT(*)::int FROM patient_consents WHERE patient_id = ?) as patient_consents,
+          (SELECT COUNT(*)::int FROM invoices WHERE patient_id = ?) as invoices,
+          (SELECT COUNT(*)::int FROM insurance_claims WHERE patient_id = ?) as insurance_claims,
+          (SELECT COUNT(*)::int FROM patient_ledger_entries WHERE patient_id = ?) as ledger_entries
+      `, [id, id, id, id, id, id, id, id, id, id, id, id, id, id, id]);
       return {
         records: Number(rows?.records || 0),
-        payments: Number(rows?.payments || 0)
+        appointments: Number(rows?.appointments || 0),
+        payments: Number(rows?.payments || 0),
+        paymentParts: Number(rows?.payment_parts || 0),
+        documents: Number(rows?.documents || 0),
+        medicalProfiles: Number(rows?.medical_profiles || 0),
+        publicBookingRequests: Number(rows?.public_booking_requests || 0),
+        treatmentPlans: Number(rows?.treatment_plans || 0),
+        perioCharts: Number(rows?.perio_charts || 0),
+        clinicalChartEntries: Number(rows?.clinical_chart_entries || 0),
+        clinicalNotes: Number(rows?.clinical_notes || 0),
+        patientConsents: Number(rows?.patient_consents || 0),
+        invoices: Number(rows?.invoices || 0),
+        insuranceClaims: Number(rows?.insurance_claims || 0),
+        ledgerEntries: Number(rows?.ledger_entries || 0)
       };
     },
 
