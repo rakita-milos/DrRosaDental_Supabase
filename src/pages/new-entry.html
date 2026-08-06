@@ -186,8 +186,14 @@
               <label for="treatment-note">Detalji rada</label>
               <textarea id="treatment-note" rows="3"></textarea>
             </div>
+            <div class="panel-actions treatment-builder-actions">
+              <button id="add-treatment-item" class="secondary-btn" type="button">Dodaj postupak</button>
+            </div>
+            <div id="pending-treatment-list" class="pending-treatment-list" aria-live="polite">
+              <div class="pending-treatment-empty">Nema dodatih postupaka za izabrane zube.</div>
+            </div>
             <div class="panel-actions">
-              <button id="save-treatment" class="primary-btn">Sačuvaj tretman</button>
+              <button id="save-treatment" class="primary-btn" type="button">Sačuvaj za izabrane zube</button>
             </div>
           </div>
         </div>
@@ -203,7 +209,7 @@
             <p class="eyebrow">Detalji posete</p>
             <h2>Status, postupak bez zuba i naplata</h2>
           </div>
-          <button class="secondary-btn" id="toggle-procedure-fallback" type="button" aria-expanded="false" aria-controls="procedure-fallback-block">Prikaži postupak bez mape</button>
+          <button class="secondary-btn" id="toggle-procedure-fallback" type="button" aria-expanded="false" aria-controls="procedure-fallback-block">Prikaži opšte postupke</button>
         </div>
 
 
@@ -211,7 +217,8 @@
           <div class="input-grid">
             <div class="entry-form-block procedure-fallback full-width" id="procedure-fallback-block" hidden>
               <div class="entry-form-block-header">
-                <span>Postupak bez mape zuba</span>
+                <span>Opšti postupci bez mape zuba</span>
+                <button type="button" class="secondary-btn" id="add-general-treatment">Dodaj opšti postupak</button>
               </div>
               <div class="input-grid">
                 <label>
@@ -227,6 +234,7 @@
                   </select>
                 </label>
               </div>
+              <div id="general-treatment-list" class="general-treatment-list"></div>
             </div>
             <div class="entry-technical-payment-fields" hidden>
               <input id="status" name="status" type="hidden" value="Završeno" />

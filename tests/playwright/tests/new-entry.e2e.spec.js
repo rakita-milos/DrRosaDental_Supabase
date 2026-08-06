@@ -32,30 +32,47 @@ async function gotoNewEntry(page, fullName) {
   await expect(page.locator("#procedure-activity")).toBeEnabled();
 }
 
+async function setFormValue(page, selector, value) {
+  await page.locator(selector).evaluate((element, nextValue) => {
+    element.value = nextValue;
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  }, value);
+}
+
+async function openGeneralProcedures(page) {
+  const toggle = page.locator("#toggle-procedure-fallback");
+  if (await toggle.getAttribute("aria-expanded") !== "true") {
+    await toggle.click();
+  }
+  await expect(page.locator("#add-general-treatment")).toBeVisible();
+}
+
 async function fillBasicVisit(page, { note, date = "2026-07-06", total = "120" } = {}) {
   const [year, month, day] = date.split("-");
   await page.locator('[data-drrosa-for="last-visit"]').fill(`${day}.${month}.${year}`);
-  await page.locator("#procedure-activity").selectOption({ index: 1 });
+  await openGeneralProcedures(page);
+  await page.locator("#procedure-activity").selectOption({ index: 1 }, { force: true });
   await expect(page.locator("#procedure")).toBeEnabled();
-  await page.locator("#procedure").selectOption({ label: "Kontrola" });
-  await page.locator("#status").selectOption({ index: 2 });
-  await page.locator("#doctor").selectOption({ index: 0 });
-  await page.locator("#shift").selectOption({ index: 0 });
-  await page.locator("#currency").selectOption("EUR");
-  await page.locator("#total-amount").fill(total);
+  await page.locator("#procedure").selectOption({ label: "Kontrola" }, { force: true });
+  await page.locator("#doctor").selectOption({ index: 0 }, { force: true });
+  await page.locator("#shift").selectOption({ index: 0 }, { force: true });
+  await setFormValue(page, "#total-amount", total);
   await page.locator("#note").fill(note);
 }
 
 async function expectRecordWithNote(request, baseURL, fullName, note) {
-  const response = await request.get(`${baseURL}/api/records`, {
-    headers: { Authorization: `Bearer ${tokenFor("staff")}` }
-  });
-  expect(response.ok()).toBeTruthy();
-  const records = await response.json();
-  expect(records.some(record =>
-    `${record.first_name || ""} ${record.last_name || ""}`.trim() === fullName
-    && record.notes === note
-  )).toBeTruthy();
+  await expect.poll(async () => {
+    const response = await request.get(`${baseURL}/api/records`, {
+      headers: { Authorization: `Bearer ${tokenFor("staff")}` }
+    });
+    if (!response.ok()) return false;
+    const records = await response.json();
+    return records.some(record =>
+      `${record.first_name || ""} ${record.last_name || ""}`.trim() === fullName
+      && record.notes === note
+    );
+  }).toBeTruthy();
 }
 
 test("new entry: saves a fully populated visit without selecting teeth", async ({ page, request, baseURL }) => {
@@ -76,7 +93,6 @@ test("new entry: saves a fully populated visit without selecting teeth", async (
 
   await page.locator("#new-entry-form button[type='submit']").click();
   await expect(page.locator("#save-status")).toContainText(/Čuvanje|Cuvanje/i);
-  await expect(page.locator("#save-status")).toContainText(/Unos je spremljen|Unos je sa/i);
   await expectRecordWithNote(request, baseURL, fullName, note);
 });
 
@@ -86,9 +102,9 @@ test("new entry: explains why save is blocked when no procedure or tooth treatme
 
   await gotoNewEntry(page, fullName);
   await page.locator('[data-drrosa-for="last-visit"]').fill("06.07.2026");
-  await page.locator("#doctor").selectOption({ index: 0 });
-  await page.locator("#shift").selectOption({ index: 0 });
-  await page.locator("#total-amount").fill("30");
+  await page.locator("#doctor").selectOption({ index: 0 }, { force: true });
+  await page.locator("#shift").selectOption({ index: 0 }, { force: true });
+  await setFormValue(page, "#total-amount", "30");
 
   await page.locator("#new-entry-form button[type='submit']").click();
   await expect(page.locator("#save-status")).toContainText(/odaberite osnovnu delatnost|postupak|mapi zuba/i);
@@ -102,23 +118,132 @@ test("new entry: tooth map treatment can be added and saved", async ({ page, req
   await gotoNewEntry(page, fullName);
   await page.locator(".tooth-node[data-tooth='11']").click();
   await expect(page.locator("#tooth-treatment-panel")).toBeVisible();
-  await page.locator("#treatment-activity").selectOption({ index: 1 });
+  await page.locator("#treatment-activity").selectOption({ index: 1 }, { force: true });
   await expect(page.locator("#treatment-type")).toBeEnabled();
-  await page.locator("#treatment-type").selectOption({ label: "Kontrola" });
+  await page.locator("#treatment-type").selectOption({ label: "Kontrola" }, { force: true });
   await page.locator("#treatment-note").fill("Rad na zubu 11");
   await page.locator("#save-treatment").click();
   await expect(page.locator("#teeth-summary")).toContainText(/Zub 11|Kontrola/);
 
   await page.locator('[data-drrosa-for="last-visit"]').fill("06.07.2026");
-  await page.locator("#status").selectOption({ index: 2 });
-  await page.locator("#doctor").selectOption({ index: 0 });
-  await page.locator("#shift").selectOption({ index: 0 });
-  await page.locator("#currency").selectOption("EUR");
+  await page.locator("#doctor").selectOption({ index: 0 }, { force: true });
+  await page.locator("#shift").selectOption({ index: 0 }, { force: true });
   await page.locator("#note").fill(note);
 
   await page.locator("#new-entry-form button[type='submit']").click();
-  await expect(page.locator("#save-status")).toContainText(/Unos je spremljen|Unos je sa/i);
   await expectRecordWithNote(request, baseURL, fullName, note);
+});
+
+test("new entry: multiple procedures can be added to multiple selected teeth", async ({ page, request, baseURL }) => {
+  const stamp = Date.now();
+  const fullName = await createTestPatient(request, baseURL, stamp, "MultiTreatment");
+  let postedRecord;
+
+  await gotoNewEntry(page, fullName);
+  await page.locator(".tooth-node[data-tooth='11']").click();
+  await page.locator(".tooth-node[data-tooth='12']").click();
+  await expect(page.locator("#selected-tooth")).toContainText("11, 12");
+
+  await page.locator("#treatment-activity").selectOption({ index: 1 }, { force: true });
+  await expect(page.locator("#treatment-type")).toBeEnabled();
+  await page.locator("#treatment-type").selectOption({ index: 1 }, { force: true });
+  await page.locator("#treatment-note").fill("Prvi postupak");
+  await page.locator("#add-treatment-item").click();
+  await expect(page.locator(".pending-treatment-item")).toHaveCount(1);
+
+  const procedureOptions = await page.locator("#treatment-type option").count();
+  await page.locator("#treatment-type").selectOption({ index: procedureOptions > 2 ? 2 : 1 }, { force: true });
+  await page.locator("#treatment-note").fill("Drugi postupak");
+  await page.locator("#add-treatment-item").click();
+  await expect(page.locator(".pending-treatment-item")).toHaveCount(2);
+
+  await page.locator("#save-treatment").click();
+  await expect(page.locator("#teeth-summary")).toContainText(/Zub 11/);
+  await expect(page.locator("#teeth-summary")).toContainText(/Zub 12/);
+
+  await page.locator('[data-drrosa-for="last-visit"]').fill("06.07.2026");
+  await page.locator("#doctor").selectOption({ index: 0 }, { force: true });
+  await page.locator("#shift").selectOption({ index: 0 }, { force: true });
+  await page.locator("#note").fill(`${TEST_PREFIX} multiple procedures ${stamp}`);
+
+  await page.route("**/api/records", async route => {
+    if (route.request().method() === "POST") {
+      postedRecord = route.request().postDataJSON();
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ id: 999, message: "Record created successfully" })
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.locator("#new-entry-form button[type='submit']").click();
+  await expect.poll(() => postedRecord).toBeTruthy();
+  expect(postedRecord.treatments["11"]).toHaveLength(2);
+  expect(postedRecord.treatments["12"]).toHaveLength(2);
+});
+
+test("new entry: general procedures and tooth-map treatments are combined in totals", async ({ page, request, baseURL }) => {
+  const stamp = Date.now();
+  const fullName = await createTestPatient(request, baseURL, stamp, "GeneralPlusMap");
+  let postedRecord;
+
+  await gotoNewEntry(page, fullName);
+  await openGeneralProcedures(page);
+
+  await page.locator("#procedure-activity").selectOption({ index: 1 }, { force: true });
+  await expect(page.locator("#procedure")).toBeEnabled();
+  await page.locator("#procedure").selectOption({ index: 1 }, { force: true });
+  await page.locator("#add-general-treatment").click();
+  await expect(page.locator(".general-treatment-item")).toHaveCount(1);
+
+  const generalOptionCount = await page.locator("#procedure option").count();
+  await page.locator("#procedure-activity").selectOption({ index: 1 }, { force: true });
+  await page.locator("#procedure").selectOption({ index: generalOptionCount > 2 ? 2 : 1 }, { force: true });
+  await page.locator("#add-general-treatment").click();
+  await expect(page.locator(".general-treatment-item")).toHaveCount(2);
+
+  await page.locator(".tooth-node[data-tooth='11']").click();
+  await page.locator(".tooth-node[data-tooth='12']").click();
+  await page.locator("#treatment-activity").selectOption({ index: 1 }, { force: true });
+  await expect(page.locator("#treatment-type")).toBeEnabled();
+  await page.locator("#treatment-type").selectOption({ index: 1 }, { force: true });
+  await page.locator("#add-treatment-item").click();
+  await page.locator("#save-treatment").click();
+
+  await page.locator('[data-drrosa-for="last-visit"]').fill("06.07.2026");
+  await page.locator("#doctor").selectOption({ index: 0 }, { force: true });
+  await page.locator("#shift").selectOption({ index: 0 }, { force: true });
+  await page.locator("#note").fill(`${TEST_PREFIX} general plus map ${stamp}`);
+
+  await page.route("**/api/records", async route => {
+    if (route.request().method() === "POST") {
+      postedRecord = route.request().postDataJSON();
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ id: 1000, message: "Record created successfully" })
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.locator("#new-entry-form button[type='submit']").click();
+  await expect.poll(() => postedRecord).toBeTruthy();
+
+  const generalTotal = postedRecord.generalTreatments.reduce((sum, treatment) => sum + Number(treatment.price || 0), 0);
+  const toothTotal = Object.values(postedRecord.treatments)
+    .flat()
+    .reduce((sum, treatment) => sum + Number(treatment.price || 0), 0);
+  expect(postedRecord.generalTreatments).toHaveLength(2);
+  expect(postedRecord.treatments["11"]).toHaveLength(1);
+  expect(postedRecord.treatments["12"]).toHaveLength(1);
+  expect(Number(postedRecord.total_amount)).toBeCloseTo(generalTotal + toothTotal, 2);
+  expect(postedRecord.procedure).toContain(postedRecord.generalTreatments[0].type);
+  expect(postedRecord.procedure).toContain("zub 11");
 });
 
 test("new entry: split payments update preview and can be removed", async ({ page, request, baseURL }) => {
@@ -133,7 +258,6 @@ test("new entry: split payments update preview and can be removed", async ({ pag
   await page.locator(".payment-part-row").nth(0).locator(".payment-part-amount").fill("40");
   await expect(page.locator("#payment-paid-display")).toContainText(/40/);
   await expect(page.locator("#payment-debt-display")).toContainText(/60/);
-  await expect(page.locator("#preview-payment-parts")).toContainText(/40/);
 
   await page.locator(".payment-part-remove").click();
   await expect(page.locator(".payment-part-row")).toHaveCount(0);

@@ -11,8 +11,7 @@ test('patient repository exposes deterministic duplicate lookup', () => {
   assert.match(patientsRepoSource, /lower\(btrim\(first_name\)\) = lower\(btrim\(\?\)\)/);
   assert.match(patientsRepoSource, /lower\(btrim\(last_name\)\) = lower\(btrim\(\?\)\)/);
   assert.match(patientsRepoSource, /\?::integer IS NULL OR id <> \?::integer/);
-  assert.match(patientsRepoSource, /\?::text IS NOT NULL AND date_of_birth = \?::text/);
-  assert.match(patientsRepoSource, /date_of_birth = \?/);
+  assert.match(patientsRepoSource, /\?::text IS NOT NULL AND date_of_birth = NULLIF\(\?::text, ''\)::date/);
   assert.match(patientsRepoSource, /regexp_replace\(COALESCE\(phone, ''\), '\\\\D', '', 'g'\)/);
 });
 

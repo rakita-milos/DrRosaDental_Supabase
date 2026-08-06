@@ -10,6 +10,7 @@ const securitySource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scr
 const calendarSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'calendar.js'), 'utf8');
 const dashboardSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'script.js'), 'utf8');
 const allRecordsSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'all-records.js'), 'utf8');
+const allRecordsPageSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'pages', 'all-records.html'), 'utf8');
 const newEntrySource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'new-entry.js'), 'utf8');
 const newEntryPageSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'pages', 'new-entry.html'), 'utf8');
 const newPatientSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'new-patient.js'), 'utf8');
@@ -56,6 +57,30 @@ test('all records page lists every patient, including patients without visits', 
   assert.match(allRecordsSource, /Bez posete/);
   assert.match(allRecordsSource, /populatePatientFilter\(\)[\s\S]*allPatients/);
   assert.match(allRecordsSource, /currentExportRows = patientRows\.map/);
+});
+
+test('all records doctor filter is populated from the doctors reference list', () => {
+  assert.match(allRecordsSource, /let allDoctors = \[\]/);
+  assert.match(allRecordsSource, /function populateDoctorFilter\(\)/);
+  assert.match(allRecordsSource, /window\.DrRosaApi\.getDoctors/);
+  assert.match(allRecordsSource, /populateDoctorFilter\(\)/);
+  assert.match(allRecordsSource, /doctorFilter\.innerHTML = option\("", "Svi doktori"\) \+ doctors\.map/);
+  assert.doesNotMatch(allRecordsPageSource, /<option value="Dr Novak">/);
+  assert.doesNotMatch(allRecordsPageSource, /<option value="Dr Horvat">/);
+});
+
+test('shared API caches reference dropdown data and invalidates it after admin changes', () => {
+  assert.match(apiSource, /const cachedRequests = new Map\(\)/);
+  assert.match(apiSource, /function cachedRequest\(key, loader, \{ forceRefresh = false \} = \{\}\)/);
+  assert.match(apiSource, /async function getDoctors\(options = \{\}\)/);
+  assert.match(apiSource, /cachedRequest\("doctors", \(\) => request\("\/doctors"\), options\)/);
+  assert.match(apiSource, /async function getChairs\(options = \{\}\)/);
+  assert.match(apiSource, /cachedRequest\("chairs", \(\) => request\("\/chairs"\), options\)/);
+  assert.match(apiSource, /async function getCodebooks\(type, options = \{\}\)/);
+  assert.match(apiSource, /const cacheKey = type \? `codebooks:\$\{type\}` : "codebooks"/);
+  assert.match(apiSource, /clearReferenceCache\("doctors"\)/);
+  assert.match(apiSource, /clearReferenceCache\("codebooks"\)/);
+  assert.match(apiSource, /clearReferenceCache,/);
 });
 
 test('calendar week view groups slots and agenda by chair', () => {
@@ -149,7 +174,7 @@ test('new entry procedure fallback stays hidden until requested', () => {
   assert.match(newEntrySource, /block\.hidden = !isVisible/);
   assert.match(newEntrySource, /button\.setAttribute\("aria-expanded", isVisible \? "true" : "false"\)/);
   assert.match(newEntrySource, /setProcedureFallbackVisible\(hasProcedureFallbackValue\(\)\)/);
-  assert.match(newEntrySource, /Sakrij postupak bez mape/);
+  assert.match(newEntrySource, /Sakrij opste postupke/);
 });
 
 test('new entry summary is compact and placed inside the full-width form', () => {

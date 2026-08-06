@@ -62,7 +62,7 @@ function createPostgresPatientsRepository(pool) {
           AND lower(btrim(last_name)) = lower(btrim(?))
           AND (?::integer IS NULL OR id <> ?::integer)
           AND (
-            (?::text IS NOT NULL AND date_of_birth = ?::text)
+            (?::text IS NOT NULL AND date_of_birth = NULLIF(?::text, '')::date)
             OR (?::text <> '' AND lower(btrim(COALESCE(email, ''))) = lower(btrim(?::text)))
             OR (?::text <> '' AND regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') = regexp_replace(?::text, '\\D', '', 'g'))
             OR (?::text IS NULL AND ?::text = '' AND ?::text = '')

@@ -117,6 +117,8 @@ const recordCreateSchema = Joi.object({
   shift: Joi.string().max(80).optional().allow('', null),
   paymentParts: Joi.array().items(paymentPartSchema).optional(),
   payment_parts: Joi.array().items(paymentPartSchema).optional(),
+  generalTreatments: Joi.array().items(treatmentSchema).optional(),
+  general_treatments: Joi.array().items(treatmentSchema).optional(),
   treatments: Joi.alternatives().try(
     Joi.array().items(treatmentSchema),
     Joi.object().pattern(Joi.string().max(20), Joi.alternatives().try(treatmentSchema, Joi.array().items(treatmentSchema)))

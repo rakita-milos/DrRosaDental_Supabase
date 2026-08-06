@@ -42,6 +42,7 @@ const procedureCatalog = window.DrRosaProcedureCatalog;
 let allRecords = [];
 let allPatients = [];
 let allAppointments = [];
+let allDoctors = [];
 let currentExportRows = [];
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -118,6 +119,23 @@ function populatePatientFilter() {
     .filter(patient => patient.id && patient.name)
     .sort((a, b) => a.name.localeCompare(b.name));
   searchInput.innerHTML = option("", "Svi pacijenti") + patients.map(patient => option(String(patient.id), patient.name)).join("");
+}
+
+function doctorName(doctor) {
+  return doctor.name || doctor.fullName || doctor.full_name || [doctor.firstName || doctor.first_name, doctor.lastName || doctor.last_name].filter(Boolean).join(" ").trim();
+}
+
+function populateDoctorFilter() {
+  if (!doctorFilter) return;
+  const current = doctorFilter.value;
+  const doctors = allDoctors
+    .map(doctor => doctorName(doctor))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+  doctorFilter.innerHTML = option("", "Svi doktori") + doctors.map(doctor => option(doctor)).join("");
+  if (current && doctors.some(doctor => fold(doctor) === fold(current))) {
+    doctorFilter.value = current;
+  }
 }
 
 function populateProcedureFilter() {
@@ -307,7 +325,7 @@ function renderRecords(patientRows) {
     const entryLink = document.createElement("a");
     entryLink.href = `new-entry.html?${patientQuery}`;
     entryLink.className = "secondary-btn";
-    entryLink.textContent = "Nova poseta";
+    entryLink.textContent = "Poseta";
     const scheduleLink = document.createElement("a");
     scheduleLink.href = `calendar.html?${patientQuery}`;
     scheduleLink.className = "secondary-btn";
@@ -428,17 +446,21 @@ exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
   await procedureCatalog.loadFromApi?.();
   await populateCodebookFilters();
   try {
-    [allPatients, allRecords, allAppointments] = await Promise.all([
+    [allPatients, allRecords, allAppointments, allDoctors] = await Promise.all([
       window.DrRosaApi.getPatients(),
       window.DrRosaApi.getRecords(),
-      window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : []
+      window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : [],
+      window.DrRosaApi.getDoctors ? window.DrRosaApi.getDoctors().catch(() => []) : []
     ]);
   } catch (error) {
     console.error("Records load error:", error);
     allPatients = [];
     allRecords = [];
+    allAppointments = [];
+    allDoctors = [];
   }
   populatePatientFilter();
+  populateDoctorFilter();
   populateActivityFilter();
   populateProcedureFilter();
   refresh();

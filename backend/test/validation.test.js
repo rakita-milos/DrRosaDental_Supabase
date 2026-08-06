@@ -117,6 +117,24 @@ test('record create schema accepts treatment percentage discounts', () => {
   assert.equal(value.treatments['16'][0].discountType, 'percent');
 });
 
+test('record create schema accepts general treatments without tooth map', () => {
+  const { error, value } = recordCreateSchema.validate({
+    patient_id: 1,
+    doctor_id: 1,
+    visit_date: '2026-07-03',
+    procedure: 'Ciscenje svih zuba; Izbeljivanje',
+    generalTreatments: [
+      { type: 'Ciscenje svih zuba', price: 50, currency: 'EUR' },
+      { type: 'Izbeljivanje', price: 120, currency: 'EUR' }
+    ],
+    treatments: {
+      16: [{ type: 'Plomba', price: 40, currency: 'EUR' }]
+    }
+  });
+  assert.equal(error, undefined);
+  assert.equal(value.generalTreatments.length, 2);
+});
+
 test('public booking schema accepts camelCase booking payload', () => {
   const { error, value } = publicBookingSchema.validate({
     firstName: 'Mina',

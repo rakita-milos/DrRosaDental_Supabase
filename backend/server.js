@@ -1127,6 +1127,8 @@ async function normalizePaymentPart(part) {
   };
 }
 
+const GENERAL_TREATMENT_TOOTH_NUMBER = '__general__';
+
 async function normalizedPaymentParts(record) {
   const parts = Array.isArray(record.paymentParts)
     ? record.paymentParts
@@ -1176,32 +1178,46 @@ async function totalAmountForPayment(record, paymentParts, currency) {
 }
 
 function normalizedTreatments(record) {
-  if (!record.treatments || typeof record.treatments !== 'object') return [];
-  return Object.entries(record.treatments).flatMap(([toothNumber, treatments]) => {
-    const treatmentList = Array.isArray(treatments) ? treatments : [treatments];
-    return treatmentList.map(treatment => {
-      const price = Math.max(0, Number(treatment.price || 0));
-      const discountType = treatment.discountType === 'percent' || treatment.discount_type === 'percent' ? 'percent' : 'amount';
-      const rawDiscountValue = Number(treatment.discountValue ?? treatment.discount_value ?? treatment.discount ?? 0);
-      const discountValue = discountType === 'percent'
-        ? Math.min(100, Math.max(0, rawDiscountValue))
-        : Math.max(0, rawDiscountValue);
-      const discount = discountType === 'percent'
-        ? Math.min(price, price * discountValue / 100)
-        : Math.min(price, discountValue);
-      return {
-        toothNumber: cleanText(toothNumber, { max: 10 }),
-        type: cleanText(treatment.type, { max: 255, required: true }),
-        status: normalizeStatus(treatment.status || 'Planirano'),
-        note: cleanText(treatment.note, { max: 1000 }),
-        price,
-        currency: normalizeCurrency(treatment.currency || treatment.priceCurrency || treatment.price_currency || record.currency),
-        discount,
-        discountType,
-        discountValue
-      };
-    });
-  });
+  const toothTreatments = Array.isArray(record.treatments)
+    ? record.treatments.map(treatment => normalizeTreatmentPayload(record, treatment.toothNumber || treatment.tooth, treatment))
+    : record.treatments && typeof record.treatments === 'object'
+      ? Object.entries(record.treatments).flatMap(([toothNumber, treatments]) => {
+        const treatmentList = Array.isArray(treatments) ? treatments : [treatments];
+        return treatmentList.map(treatment => normalizeTreatmentPayload(record, toothNumber, treatment));
+      })
+    : [];
+  const generalTreatments = Array.isArray(record.generalTreatments)
+    ? record.generalTreatments
+    : Array.isArray(record.general_treatments)
+      ? record.general_treatments
+      : [];
+  return [
+    ...toothTreatments,
+    ...generalTreatments.map(treatment => normalizeTreatmentPayload(record, GENERAL_TREATMENT_TOOTH_NUMBER, treatment))
+  ].filter(treatment => treatment.type);
+}
+
+function normalizeTreatmentPayload(record, toothNumber, treatment) {
+  const price = Math.max(0, Number(treatment.price || 0));
+  const discountType = treatment.discountType === 'percent' || treatment.discount_type === 'percent' ? 'percent' : 'amount';
+  const rawDiscountValue = Number(treatment.discountValue ?? treatment.discount_value ?? treatment.discount ?? 0);
+  const discountValue = discountType === 'percent'
+    ? Math.min(100, Math.max(0, rawDiscountValue))
+    : Math.max(0, rawDiscountValue);
+  const discount = discountType === 'percent'
+    ? Math.min(price, price * discountValue / 100)
+    : Math.min(price, discountValue);
+  return {
+    toothNumber: cleanText(toothNumber, { max: 20 }) || GENERAL_TREATMENT_TOOTH_NUMBER,
+    type: cleanText(treatment.type || treatment.treatmentType, { max: 255, required: true }),
+    status: normalizeStatus(treatment.status || 'Planirano'),
+    note: cleanText(treatment.note || treatment.notes, { max: 1000 }),
+    price,
+    currency: normalizeCurrency(treatment.currency || treatment.priceCurrency || treatment.price_currency || record.currency),
+    discount,
+    discountType,
+    discountValue
+  };
 }
 
 function signedMoney(value) {
@@ -2845,12 +2861,12 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), as
     const hydrated = [];
     for (const record of records) {
       const treatments = {};
+      const generalTreatments = [];
       let treatmentTotal = 0;
       const treatmentRows = await recordsPaymentsRepo.treatmentsForRecord(record.id);
       treatmentRows.forEach(treatment => {
-        if (!treatments[treatment.tooth_number]) treatments[treatment.tooth_number] = [];
         treatmentTotal += Math.max(0, Number(treatment.price || 0) - Number(treatment.discount || 0));
-        treatments[treatment.tooth_number].push({
+        const item = {
           type: treatment.treatment_type,
           status: treatment.status,
           note: treatment.notes,
@@ -2859,7 +2875,13 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), as
           discount: Number(treatment.discount || 0),
           discountType: treatment.discount_type || 'amount',
           discountValue: Number(treatment.discount_value ?? treatment.discount ?? 0)
-        });
+        };
+        if (treatment.tooth_number === GENERAL_TREATMENT_TOOTH_NUMBER) {
+          generalTreatments.push(item);
+          return;
+        }
+        if (!treatments[treatment.tooth_number]) treatments[treatment.tooth_number] = [];
+        treatments[treatment.tooth_number].push(item);
       });
       const inferredPaid = Math.max(0, treatmentTotal - Number(record.amount_due || 0));
       const paymentRows = await recordsPaymentsRepo.paymentPartsForRecord(record.id);
@@ -2873,7 +2895,7 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), as
         paymentDate: part.payment_date || '',
         notes: part.notes || ''
       }));
-      hydrated.push({ ...record, amount_paid: Number(record.amount_paid || inferredPaid || 0), paymentParts, treatments });
+      hydrated.push({ ...record, amount_paid: Number(record.amount_paid || inferredPaid || 0), paymentParts, generalTreatments, treatments });
     }
     res.json(hydrated);
   } catch (error) {
@@ -2953,6 +2975,10 @@ app.put('/api/records/:id', authenticateToken, requirePermission('records:write'
       shift: normalizeShift(data.shift),
       notes: cleanText(data.notes, { max: 2000 })
     });
+
+    if (req.body.treatments !== undefined || req.body.generalTreatments !== undefined || req.body.general_treatments !== undefined) {
+      await recordsPaymentsRepo.replaceTreatments(recordId, normalizedTreatments({ ...data, ...req.body }));
+    }
 
     if (
       req.body.amount !== undefined

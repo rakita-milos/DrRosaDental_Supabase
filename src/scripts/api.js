@@ -20,6 +20,7 @@
     localStorage.removeItem("drrosa-token");
     localStorage.removeItem("drrosa-refresh-token");
     localStorage.removeItem("drrosa-session");
+    clearReferenceCache();
   }
 
   async function refreshSession() {
@@ -63,6 +64,28 @@
     return response.json();
   }
 
+  const cachedRequests = new Map();
+
+  function cachedRequest(key, loader, { forceRefresh = false } = {}) {
+    if (!forceRefresh && cachedRequests.has(key)) return cachedRequests.get(key);
+    const promise = loader().catch(error => {
+      cachedRequests.delete(key);
+      throw error;
+    });
+    cachedRequests.set(key, promise);
+    return promise;
+  }
+
+  function clearReferenceCache(prefix) {
+    if (!prefix) {
+      cachedRequests.clear();
+      return;
+    }
+    Array.from(cachedRequests.keys()).forEach(key => {
+      if (key === prefix || key.startsWith(`${prefix}:`)) cachedRequests.delete(key);
+    });
+  }
+
   function fullName(patient) {
     return [patient.first_name || patient.firstName, patient.last_name || patient.lastName]
       .filter(Boolean)
@@ -89,6 +112,7 @@
       currency: row.currency || row.paymentCurrency || "EUR",
       paymentParts: row.paymentParts || row.payment_parts || [],
       shift: row.shift || "Prva smena",
+      generalTreatments: row.generalTreatments || row.general_treatments || [],
       treatments: row.treatments || {}
     };
   }
@@ -240,8 +264,8 @@
     return request(`/documents/${documentId}`, { method: "DELETE" });
   }
 
-  async function getDoctors() {
-    return request("/doctors");
+  async function getDoctors(options = {}) {
+    return cachedRequest("doctors", () => request("/doctors"), options);
   }
 
   async function getDirectorDoctors() {
@@ -249,25 +273,31 @@
   }
 
   async function createDoctor(doctor) {
-    return request("/director/doctors", {
+    const result = await request("/director/doctors", {
       method: "POST",
       body: JSON.stringify(doctor)
     });
+    clearReferenceCache("doctors");
+    return result;
   }
 
   async function updateDoctor(doctorId, doctor) {
-    return request(`/director/doctors/${doctorId}`, {
+    const result = await request(`/director/doctors/${doctorId}`, {
       method: "PUT",
       body: JSON.stringify(doctor)
     });
+    clearReferenceCache("doctors");
+    return result;
   }
 
   async function deactivateDoctor(doctorId) {
-    return request(`/director/doctors/${doctorId}`, { method: "DELETE" });
+    const result = await request(`/director/doctors/${doctorId}`, { method: "DELETE" });
+    clearReferenceCache("doctors");
+    return result;
   }
 
-  async function getChairs() {
-    return request("/chairs");
+  async function getChairs(options = {}) {
+    return cachedRequest("chairs", () => request("/chairs"), options);
   }
 
   async function getAppointments(params = {}) {
@@ -644,6 +674,7 @@
         payment_status: record.paymentStatus,
         paymentParts: record.paymentParts || [],
         shift: record.shift,
+        generalTreatments: record.generalTreatments || [],
         treatments: record.treatments
       })
     });
@@ -663,7 +694,9 @@
         amount_paid: record.amountPaid,
         currency: record.currency,
         payment_status: record.paymentStatus,
-        paymentParts: record.paymentParts || []
+        paymentParts: record.paymentParts || [],
+        generalTreatments: record.generalTreatments || [],
+        treatments: record.treatments
       })
     });
   }
@@ -676,8 +709,9 @@
     return request(`/director/reports/${type}`);
   }
 
-  async function getCodebooks(type) {
-    return request(`/codebooks${type ? `?type=${encodeURIComponent(type)}` : ""}`);
+  async function getCodebooks(type, options = {}) {
+    const cacheKey = type ? `codebooks:${type}` : "codebooks";
+    return cachedRequest(cacheKey, () => request(`/codebooks${type ? `?type=${encodeURIComponent(type)}` : ""}`), options);
   }
 
   async function getAdminCodebooks(type) {
@@ -685,21 +719,27 @@
   }
 
   async function createCodebookItem(item) {
-    return request("/director/codebooks", {
+    const result = await request("/director/codebooks", {
       method: "POST",
       body: JSON.stringify(item)
     });
+    clearReferenceCache("codebooks");
+    return result;
   }
 
   async function updateCodebookItem(itemId, item) {
-    return request(`/director/codebooks/${itemId}`, {
+    const result = await request(`/director/codebooks/${itemId}`, {
       method: "PUT",
       body: JSON.stringify(item)
     });
+    clearReferenceCache("codebooks");
+    return result;
   }
 
   async function deleteCodebookItem(itemId) {
-    return request(`/director/codebooks/${itemId}`, { method: "DELETE" });
+    const result = await request(`/director/codebooks/${itemId}`, { method: "DELETE" });
+    clearReferenceCache("codebooks");
+    return result;
   }
 
   async function getExchangeRate(currency, base = "EUR") {
@@ -857,6 +897,7 @@
     changePassword,
     clearSession,
     getSession,
+    clearReferenceCache,
     getPatients,
     getPatient,
     createPatient,

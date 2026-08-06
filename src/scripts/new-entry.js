@@ -47,6 +47,8 @@ const inputs = {
   lastVisit: document.getElementById("last-visit"),
   procedureActivity: document.getElementById("procedure-activity"),
   procedure: document.getElementById("procedure"),
+  addGeneralTreatment: document.getElementById("add-general-treatment"),
+  generalTreatmentList: document.getElementById("general-treatment-list"),
   doctor: document.getElementById("doctor"),
   status: document.getElementById("status"),
   paymentStatus: document.getElementById("payment-status"),
@@ -68,6 +70,7 @@ let patients = [];
 let doctors = [];
 let allRecords = [];
 let teethTreatments = {};
+let generalTreatments = [];
 let selectedTeeth = new Set();
 let initialConditionEntries = [];
 let paymentParts = [];
@@ -217,14 +220,12 @@ function selectedTreatmentTeethCount() {
 }
 
 function updatePreview() {
-  const procedureText = inputs.procedure.value.trim();
-  const activityText = inputs.procedureActivity.value.trim();
+  const procedureText = currentCombinedTreatmentDescription();
   const summary = paymentSummary();
   const hasDebt = summary.debt > 0.009;
   previewElements.name.textContent = inputs.patient.value.trim() || "Pacijent nije izabran";
   previewElements.procedure.textContent = procedureText
-    ? `${activityText ? `${activityText} / ` : ""}${procedureText}`
-    : (hasToothTreatments() ? "Rad po zubima" : "Rad nije dodat");
+    || "Rad nije dodat";
   previewElements.teethCount.textContent = String(selectedTreatmentTeethCount());
   previewElements.paymentStatus.textContent = summary.status || inputs.paymentStatus.value;
   previewElements.totalAmount.textContent = formatMoney(summary.total, summary.currency);
@@ -264,7 +265,7 @@ function setProcedureFallbackVisible(isVisible) {
   if (!block || !button) return;
   block.hidden = !isVisible;
   button.setAttribute("aria-expanded", isVisible ? "true" : "false");
-  button.textContent = isVisible ? "Sakrij postupak bez mape" : "Prikaži postupak bez mape";
+  button.textContent = isVisible ? "Sakrij opste postupke" : "Prikazi opste postupke";
 }
 
 function setupProcedureFallbackToggle() {
@@ -484,6 +485,12 @@ function cloneTreatments(treatments, recordCurrency = "EUR") {
   return copy;
 }
 
+function cloneGeneralTreatments(treatments, recordCurrency = "EUR") {
+  return (Array.isArray(treatments) ? treatments : [])
+    .map(item => normalizeStoredTreatment(item, recordCurrency))
+    .filter(item => item.type);
+}
+
 function openRecordInForm(record) {
   if (!record) return;
   inputs.patient.value = record.patient || "";
@@ -500,11 +507,13 @@ function openRecordInForm(record) {
   setSelectValue(inputs.shift, record.shift || "");
   inputs.note.value = record.note === "-" ? "" : (record.note || "");
   teethTreatments = cloneTreatments(record.treatments, record.currency || paymentCurrency());
+  generalTreatments = cloneGeneralTreatments(record.generalTreatments, record.currency || paymentCurrency());
   const inferredTotal = Number(record.amountDue || 0) + Number(record.amountPaid || 0);
   inputs.totalAmount.value = inferredTotal > 0 ? inferredTotal.toFixed(2) : "";
   totalAmountTouched = inferredTotal > 0;
   updateTeethSummary();
   updateToothHighlights();
+  renderGeneralTreatments();
   updateAmountDueLimit();
   paymentParts = (record.paymentParts || []).map(normalizedPaymentPart);
   if (!paymentParts.length && Number(record.amountPaid || 0) > 0) {
@@ -519,6 +528,7 @@ const teethPanel = document.getElementById("tooth-treatment-panel");
 const selectedToothSpan = document.getElementById("selected-tooth");
 const closePanel = document.getElementById("close-panel");
 const saveTreatmentBtn = document.getElementById("save-treatment");
+const addTreatmentItemBtn = document.getElementById("add-treatment-item");
 const treatmentActivity = document.getElementById("treatment-activity");
 const treatmentType = document.getElementById("treatment-type");
 const treatmentNote = document.getElementById("treatment-note");
@@ -526,11 +536,13 @@ const treatmentDiscount = document.getElementById("treatment-discount");
 const treatmentDiscountType = document.getElementById("treatment-discount-type");
 const treatmentPrice = document.getElementById("treatment-price");
 const treatmentTotalPrice = document.getElementById("treatment-total-price");
+const pendingTreatmentList = document.getElementById("pending-treatment-list");
 const teethSummary = document.getElementById("teeth-summary");
 const initialConditionSummary = document.getElementById("initial-condition-summary");
 const showInitialConditionBtn = document.getElementById("show-initial-condition");
 const toothNodes = document.querySelectorAll(".tooth-node");
 let toothHistoryCollapsed = false;
+let pendingTreatmentItems = [];
 
 function formatMoney(amount, currency = paymentCurrency()) {
   return currencyUtils ? currencyUtils.formatMoney(amount, currency) : `${Number(amount || 0).toFixed(2)} ${currency}`;
@@ -742,6 +754,10 @@ function hasToothTreatments() {
   return Object.values(teethTreatments).some(treatments => treatmentListForValue(treatments).length > 0);
 }
 
+function hasGeneralTreatments({ includeDraft = true } = {}) {
+  return currentGeneralTreatmentEntries({ includeDraft }).length > 0;
+}
+
 function treatmentListForValue(treatments) {
   if (!treatments) return [];
   return Array.isArray(treatments) ? treatments : [treatments];
@@ -752,6 +768,16 @@ function currentTreatmentEntries() {
     .flatMap(([tooth, toothTreatments]) => treatmentListForValue(toothTreatments).map((treatment, index) => ({ tooth, treatment, index })));
 }
 
+function currentGeneralDraftTreatment() {
+  return inputs.procedure?.value ? generalTreatmentFromCurrentInputs() : null;
+}
+
+function currentGeneralTreatmentEntries({ includeDraft = true } = {}) {
+  const entries = generalTreatments.map((treatment, index) => ({ treatment, index, isDraft: false }));
+  const draft = includeDraft ? currentGeneralDraftTreatment() : null;
+  return draft ? [...entries, { treatment: draft, index: -1, isDraft: true }] : entries;
+}
+
 function currentTreatmentTotal() {
   return currentTreatmentEntries().reduce((total, item) => total + Number(item.treatment.price || 0), 0);
 }
@@ -760,12 +786,28 @@ function currentTreatmentDiscountTotal() {
   return currentTreatmentEntries().reduce((total, item) => total + treatmentDiscountAmount(item.treatment), 0);
 }
 
+function currentGeneralTreatmentTotal({ includeDraft = true } = {}) {
+  return currentGeneralTreatmentEntries({ includeDraft }).reduce((total, item) => total + Number(item.treatment.price || 0), 0);
+}
+
+function currentGeneralTreatmentDiscountTotal({ includeDraft = true } = {}) {
+  return currentGeneralTreatmentEntries({ includeDraft }).reduce((total, item) => total + treatmentDiscountAmount(item.treatment), 0);
+}
+
+function currentToothFinalTotal() {
+  return Math.max(0, currentTreatmentTotal() - currentTreatmentDiscountTotal());
+}
+
+function currentGeneralFinalTotal({ includeDraft = true } = {}) {
+  return Math.max(0, currentGeneralTreatmentTotal({ includeDraft }) - currentGeneralTreatmentDiscountTotal({ includeDraft }));
+}
+
 function currentGrossTotal() {
-  return currentTreatmentTotal();
+  return currentTreatmentTotal() + currentGeneralTreatmentTotal();
 }
 
 function currentFinalTotal() {
-  return Math.max(0, currentGrossTotal() - currentTreatmentDiscountTotal());
+  return Math.max(0, currentGrossTotal() - currentTreatmentDiscountTotal() - currentGeneralTreatmentDiscountTotal());
 }
 
 function currentSelectedProcedureTotal() {
@@ -781,12 +823,12 @@ function currentSelectedProcedureTotal() {
 }
 
 function currentAutoVisitTotal() {
-  return hasToothTreatments() ? currentFinalTotal() : currentSelectedProcedureTotal();
+  return currentToothFinalTotal() + currentGeneralFinalTotal();
 }
 
 function currentVisitTotal() {
   const manualTotal = Number(inputs.totalAmount?.value || 0);
-  return manualTotal > 0 ? manualTotal : currentAutoVisitTotal();
+  return totalAmountTouched && manualTotal > 0 ? manualTotal : currentAutoVisitTotal();
 }
 
 function syncTotalAmountFromSelection({ force = false } = {}) {
@@ -885,6 +927,178 @@ function updateTreatmentPricePreview() {
   treatmentTotalPrice.textContent = formatMoney((price - discount) * selectedCount);
 }
 
+function currentGeneralTreatmentDescription({ includeDraft = true } = {}) {
+  return currentGeneralTreatmentEntries({ includeDraft })
+    .map(({ treatment }) => treatment.type)
+    .filter(Boolean)
+    .join(", ");
+}
+
+function currentCombinedTreatmentDescription({ includeDraft = true } = {}) {
+  return [
+    currentGeneralTreatmentDescription({ includeDraft }),
+    currentTreatmentDescription()
+  ].filter(Boolean).join("; ");
+}
+
+function generalTreatmentFromCurrentInputs() {
+  const procedureValue = inputs.procedure.value.trim();
+  const activityValue = inputs.procedureActivity.value.trim() || procedureCatalog.findActivityForProcedure(procedureValue);
+  const basePrice = Math.max(0, Number(
+    inputs.procedure.selectedOptions[0]?.dataset.price
+    || procedureCatalog.getPrice(procedureValue)
+    || 0
+  ));
+  const baseCurrency = inputs.procedure.selectedOptions[0]?.dataset.priceCurrency
+    || procedureCatalog.getPriceCurrency?.(procedureValue)
+    || "EUR";
+  return {
+    activity: activityValue,
+    type: procedureValue,
+    note: "",
+    status: "Planirano",
+    price: convertToPaymentCurrency(basePrice, baseCurrency),
+    currency: paymentCurrency(),
+    basePrice,
+    basePriceCurrency: baseCurrency,
+    basePriceEur: currencyUtils
+      ? currencyUtils.convert(basePrice, baseCurrency, "EUR")
+      : baseCurrency === "EUR" ? basePrice : 0,
+    discount: 0,
+    discountType: "amount",
+    discountValue: 0
+  };
+}
+
+function clearGeneralTreatmentInputs() {
+  inputs.procedureActivity.value = "";
+  populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
+  inputs.procedure.dispatchEvent(new Event("drrosa-select-value"));
+  inputs.procedureActivity.dispatchEvent(new Event("drrosa-select-value"));
+}
+
+function ensureDraftGeneralTreatmentAdded() {
+  const draft = currentGeneralDraftTreatment();
+  if (!draft) return false;
+  generalTreatments.push(draft);
+  clearGeneralTreatmentInputs();
+  renderGeneralTreatments();
+  return true;
+}
+
+function renderGeneralTreatments() {
+  if (!inputs.generalTreatmentList) return;
+  if (!generalTreatments.length) {
+    inputs.generalTreatmentList.innerHTML = `<div class="general-treatment-empty">Nema dodatih opštih postupaka.</div>`;
+    return;
+  }
+
+  inputs.generalTreatmentList.innerHTML = generalTreatments.map((treatment, index) => `
+    <div class="general-treatment-item" data-general-treatment-index="${index}">
+      <div>
+        <strong>${escapeHtml(treatment.type)}</strong>
+        ${treatment.activity ? `<span>${escapeHtml(treatment.activity)}</span>` : ""}
+      </div>
+      <div class="general-treatment-price">${formatMoney(treatmentNetPrice(treatment), treatment.currency || paymentCurrency())}</div>
+      <button type="button" class="danger-btn general-treatment-remove" aria-label="Obriši opšti postupak">x</button>
+    </div>
+  `).join("");
+
+  inputs.generalTreatmentList.querySelectorAll(".general-treatment-remove").forEach(button => {
+    button.addEventListener("click", () => {
+      const row = button.closest("[data-general-treatment-index]");
+      const index = Number(row?.dataset.generalTreatmentIndex);
+      if (Number.isInteger(index)) generalTreatments.splice(index, 1);
+      syncTotalAmountFromSelection({ force: !totalAmountTouched });
+      renderGeneralTreatments();
+      updatePaymentCalculation();
+      updatePreview();
+    });
+  });
+}
+
+function treatmentNetPrice(treatment) {
+  return Math.max(0, Number(treatment.price || 0) - treatmentDiscountAmount(treatment));
+}
+
+function pendingTreatmentTotal() {
+  const selectedCount = Math.max(1, selectedTeeth.size);
+  return pendingTreatmentItems.reduce((total, treatment) => total + treatmentNetPrice(treatment) * selectedCount, 0);
+}
+
+function treatmentFromCurrentInputs() {
+  const basePrice = selectedTreatmentBasePrice();
+  const basePriceCurrency = selectedTreatmentBaseCurrency();
+  const price = convertToPaymentCurrency(basePrice, basePriceCurrency);
+  const discountType = normalizeDiscountType(treatmentDiscountType.value);
+  const discountValue = normalizeDiscountValue(treatmentDiscount.value, discountType);
+  const discount = calculateTreatmentDiscount(price, discountValue, discountType);
+  return {
+    activity: treatmentActivity.value,
+    type: treatmentType.value,
+    note: treatmentNote.value,
+    price,
+    basePrice,
+    basePriceCurrency,
+    basePriceEur: currencyUtils ? currencyUtils.convert(basePrice, basePriceCurrency, "EUR") : basePriceCurrency === "EUR" ? basePrice : 0,
+    currency: paymentCurrency(),
+    discount,
+    discountType,
+    discountValue
+  };
+}
+
+function clearTreatmentInputsAfterAdd() {
+  treatmentNote.value = "";
+  treatmentDiscount.value = "";
+  treatmentDiscountType.value = "amount";
+  updateTreatmentPricePreview();
+}
+
+function renderPendingTreatmentItems() {
+  if (!pendingTreatmentList) return;
+  const selectedCount = Math.max(1, selectedTeeth.size);
+  if (!pendingTreatmentItems.length) {
+    pendingTreatmentList.innerHTML = `<div class="pending-treatment-empty">Nema dodatih postupaka za izabrane zube.</div>`;
+    return;
+  }
+
+  pendingTreatmentList.innerHTML = `
+    <div class="pending-treatment-header">
+      <span>Postupci za upis</span>
+      <strong>${formatMoney(pendingTreatmentTotal())}</strong>
+    </div>
+    ${pendingTreatmentItems.map((treatment, index) => `
+      <div class="pending-treatment-item" data-pending-treatment-index="${index}">
+        <div>
+          <strong>${escapeHtml(treatment.type)}</strong>
+          <span>${escapeHtml(treatment.activity || "Bez delatnosti")}</span>
+          ${treatment.note ? `<small>${escapeHtml(treatment.note)}</small>` : ""}
+        </div>
+        <div class="pending-treatment-price">
+          <span>${formatMoney(treatmentNetPrice(treatment), treatment.currency || paymentCurrency())} x ${selectedCount}</span>
+          <strong>${formatMoney(treatmentNetPrice(treatment) * selectedCount, treatment.currency || paymentCurrency())}</strong>
+        </div>
+        <button class="danger-btn pending-treatment-remove" type="button" aria-label="Ukloni postupak">x</button>
+      </div>
+    `).join("")}
+  `;
+  pendingTreatmentList.querySelectorAll(".pending-treatment-remove").forEach(button => {
+    button.addEventListener("click", () => {
+      const row = button.closest("[data-pending-treatment-index]");
+      const index = Number(row?.dataset.pendingTreatmentIndex);
+      if (!Number.isInteger(index)) return;
+      pendingTreatmentItems.splice(index, 1);
+      renderPendingTreatmentItems();
+    });
+  });
+}
+
+function resetPendingTreatmentBuilder() {
+  pendingTreatmentItems = [];
+  renderPendingTreatmentItems();
+}
+
 function updateDiscountCurrencyLabel() {
   const amountOption = treatmentDiscountType?.querySelector('option[value="amount"]');
   if (amountOption) amountOption.textContent = paymentCurrency();
@@ -921,6 +1135,7 @@ function refreshSelectedTeethPanel() {
   }
 
   updateTreatmentPricePreview();
+  renderPendingTreatmentItems();
 }
 
 function toggleToothSelection(toothNode) {
@@ -957,40 +1172,48 @@ toothNodes.forEach(toothNode => {
 closePanel.addEventListener("click", () => {
   teethPanel.style.display = "none";
   selectedTeeth.clear();
+  resetPendingTreatmentBuilder();
   updateToothHighlights();
 });
 
-saveTreatmentBtn.addEventListener("click", () => {
+addTreatmentItemBtn?.addEventListener("click", () => {
   if (selectedTeeth.size === 0 || !treatmentActivity.value || !treatmentType.value) {
     alert("Odaberite zub, osnovnu delatnost i vrstu tretmana!");
     return;
   }
 
+  pendingTreatmentItems.push(treatmentFromCurrentInputs());
+  renderPendingTreatmentItems();
+  clearTreatmentInputsAfterAdd();
+});
+
+saveTreatmentBtn.addEventListener("click", () => {
+  if (selectedTeeth.size === 0) {
+    alert("Odaberite bar jedan zub!");
+    return;
+  }
+
+  if (!pendingTreatmentItems.length && treatmentActivity.value && treatmentType.value) {
+    pendingTreatmentItems.push(treatmentFromCurrentInputs());
+  }
+
+  if (!pendingTreatmentItems.length) {
+    alert("Dodajte bar jedan postupak pre čuvanja.");
+    renderPendingTreatmentItems();
+    return;
+  }
+
   selectedTeethList().forEach(tooth => {
-    const basePrice = selectedTreatmentBasePrice();
-    const basePriceCurrency = selectedTreatmentBaseCurrency();
-    const price = convertToPaymentCurrency(basePrice, basePriceCurrency);
-    const discountType = normalizeDiscountType(treatmentDiscountType.value);
-    const discountValue = normalizeDiscountValue(treatmentDiscount.value, discountType);
-    const discount = calculateTreatmentDiscount(price, discountValue, discountType);
     if (!Array.isArray(teethTreatments[tooth])) teethTreatments[tooth] = treatmentListForTooth(tooth);
-    teethTreatments[tooth].push({
-      activity: treatmentActivity.value,
-      type: treatmentType.value,
-      note: treatmentNote.value,
-      price,
-      basePrice,
-      basePriceCurrency,
-      basePriceEur: currencyUtils ? currencyUtils.convert(basePrice, basePriceCurrency, "EUR") : basePriceCurrency === "EUR" ? basePrice : 0,
-      currency: paymentCurrency(),
-      discount,
-      discountType,
-      discountValue
+    pendingTreatmentItems.forEach(treatment => {
+      teethTreatments[tooth].push({ ...treatment });
     });
   });
 
   teethPanel.style.display = "none";
   selectedTeeth.clear();
+  resetPendingTreatmentBuilder();
+  syncTotalAmountFromSelection({ force: !totalAmountTouched });
   updateTeethSummary();
   updateToothHighlights();
   updatePaymentCalculation();
@@ -1032,7 +1255,38 @@ inputs.currency.addEventListener("change", () => {
       );
     });
   });
+  generalTreatments.forEach(treatment => {
+    const basePrice = Number(treatment.basePrice ?? treatment.base_price ?? treatment.basePriceEur ?? treatment.base_price_eur ?? 0);
+    const baseCurrency = treatment.basePriceCurrency ?? treatment.base_price_currency ?? (treatment.basePriceEur || treatment.base_price_eur ? "EUR" : treatment.currency || previousCurrency);
+    if (!basePrice) return;
+    treatment.basePrice = basePrice;
+    treatment.basePriceCurrency = baseCurrency;
+    treatment.price = convertToPaymentCurrency(basePrice, baseCurrency);
+    treatment.currency = paymentCurrency();
+    treatment.discount = calculateTreatmentDiscount(
+      treatment.price,
+      treatment.discountValue ?? treatment.discount_value ?? treatment.discount ?? 0,
+      treatment.discountType || treatment.discount_type || "amount"
+    );
+  });
+  pendingTreatmentItems.forEach(treatment => {
+    const basePrice = Number(treatment.basePrice ?? treatment.base_price ?? treatment.basePriceEur ?? treatment.base_price_eur ?? 0);
+    const baseCurrency = treatment.basePriceCurrency ?? treatment.base_price_currency ?? (treatment.basePriceEur || treatment.base_price_eur ? "EUR" : treatment.currency || previousCurrency);
+    if (!basePrice) return;
+    treatment.basePrice = basePrice;
+    treatment.basePriceCurrency = baseCurrency;
+    treatment.price = convertToPaymentCurrency(basePrice, baseCurrency);
+    treatment.currency = paymentCurrency();
+    treatment.discount = calculateTreatmentDiscount(
+      treatment.price,
+      treatment.discountValue ?? treatment.discount_value ?? treatment.discount ?? 0,
+      treatment.discountType || treatment.discount_type || "amount"
+    );
+  });
   updateTreatmentPricePreview();
+  renderGeneralTreatments();
+  renderPendingTreatmentItems();
+  syncTotalAmountFromSelection({ force: !totalAmountTouched });
   updateTeethSummary();
   updatePaymentCalculation();
   updatePreview();
@@ -1081,6 +1335,19 @@ inputs.procedure.addEventListener("change", () => {
   updatePreview();
 });
 
+inputs.addGeneralTreatment?.addEventListener("click", () => {
+  if (!inputs.procedureActivity.value || !inputs.procedure.value) {
+    showAlert("Odaberite osnovnu delatnost i opšti postupak koji želite da dodate.", "error", { persist: true, scroll: true });
+    return;
+  }
+  generalTreatments.push(generalTreatmentFromCurrentInputs());
+  clearGeneralTreatmentInputs();
+  syncTotalAmountFromSelection({ force: !totalAmountTouched });
+  renderGeneralTreatments();
+  updatePaymentCalculation();
+  updatePreview();
+});
+
 function updateTeethSummary() {
   const treatments = currentTreatmentEntries();
   const history = getPatientToothHistory(inputs.patient.value.trim());
@@ -1098,11 +1365,11 @@ function updateTeethSummary() {
       <span>Rađeno</span>
       <strong>${escapeHtml(currentDescription)}</strong>
       <span>Osnovna cena</span>
-      <strong>${formatMoney(currentGrossTotal())}</strong>
+      <strong>${formatMoney(currentTreatmentTotal())}</strong>
       <span>Popust po usluzi</span>
       <strong>${escapeHtml(currentTreatmentDiscountSummary())}</strong>
       <span>Za naplatu</span>
-      <strong>${formatMoney(currentFinalTotal())}</strong>
+      <strong>${formatMoney(currentToothFinalTotal())}</strong>
     </div>
     ${treatments.map(({ tooth, treatment, index }) => `
     <div class="treatment-item">
@@ -1150,6 +1417,7 @@ function updateTeethSummary() {
       } else {
         delete teethTreatments[tooth];
       }
+      syncTotalAmountFromSelection({ force: !totalAmountTouched });
       updateTeethSummary();
       updatePaymentCalculation();
       updatePreview();
@@ -1323,23 +1591,23 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const patientNameValue = inputs.patient.value.trim();
-  const procedureValue = inputs.procedure.value.trim();
-  const procedureActivityValue = inputs.procedureActivity.value.trim() || procedureCatalog.findActivityForProcedure(procedureValue);
-  const hasProcedureSelection = Boolean(procedureValue);
-  const procedureForSave = procedureValue || currentTreatmentDescription() || "Rad po zubima";
+  ensureDraftGeneralTreatmentAdded();
+  const procedureActivityValue = generalTreatments[0]?.activity || inputs.procedureActivity.value.trim() || "";
+  const procedureForSave = currentCombinedTreatmentDescription({ includeDraft: false }) || "Rad po zubima";
   const hasTreatments = hasToothTreatments();
+  const hasGeneralSelection = hasGeneralTreatments({ includeDraft: false });
   const finalTotal = currentFinalTotal();
   updatePaymentCalculation({ render: false });
   const summary = paymentSummary();
   const amountDueValue = summary.debt;
   const amountPaidValue = summary.paid;
-  if (!patientNameValue || !inputs.lastVisit.value || (!hasProcedureSelection && !hasTreatments)) {
+  if (!patientNameValue || !inputs.lastVisit.value || (!hasGeneralSelection && !hasTreatments)) {
     showAlert("Ispunite pacijenta, datum i dodajte rad na mapi zuba ili izaberite postupak bez mape zuba.", "error", { persist: true, scroll: true });
     return;
   }
 
-  if (hasTreatments && amountDueValue > finalTotal) {
-    inputs.amountDue.value = finalTotal.toFixed(2);
+  if ((hasTreatments || hasGeneralSelection) && amountDueValue > summary.total) {
+    inputs.amountDue.value = summary.total.toFixed(2);
     updatePreview();
     showAlert("Iznos duga ne može biti veći od ukupne cene svih radova.", "error", { persist: true, scroll: true });
     return;
@@ -1404,6 +1672,7 @@ form.addEventListener("submit", async (event) => {
     paymentParts: paymentParts.map(normalizedPaymentPart).filter(part => part.amount > 0),
     shift: inputs.shift.value,
     note: inputs.note.value.trim() || "-",
+    generalTreatments,
     treatments: teethTreatments
   };
 
@@ -1428,6 +1697,7 @@ form.addEventListener("submit", async (event) => {
 
 (async function init() {
   setupEntryStepNavigation();
+  setupProcedureFallbackToggle();
   if (!await requireAccess()) return;
   try {
     await procedureCatalog.loadFromApi?.();
@@ -1450,14 +1720,13 @@ form.addEventListener("submit", async (event) => {
     if (recordParam) {
       openRecordInForm(allRecords.find(record => String(record.id) === String(recordParam)));
     }
-    setupProcedureFallbackToggle();
   } catch (error) {
     console.error("Form setup error:", error);
-    setupProcedureFallbackToggle();
   }
   updatePreview();
   updateTeethSummary();
   updateToothHighlights();
+  renderGeneralTreatments();
   updatePaymentCalculation();
   spreadToothMap();
 })();

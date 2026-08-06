@@ -97,6 +97,11 @@ function createPostgresRecordsRepository(pool) {
       `, [procedure, status, shift, notes, id]);
     },
 
+    async replaceTreatments(visitRecordId, treatments) {
+      await execute(pool, 'DELETE FROM treatments WHERE visit_record_id = ?', [visitRecordId]);
+      await insertTreatmentsPostgres(pool, visitRecordId, treatments);
+    },
+
     async upsertPayment({ visitRecordId, patientId, payment, paymentSummary, paymentParts, currency }) {
       if (!payment) {
         const paymentId = await insertReturningId(pool, `

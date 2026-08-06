@@ -1148,6 +1148,37 @@ a.danger-btn {
   opacity: 0.9;
 }
 
+@media (max-width: 980px) {
+  .week-absence-lane {
+    grid-template-columns: 44px repeat(7, minmax(0, 1fr));
+    overflow: hidden;
+  }
+
+  .week-absence-lane-label {
+    min-width: 0;
+    padding-inline: 4px;
+  }
+
+  .week-absence-bar {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 5px;
+    min-width: 0;
+    max-width: 100%;
+    padding: 3px 5px;
+    border-left-width: 2px;
+  }
+
+  .week-absence-bar small {
+    grid-column: 1 / -1;
+    font-size: 0.66rem;
+  }
+
+  .week-absence-bar span {
+    min-width: 24px;
+    padding-inline: 5px;
+  }
+}
+
 .month-absence-bar {
   position: relative;
   display: grid;
@@ -1535,26 +1566,29 @@ body.modal-open {
 .records-table th,
 .records-table td {
   vertical-align: middle;
+  padding: 12px 10px;
+  overflow-wrap: anywhere;
 }
 
 .records-table th:last-child,
 .records-table td:last-child {
-  width: 400px;
-  min-width: 400px;
+  width: 244px;
+  min-width: 244px;
 }
 
 .record-action-group {
   display: grid;
-  grid-template-columns: repeat(3, minmax(92px, 1fr));
+  grid-template-columns: repeat(3, minmax(62px, 1fr));
   gap: 6px;
-  min-width: 366px;
+  min-width: 0;
 }
 
 .record-action-group .secondary-btn {
-  min-width: 104px;
+  min-width: 0;
   min-height: 34px;
-  padding: 7px 10px;
+  padding: 7px 6px;
   border-radius: 8px;
+  font-size: 0.82rem;
   white-space: nowrap;
   text-align: center;
 }
@@ -2596,6 +2630,12 @@ main {
   padding: 6px 7px 20px;
 }
 
+.calendar-board-week .week-appointment {
+  border-left-width: 2px;
+  gap: 1px;
+  padding: 4px 1px 18px 1px;
+}
+
 .week-appointment .appointment-time {
   width: max-content;
   max-width: none;
@@ -2605,6 +2645,25 @@ main {
   font-size: 0.72rem;
   line-height: 1.1;
   letter-spacing: 0;
+}
+
+.calendar-board-week .week-appointment .appointment-time {
+  justify-self: start;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-size: 0.56rem;
+  line-height: 1.05;
+}
+
+.calendar-board-week .week-appointment .appointment-title-line,
+.calendar-board-week .week-appointment .appointment-doctor-line {
+  margin-left: 0;
+  padding-left: 0;
 }
 
 .week-appointment .appointment-title-line {
@@ -3943,6 +4002,59 @@ td:nth-child(5) {
   gap: 14px;
 }
 
+.general-treatment-list {
+  display: grid;
+  gap: 10px;
+}
+
+.general-treatment-empty {
+  padding: 12px 14px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  color: #64748b;
+  background: #fff;
+  font-weight: 700;
+}
+
+.general-treatment-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 38px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #d7e0eb;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.general-treatment-item strong,
+.general-treatment-item span {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.general-treatment-item span {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.general-treatment-price {
+  color: #17212b;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.general-treatment-remove {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 10px;
+}
+
 .entry-details-card label:has(#payment-status),
 .entry-details-card label:has(#amount-paid) {
   display: none;
@@ -5257,9 +5369,91 @@ td:nth-child(5) {
   width: 100%;
 }
 
+.treatment-builder-actions {
+  margin-top: 0;
+}
+
+.pending-treatment-list {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d7e0eb;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.pending-treatment-empty {
+  color: #5b6c7d;
+  font-size: 0.95rem;
+}
+
+.pending-treatment-header,
+.pending-treatment-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.pending-treatment-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e6edf4;
+  color: #1b3c75;
+  font-weight: 700;
+}
+
+.pending-treatment-item {
+  padding: 10px 0;
+  border-bottom: 1px solid #eef3f7;
+}
+
+.pending-treatment-item:last-child {
+  border-bottom: 0;
+}
+
+.pending-treatment-item strong,
+.pending-treatment-item span,
+.pending-treatment-item small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.pending-treatment-item span,
+.pending-treatment-item small,
+.pending-treatment-price span {
+  color: #5b6c7d;
+  font-size: 0.9rem;
+}
+
+.pending-treatment-price {
+  min-width: 150px;
+  text-align: right;
+}
+
+.pending-treatment-price strong {
+  color: #1b3c75;
+}
+
+.pending-treatment-remove {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 4px 9px;
+}
+
 @media (max-width: 720px) {
   .treatment-panel-row {
     grid-template-columns: 1fr;
+  }
+
+  .pending-treatment-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .pending-treatment-price {
+    grid-column: 1 / -1;
+    text-align: left;
+    min-width: 0;
   }
 }
 
@@ -5950,9 +6144,8 @@ td:nth-child(5) {
 
   .entry-step-strip {
     top: 8px;
-    grid-template-columns: repeat(4, minmax(112px, 1fr));
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    overflow-x: visible;
   }
 
   .entry-basics-grid {
@@ -6199,26 +6392,31 @@ td:nth-child(5) {
     grid-template-columns: 1fr;
   }
 
+  .general-treatment-item {
+    grid-template-columns: minmax(0, 1fr) 38px;
+  }
+
+  .general-treatment-price {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
   .entry-step-strip {
     top: 8px;
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
     margin-inline: 0;
     padding: 7px 8px;
-    overflow-x: auto;
+    overflow-x: visible;
     border-radius: 10px;
-    scroll-padding-inline: 8px;
-    scroll-snap-type: x mandatory;
-    scrollbar-width: thin;
   }
 
   .entry-step-strip a {
-    flex: 0 0 min(42vw, 148px);
     min-width: 0;
     min-height: 36px;
     padding: 7px 10px;
-    font-size: 0.86rem;
-    scroll-snap-align: start;
+    font-size: 0.82rem;
     white-space: normal;
     overflow-wrap: anywhere;
   }
