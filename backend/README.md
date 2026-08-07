@@ -115,3 +115,4 @@ Authorization: Bearer <token>
 - Manual pull defaults are bounded for Vercel: `limit=50`, `daysPast=1`, `daysFuture=14`, `reset=false`.
 - Google-only events are imported with fallback patient `Google Calendar Import` and original Google details in appointment notes.
 - Doctor color mapping uses `doctors.google_color_id`, `doctors.calendar_color` and `doctors.calendar_text_color`.
+- Read-only Google pull diagnostics can be run with `node backend/scripts/diagnose-google-pull.js --from 2026-08-01 --to 2026-08-08`.

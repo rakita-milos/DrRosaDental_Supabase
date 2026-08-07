@@ -72,13 +72,38 @@ function createPostgresPatientDocumentsRepository(pool) {
     },
 
     async updateDocument(id, document) {
+      const fileColumns = document.filePath ? `
+            original_filename = ?, stored_filename = ?, file_path = ?, mime_type = ?, file_size = ?, file_hash = ?,`
+        : '';
+      const fileParams = document.filePath ? [
+        document.originalFilename,
+        document.storedFilename,
+        document.filePath,
+        document.mimeType,
+        document.fileSize,
+        document.fileHash
+      ] : [];
       await execute(pool, `
         UPDATE patient_documents
         SET visit_record_id = ?, document_type = ?, title = ?, description = ?, document_date = ?,
+            ${fileColumns}
             imaging_modality = ?, tooth_number = ?, acquisition_date = ?, dicom_study_uid = ?,
             claim_attachment_ready = ?, updated_at = now()
         WHERE id = ?
-      `, [...documentUpdateParams(document, { postgres: true }), id]);
+      `, [
+        document.visitRecordId,
+        document.documentType,
+        document.title,
+        document.description,
+        document.documentDate,
+        ...fileParams,
+        document.imagingModality,
+        document.toothNumber,
+        document.acquisitionDate,
+        document.dicomStudyUid,
+        postgresBoolean(document.claimAttachmentReady, { postgres: true }),
+        id
+      ]);
       return this.findById(id);
     },
 
@@ -126,6 +151,10 @@ function documentUpdateParams(document, { postgres = false } = {}) {
     document.dicomStudyUid,
     postgres ? Boolean(document.claimAttachmentReady) : document.claimAttachmentReady
   ];
+}
+
+function postgresBoolean(value, { postgres = false } = {}) {
+  return postgres ? Boolean(value) : value;
 }
 
 function imagingUpdateParams(document, { postgres = false } = {}) {

@@ -8,7 +8,7 @@ class PublicBookingPage {
     this.lastName = page.locator("#booking-last-name");
     this.email = page.locator("#booking-email");
     this.phone = page.locator("#booking-phone");
-    this.date = page.locator("#booking-date");
+    this.date = page.locator('[data-drrosa-for="booking-date"]');
     this.doctor = page.locator("#booking-doctor");
     this.procedure = page.locator("#booking-procedure");
     this.slot = page.locator("#booking-slot");
@@ -26,7 +26,8 @@ class PublicBookingPage {
     await this.lastName.fill(lastName);
     await this.email.fill(email);
     await this.phone.fill(phone || "060123456");
-    await this.date.fill(date);
+    const [year, month, day] = date.split("-");
+    await this.date.fill(`${day}.${month}.${year}`);
     await this.doctor.selectOption({ index: 0 });
     await this.page.locator("#refresh-slots").click();
     await expect(this.message).toContainText(/Izaberite termin|Nema slobodnih/i);

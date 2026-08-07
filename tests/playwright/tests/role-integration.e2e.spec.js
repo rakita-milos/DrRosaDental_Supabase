@@ -79,8 +79,8 @@ test("director-created patient and visit are visible to staff work screens", asy
   await allRecords.expectPatientVisible(fullName);
 
   await allRecords.openPatient(fullName);
-  await expect(page.locator("#patient-records-body")).toContainText("Plomba");
-  await expect(page.locator("#patient-records-body")).toContainText("210.00 EUR");
+  await expect(page.locator("#patient-activity-timeline")).toContainText("Plomba");
+  await expect(page.locator("#patient-activity-timeline")).toContainText("210.00 EUR");
 });
 
 test("director codebook changes become available to staff entry workflow", async ({ page, request, baseURL }) => {

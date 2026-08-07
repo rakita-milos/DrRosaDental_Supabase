@@ -1,5 +1,6 @@
 (function () {
   const API_BASE = window.DRROSA_API_BASE || "/api";
+  const { escapeHtml } = window.DrRosaSecurity;
 
   function getSession() {
     return JSON.parse(localStorage.getItem("drrosa-session") || "null");
@@ -19,6 +20,7 @@
     localStorage.removeItem("drrosa-token");
     localStorage.removeItem("drrosa-refresh-token");
     localStorage.removeItem("drrosa-session");
+    clearReferenceCache();
   }
 
   async function refreshSession() {
@@ -62,6 +64,28 @@
     return response.json();
   }
 
+  const cachedRequests = new Map();
+
+  function cachedRequest(key, loader, { forceRefresh = false } = {}) {
+    if (!forceRefresh && cachedRequests.has(key)) return cachedRequests.get(key);
+    const promise = loader().catch(error => {
+      cachedRequests.delete(key);
+      throw error;
+    });
+    cachedRequests.set(key, promise);
+    return promise;
+  }
+
+  function clearReferenceCache(prefix) {
+    if (!prefix) {
+      cachedRequests.clear();
+      return;
+    }
+    Array.from(cachedRequests.keys()).forEach(key => {
+      if (key === prefix || key.startsWith(`${prefix}:`)) cachedRequests.delete(key);
+    });
+  }
+
   function fullName(patient) {
     return [patient.first_name || patient.firstName, patient.last_name || patient.lastName]
       .filter(Boolean)
@@ -88,6 +112,7 @@
       currency: row.currency || row.paymentCurrency || "EUR",
       paymentParts: row.paymentParts || row.payment_parts || [],
       shift: row.shift || "Prva smena",
+      generalTreatments: row.generalTreatments || row.general_treatments || [],
       treatments: row.treatments || {}
     };
   }
@@ -137,8 +162,17 @@
     }
   }
 
-  async function getPatients() {
-    const patients = await request("/patients");
+  function queryString(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") query.set(key, value);
+    });
+    return query.toString();
+  }
+
+  async function getPatients(params = {}) {
+    const query = queryString(params);
+    const patients = await request(`/patients${query ? `?${query}` : ""}`);
     return patients.map(patient => ({
       ...patient,
       firstName: patient.first_name,
@@ -239,8 +273,8 @@
     return request(`/documents/${documentId}`, { method: "DELETE" });
   }
 
-  async function getDoctors() {
-    return request("/doctors");
+  async function getDoctors(options = {}) {
+    return cachedRequest("doctors", () => request("/doctors"), options);
   }
 
   async function getDirectorDoctors() {
@@ -248,33 +282,36 @@
   }
 
   async function createDoctor(doctor) {
-    return request("/director/doctors", {
+    const result = await request("/director/doctors", {
       method: "POST",
       body: JSON.stringify(doctor)
     });
+    clearReferenceCache("doctors");
+    return result;
   }
 
   async function updateDoctor(doctorId, doctor) {
-    return request(`/director/doctors/${doctorId}`, {
+    const result = await request(`/director/doctors/${doctorId}`, {
       method: "PUT",
       body: JSON.stringify(doctor)
     });
+    clearReferenceCache("doctors");
+    return result;
   }
 
   async function deactivateDoctor(doctorId) {
-    return request(`/director/doctors/${doctorId}`, { method: "DELETE" });
+    const result = await request(`/director/doctors/${doctorId}`, { method: "DELETE" });
+    clearReferenceCache("doctors");
+    return result;
   }
 
-  async function getChairs() {
-    return request("/chairs");
+  async function getChairs(options = {}) {
+    return cachedRequest("chairs", () => request("/chairs"), options);
   }
 
   async function getAppointments(params = {}) {
-    const query = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== "") query.set(key, value);
-    });
-    return request(`/appointments${query.toString() ? `?${query}` : ""}`);
+    const query = queryString(params);
+    return request(`/appointments${query ? `?${query}` : ""}`);
   }
 
   async function createAppointment(appointment) {
@@ -320,15 +357,31 @@
     });
   }
 
+  async function getGoogleCalendarColors() {
+    return request("/director/google-calendar/colors");
+  }
+
   async function retryCalendarSync() {
     return request("/director/calendar-sync/retry", { method: "POST" });
   }
 
-  async function pullGoogleCalendarChanges({ reset = false, limit = 50, daysPast = 1, daysFuture = 14 } = {}) {
-    return request("/director/calendar-sync/pull-google", {
+  async function pullGoogleCalendarChanges({ reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true, mode = "incremental", timeMin = null, timeMax = null } = {}) {
+    return request("/calendar-sync/pull-google", {
       method: "POST",
-      body: JSON.stringify({ reset, limit, daysPast, daysFuture })
+      body: JSON.stringify({ reset, limit, daysPast, daysFuture, complete, mode, timeMin, timeMax })
     });
+  }
+
+  async function getGoogleCalendarSyncStatus() {
+    return request("/calendar-sync/google/status");
+  }
+
+  async function getNotifications({ sinceId = 0, limit = 20, latest = false } = {}) {
+    const query = new URLSearchParams();
+    if (sinceId) query.set("sinceId", sinceId);
+    if (limit) query.set("limit", limit);
+    if (latest) query.set("latest", "true");
+    return request(`/notifications${query.toString() ? `?${query}` : ""}`);
   }
 
   async function testGoogleCalendarSync() {
@@ -474,6 +527,17 @@
     return request(`/patients/${patientId}/clinical-notes`);
   }
 
+  async function getPatientInternalComments(patientId) {
+    return request(`/patients/${patientId}/internal-comments`);
+  }
+
+  async function createPatientInternalComment(patientId, comment) {
+    return request(`/patients/${patientId}/internal-comments`, {
+      method: "POST",
+      body: JSON.stringify(comment)
+    });
+  }
+
   async function createClinicalNote(patientId, note) {
     return request(`/patients/${patientId}/clinical-notes`, {
       method: "POST",
@@ -594,8 +658,9 @@
     return request(`/documents/${documentId}/imaging/analyze`, { method: "POST" });
   }
 
-  async function getRecords() {
-    const records = await request("/records");
+  async function getRecords(params = {}) {
+    const query = queryString(params);
+    const records = await request(`/records${query ? `?${query}` : ""}`);
     return records.map(normalizeRecord);
   }
 
@@ -616,6 +681,7 @@
         payment_status: record.paymentStatus,
         paymentParts: record.paymentParts || [],
         shift: record.shift,
+        generalTreatments: record.generalTreatments || [],
         treatments: record.treatments
       })
     });
@@ -635,7 +701,9 @@
         amount_paid: record.amountPaid,
         currency: record.currency,
         payment_status: record.paymentStatus,
-        paymentParts: record.paymentParts || []
+        paymentParts: record.paymentParts || [],
+        generalTreatments: record.generalTreatments || [],
+        treatments: record.treatments
       })
     });
   }
@@ -648,8 +716,9 @@
     return request(`/director/reports/${type}`);
   }
 
-  async function getCodebooks(type) {
-    return request(`/codebooks${type ? `?type=${encodeURIComponent(type)}` : ""}`);
+  async function getCodebooks(type, options = {}) {
+    const cacheKey = type ? `codebooks:${type}` : "codebooks";
+    return cachedRequest(cacheKey, () => request(`/codebooks${type ? `?type=${encodeURIComponent(type)}` : ""}`), options);
   }
 
   async function getAdminCodebooks(type) {
@@ -657,21 +726,27 @@
   }
 
   async function createCodebookItem(item) {
-    return request("/director/codebooks", {
+    const result = await request("/director/codebooks", {
       method: "POST",
       body: JSON.stringify(item)
     });
+    clearReferenceCache("codebooks");
+    return result;
   }
 
   async function updateCodebookItem(itemId, item) {
-    return request(`/director/codebooks/${itemId}`, {
+    const result = await request(`/director/codebooks/${itemId}`, {
       method: "PUT",
       body: JSON.stringify(item)
     });
+    clearReferenceCache("codebooks");
+    return result;
   }
 
   async function deleteCodebookItem(itemId) {
-    return request(`/director/codebooks/${itemId}`, { method: "DELETE" });
+    const result = await request(`/director/codebooks/${itemId}`, { method: "DELETE" });
+    clearReferenceCache("codebooks");
+    return result;
   }
 
   async function getExchangeRate(currency, base = "EUR") {
@@ -778,6 +853,50 @@
     });
   }
 
+  function actionButtonFor(target, selector) {
+    if (!target) return null;
+    if (selector) return target.querySelector?.(selector) || document.querySelector(selector);
+    if (target.matches?.("button, a")) return target;
+    return target.querySelector?.("button[type='submit'], .primary-btn, .secondary-btn, .danger-btn") || null;
+  }
+
+  async function withActionLock(target, action, options = {}) {
+    if (!target || typeof action !== "function") return action?.();
+    if (target.dataset.drrosaBusy === "1") return undefined;
+    const button = actionButtonFor(target, options.buttonSelector);
+    if (button?.dataset.drrosaBusy === "1") return undefined;
+
+    const originalText = button?.textContent;
+    const wasDisabled = button?.disabled;
+    target.dataset.drrosaBusy = "1";
+    target.setAttribute?.("aria-busy", "true");
+    if (button) {
+      button.dataset.drrosaBusy = "1";
+      button.disabled = true;
+      button.classList.add("is-loading");
+      if (options.loadingText) button.textContent = options.loadingText;
+    }
+
+    try {
+      return await action();
+    } finally {
+      if (!options.keepLocked) {
+        delete target.dataset.drrosaBusy;
+        target.removeAttribute?.("aria-busy");
+        if (button) {
+          delete button.dataset.drrosaBusy;
+          button.disabled = Boolean(wasDisabled);
+          button.classList.remove("is-loading");
+          if (options.loadingText && originalText != null) button.textContent = originalText;
+        }
+      }
+    }
+  }
+
+  window.DrRosaUi = {
+    withActionLock
+  };
+
   window.DrRosaApi = {
     login,
     logout,
@@ -785,6 +904,7 @@
     changePassword,
     clearSession,
     getSession,
+    clearReferenceCache,
     getPatients,
     getPatient,
     createPatient,
@@ -821,8 +941,11 @@
     deleteCodebookItem,
     getGoogleCalendarSettings,
     updateGoogleCalendarSettings,
+    getGoogleCalendarColors,
     retryCalendarSync,
     pullGoogleCalendarChanges,
+    getGoogleCalendarSyncStatus,
+    getNotifications,
     testGoogleCalendarSync,
     exchangeGoogleCalendarCode,
     verifyGoogleCalendarOAuth,
@@ -845,6 +968,8 @@
     deleteClinicalChartEntry,
     getClinicalNoteTemplates,
     getClinicalNotes,
+    getPatientInternalComments,
+    createPatientInternalComment,
     createClinicalNote,
     updateClinicalNote,
     deleteClinicalNote,
@@ -894,23 +1019,72 @@
     initializePublicBookingNavigation();
   }
 
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+  function showGlobalNotification(notification) {
+    if (!notification?.message) return;
+    let wrap = document.querySelector(".global-notification-stack");
+    if (!wrap) {
+      wrap = document.createElement("div");
+      wrap.className = "global-notification-stack";
+      wrap.setAttribute("aria-live", "polite");
+      document.body.appendChild(wrap);
+    }
+    const toast = document.createElement("article");
+    toast.className = `global-notification ${String(notification.type || "").includes("failed") ? "error" : "info"}`;
+    toast.innerHTML = `
+      <strong>${escapeHtml(notification.title || "Obavestenje")}</strong>
+      <span>${escapeHtml(notification.message)}</span>
+    `;
+    wrap.appendChild(toast);
+    window.setTimeout(() => toast.remove(), 9000);
   }
 
-  function cell(value, className) {
-    const td = document.createElement("td");
-    if (className) td.className = className;
-    td.textContent = value ?? "-";
-    return td;
+  function initializeNotifications() {
+    if (window.DrRosaNotificationsStarted || location.pathname.endsWith("/login.html")) return;
+    window.DrRosaNotificationsStarted = true;
+    let lastId = Number(localStorage.getItem("drrosa-last-notification-id") || 0);
+    const startedAt = Date.now();
+    const historicalToastGraceMs = 5000;
+    const baselineReady = lastId > 0
+      ? Promise.resolve()
+      : getNotifications({ latest: true, limit: 1 })
+        .then(notifications => {
+          const newestId = Math.max(0, ...notifications.map(notification => Number(notification.id || 0)));
+          if (newestId > 0) {
+            lastId = newestId;
+            localStorage.setItem("drrosa-last-notification-id", String(lastId));
+          }
+        })
+        .catch(() => {
+          // Notification baseline must never interrupt clinical workflows.
+        });
+
+    async function poll() {
+      if (!getSession()) return;
+      try {
+        await baselineReady;
+        const notifications = await getNotifications({ sinceId: lastId, limit: 10 });
+        notifications.forEach(notification => {
+          lastId = Math.max(lastId, Number(notification.id || 0));
+          const createdAt = Date.parse(notification.createdAt || "");
+          if (Number.isFinite(createdAt) && createdAt >= startedAt - historicalToastGraceMs) {
+            showGlobalNotification(notification);
+          }
+        });
+        localStorage.setItem("drrosa-last-notification-id", String(lastId));
+      } catch (_error) {
+        // Notification polling must never interrupt clinical workflows.
+      }
+    }
+
+    window.setTimeout(poll, 2500);
+    window.setInterval(poll, 12000);
   }
 
-  window.DrRosaSecurity = { escapeHtml, cell };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeNotifications);
+  } else {
+    initializeNotifications();
+  }
 
   function initializeCustomSelects() {
     if (window.DrRosaCustomSelects?.initialized) return;
@@ -1071,5 +1245,49 @@
     document.addEventListener("DOMContentLoaded", initializeCustomSelects);
   } else {
     initializeCustomSelects();
+  }
+
+  function initializeResponsiveMenu() {
+    const topbar = document.querySelector(".topbar");
+    const nav = topbar?.querySelector(".topbar-actions");
+    if (!topbar || !nav || topbar.querySelector(".mobile-menu-toggle")) return;
+
+    const button = document.createElement("button");
+    const navId = nav.id || "primary-navigation";
+    nav.id = navId;
+    button.className = "mobile-menu-toggle";
+    button.type = "button";
+    button.setAttribute("aria-controls", navId);
+    button.setAttribute("aria-expanded", "false");
+    button.innerHTML = "<span></span><span></span><span></span><strong>Meni</strong>";
+
+    topbar.insertBefore(button, nav);
+
+    function setOpen(isOpen) {
+      topbar.classList.toggle("menu-open", isOpen);
+      button.setAttribute("aria-expanded", String(isOpen));
+    }
+
+    button.addEventListener("click", () => {
+      setOpen(!topbar.classList.contains("menu-open"));
+    });
+
+    nav.addEventListener("click", event => {
+      if (event.target.closest("a, button")) setOpen(false);
+    });
+
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") setOpen(false);
+    });
+
+    window.addEventListener("resize", () => {
+      if (window.innerWidth > 980) setOpen(false);
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeResponsiveMenu);
+  } else {
+    initializeResponsiveMenu();
   }
 })();

@@ -117,6 +117,8 @@ const recordCreateSchema = Joi.object({
   shift: Joi.string().max(80).optional().allow('', null),
   paymentParts: Joi.array().items(paymentPartSchema).optional(),
   payment_parts: Joi.array().items(paymentPartSchema).optional(),
+  generalTreatments: Joi.array().items(treatmentSchema).optional(),
+  general_treatments: Joi.array().items(treatmentSchema).optional(),
   treatments: Joi.alternatives().try(
     Joi.array().items(treatmentSchema),
     Joi.object().pattern(Joi.string().max(20), Joi.alternatives().try(treatmentSchema, Joi.array().items(treatmentSchema)))
@@ -151,6 +153,46 @@ const publicBookingSchema = Joi.object({
   .or('procedureId', 'procedure_id', 'procedureName', 'procedure_name')
   .or('startsAt', 'starts_at');
 
+const appointmentWriteSchema = Joi.object({
+  patient_id: Joi.number().integer().positive().optional(),
+  patientId: Joi.number().integer().positive().optional(),
+  doctor_id: Joi.number().integer().positive().optional(),
+  doctorId: Joi.number().integer().positive().optional(),
+  chair_id: Joi.number().integer().positive().optional(),
+  chairId: Joi.number().integer().positive().optional(),
+  procedure_id: Joi.number().integer().positive().optional().allow(null),
+  procedureId: Joi.number().integer().positive().optional().allow(null),
+  procedure_name: Joi.string().max(255).optional().allow('', null),
+  procedureName: Joi.string().max(255).optional().allow('', null),
+  starts_at: Joi.string().max(40).optional(),
+  startsAt: Joi.string().max(40).optional(),
+  ends_at: Joi.string().max(40).optional().allow('', null),
+  endsAt: Joi.string().max(40).optional().allow('', null),
+  duration_minutes: Joi.number().integer().min(5).max(480).optional(),
+  durationMinutes: Joi.number().integer().min(5).max(480).optional(),
+  status: Joi.string().valid('scheduled', 'confirmed', 'arrived', 'completed', 'cancelled', 'no_show').optional(),
+  notes: Joi.string().max(2000).optional().allow('', null)
+});
+
+const appointmentStatusSchema = Joi.object({
+  status: Joi.string().valid('scheduled', 'confirmed', 'arrived', 'completed', 'cancelled', 'no_show').required()
+});
+
+const googlePullSchema = Joi.object({
+  mode: Joi.string().valid('incremental', 'range').optional().default('incremental'),
+  reset: Joi.boolean().optional().default(false),
+  limit: Joi.number().integer().min(1).max(100).optional().default(100),
+  daysPast: Joi.number().integer().min(0).max(30).optional(),
+  days_past: Joi.number().integer().min(0).max(30).optional(),
+  daysFuture: Joi.number().integer().min(1).max(180).optional(),
+  days_future: Joi.number().integer().min(1).max(180).optional(),
+  timeMin: Joi.string().isoDate().optional(),
+  time_min: Joi.string().isoDate().optional(),
+  timeMax: Joi.string().isoDate().optional(),
+  time_max: Joi.string().isoDate().optional(),
+  complete: Joi.boolean().optional().default(true)
+});
+
 const importScanSchema = Joi.object({
   visitRecordId: Joi.number().integer().positive().optional().allow(null),
   documentType: Joi.string().max(40).optional().allow('', null),
@@ -164,6 +206,138 @@ const importScanSchema = Joi.object({
   claimAttachmentReady: Joi.boolean().optional().default(false)
 });
 
+const medicalProfileSchema = Joi.object({
+  bloodType: Joi.string().max(20).optional().allow('', null),
+  blood_type: Joi.string().max(20).optional().allow('', null),
+  allergies: Joi.string().max(2000).optional().allow('', null),
+  medications: Joi.string().max(2000).optional().allow('', null),
+  chronicConditions: Joi.string().max(2000).optional().allow('', null),
+  chronic_conditions: Joi.string().max(2000).optional().allow('', null),
+  contraindications: Joi.string().max(2000).optional().allow('', null),
+  previousSurgeries: Joi.string().max(2000).optional().allow('', null),
+  previous_surgeries: Joi.string().max(2000).optional().allow('', null),
+  pregnancyStatus: Joi.string().max(255).optional().allow('', null),
+  pregnancy_status: Joi.string().max(255).optional().allow('', null),
+  smoker: Joi.boolean().truthy(1, '1', 'true').falsy(0, '0', 'false').optional(),
+  diabetes: Joi.boolean().truthy(1, '1', 'true').falsy(0, '0', 'false').optional(),
+  highBloodPressure: Joi.boolean().truthy(1, '1', 'true').falsy(0, '0', 'false').optional(),
+  high_blood_pressure: Joi.boolean().truthy(1, '1', 'true').falsy(0, '0', 'false').optional(),
+  heartCondition: Joi.boolean().truthy(1, '1', 'true').falsy(0, '0', 'false').optional(),
+  heart_condition: Joi.boolean().truthy(1, '1', 'true').falsy(0, '0', 'false').optional(),
+  anesthesiaWarning: Joi.string().max(2000).optional().allow('', null),
+  anesthesia_warning: Joi.string().max(2000).optional().allow('', null),
+  dentalNotes: Joi.string().max(2000).optional().allow('', null),
+  dental_notes: Joi.string().max(2000).optional().allow('', null),
+  internalNotes: Joi.string().max(2000).optional().allow('', null),
+  internal_notes: Joi.string().max(2000).optional().allow('', null)
+});
+
+const documentUpdateSchema = Joi.object({
+  fileBase64: Joi.string().base64({ paddingRequired: false }).optional(),
+  originalFilename: Joi.string().max(255).optional(),
+  mimeType: Joi.string().valid(...ALLOWED_DOCUMENT_MIME).optional(),
+  visitRecordId: Joi.number().integer().positive().optional().allow(null),
+  visit_record_id: Joi.number().integer().positive().optional().allow(null),
+  documentType: Joi.string().max(40).optional().allow('', null),
+  document_type: Joi.string().max(40).optional().allow('', null),
+  title: Joi.string().max(160).optional().allow('', null),
+  description: Joi.string().max(1000).optional().allow('', null),
+  documentDate: Joi.string().max(20).optional().allow('', null),
+  document_date: Joi.string().max(20).optional().allow('', null),
+  imagingModality: Joi.string().max(40).optional().allow('', null),
+  imaging_modality: Joi.string().max(40).optional().allow('', null),
+  toothNumber: Joi.string().max(40).optional().allow('', null),
+  tooth_number: Joi.string().max(40).optional().allow('', null),
+  acquisitionDate: Joi.string().max(20).optional().allow('', null),
+  acquisition_date: Joi.string().max(20).optional().allow('', null),
+  dicomStudyUid: Joi.string().max(120).optional().allow('', null),
+  dicom_study_uid: Joi.string().max(120).optional().allow('', null),
+  claimAttachmentReady: Joi.boolean().optional(),
+  claim_attachment_ready: Joi.boolean().optional()
+}).with('fileBase64', ['originalFilename', 'mimeType']);
+
+const recordUpdateSchema = recordCreateSchema.fork(['patient_id', 'doctor_id', 'visit_date'], schema => schema.optional());
+
+const publicBookingSettingsSchema = Joi.object({
+  enabled: Joi.boolean().truthy(1, '1', 'true').falsy(0, '0', 'false').required()
+});
+
+const googleCalendarSettingsSchema = Joi.object({
+  connectedEmail: Joi.string().email().optional().allow('', null),
+  connected_email: Joi.string().email().optional().allow('', null),
+  calendarId: Joi.string().max(255).optional().allow('', null),
+  calendar_id: Joi.string().max(255).optional().allow('', null),
+  calendarName: Joi.string().max(255).optional().allow('', null),
+  calendar_name: Joi.string().max(255).optional().allow('', null),
+  clientId: Joi.string().max(255).optional().allow('', null),
+  client_id: Joi.string().max(255).optional().allow('', null),
+  clientSecret: Joi.string().max(255).optional().allow('', null),
+  client_secret: Joi.string().max(255).optional().allow('', null),
+  redirectUri: Joi.string().uri().max(500).optional().allow('', null),
+  redirect_uri: Joi.string().uri().max(500).optional().allow('', null),
+  syncEnabled: Joi.boolean().truthy(1, '1', 'true').falsy(0, '0', 'false').optional(),
+  sync_enabled: Joi.boolean().truthy(1, '1', 'true').falsy(0, '0', 'false').optional(),
+  syncDirection: Joi.string().valid('app_to_google', 'two_way').optional(),
+  sync_direction: Joi.string().valid('app_to_google', 'two_way').optional(),
+  defaultReminderMinutes: Joi.number().integer().min(0).max(10080).optional(),
+  default_reminder_minutes: Joi.number().integer().min(0).max(10080).optional(),
+  directorPassword: Joi.string().min(12).optional(),
+  director_password: Joi.string().min(12).optional()
+});
+
+const googleOAuthExchangeSchema = Joi.object({
+  code: Joi.string().max(4096).required()
+});
+
+const doctorWriteSchema = Joi.object({
+  name: Joi.string().max(120).optional().allow('', null),
+  specialization: Joi.string().max(120).optional().allow('', null),
+  licenseNumber: Joi.string().max(80).optional().allow('', null),
+  license_number: Joi.string().max(80).optional().allow('', null),
+  email: Joi.string().email().optional().allow('', null),
+  phone: Joi.string().max(50).optional().allow('', null),
+  isActive: Joi.boolean().optional(),
+  is_active: Joi.boolean().optional(),
+  googleColorId: Joi.string().max(40).optional().allow('', null),
+  google_color_id: Joi.string().max(40).optional().allow('', null),
+  calendarColor: Joi.string().max(20).optional().allow('', null),
+  calendar_color: Joi.string().max(20).optional().allow('', null),
+  calendarTextColor: Joi.string().max(20).optional().allow('', null),
+  calendar_text_color: Joi.string().max(20).optional().allow('', null)
+});
+
+const codebookWriteSchema = Joi.object({
+  type: Joi.string().max(40).optional(),
+  value: Joi.string().max(120).optional(),
+  label: Joi.string().max(120).optional().allow('', null),
+  groupName: Joi.string().max(120).optional().allow('', null),
+  group_name: Joi.string().max(120).optional().allow('', null),
+  metadata: Joi.object().unknown(true).optional().allow(null),
+  price: Joi.number().min(0).optional().allow(null),
+  priceCurrency: Joi.string().max(10).optional().allow('', null),
+  price_currency: Joi.string().max(10).optional().allow('', null),
+  isActive: Joi.boolean().optional(),
+  is_active: Joi.boolean().optional(),
+  sortOrder: Joi.number().integer().optional(),
+  sort_order: Joi.number().integer().optional()
+});
+
+const dailyCashReportSchema = Joi.object({
+  date: Joi.string().max(20).optional(),
+  reportDate: Joi.string().max(20).optional(),
+  shift: Joi.string().max(80).optional().allow('', null),
+  notes: Joi.string().max(2000).optional().allow('', null),
+  lines: Joi.array().items(Joi.object({
+    itemValue: Joi.string().max(120).optional(),
+    item_value: Joi.string().max(120).optional(),
+    amounts: Joi.object().pattern(Joi.string().max(10), Joi.number().min(0)).optional(),
+    notes: Joi.alternatives().try(
+      Joi.string().max(1000).allow('', null),
+      Joi.object().pattern(Joi.string().max(10), Joi.string().max(1000).allow('', null))
+    ).optional()
+  })).optional().default([])
+}).or('date', 'reportDate');
+
 module.exports = {
   validateBody,
   loginSchema,
@@ -173,5 +347,17 @@ module.exports = {
   patientDocumentSchema,
   recordCreateSchema,
   publicBookingSchema,
-  importScanSchema
+  appointmentWriteSchema,
+  appointmentStatusSchema,
+  googlePullSchema,
+  importScanSchema,
+  medicalProfileSchema,
+  documentUpdateSchema,
+  recordUpdateSchema,
+  publicBookingSettingsSchema,
+  googleCalendarSettingsSchema,
+  googleOAuthExchangeSchema,
+  doctorWriteSchema,
+  codebookWriteSchema,
+  dailyCashReportSchema
 };

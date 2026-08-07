@@ -9,6 +9,22 @@ function createAuthSessionRepository({ pgPool }) {
   return createPostgresAuthSessionRepository(pgPool);
 }
 
+const USER_AUTH_COLUMNS = `
+  id, email, password_hash, name, role, permissions_json,
+  failed_login_attempts, locked_until, password_changed_at,
+  two_factor_secret, two_factor_enabled, created_at, updated_at
+`;
+
+const USER_SECURITY_COLUMNS = `
+  id, email, name, role, permissions_json,
+  failed_login_attempts, locked_until, password_changed_at,
+  two_factor_enabled, created_at, updated_at
+`;
+
+const REFRESH_TOKEN_COLUMNS = `
+  id, user_id, user_agent, ip_address, expires_at, revoked_at, created_at
+`;
+
 function createPostgresAuthSessionRepository(pool) {
   return {
     usersForPasswordRotation() {
@@ -20,19 +36,19 @@ function createPostgresAuthSessionRepository(pool) {
     },
 
     findUserByIdEmail(id, email) {
-      return queryOne(pool, 'SELECT * FROM users WHERE id = ? AND email = ?', [id, email]);
+      return queryOne(pool, `SELECT ${USER_AUTH_COLUMNS} FROM users WHERE id = ? AND email = ?`, [id, email]);
     },
 
     findUserById(id) {
-      return queryOne(pool, 'SELECT * FROM users WHERE id = ?', [id]);
+      return queryOne(pool, `SELECT ${USER_AUTH_COLUMNS} FROM users WHERE id = ?`, [id]);
     },
 
     findUserByEmail(email) {
-      return queryOne(pool, 'SELECT * FROM users WHERE email = ?', [email]);
+      return queryOne(pool, `SELECT ${USER_AUTH_COLUMNS} FROM users WHERE email = ?`, [email]);
     },
 
     listSecurityUsers() {
-      return queryMany(pool, 'SELECT * FROM users ORDER BY role, email');
+      return queryMany(pool, `SELECT ${USER_SECURITY_COLUMNS} FROM users ORDER BY role, email`);
     },
 
     listAuditEntries({ action = null, userId = null, limit = 100 }) {
@@ -85,7 +101,8 @@ function createPostgresAuthSessionRepository(pool) {
 
     findRefreshSessionByTokenHash(tokenHash) {
       return queryOne(pool, `
-        SELECT rt.*, u.email, u.name, u.role, u.two_factor_enabled
+        SELECT rt.id, rt.user_id, rt.token_hash, rt.user_agent, rt.ip_address, rt.expires_at,
+               rt.revoked_at, rt.created_at, u.email, u.name, u.role, u.two_factor_enabled
         FROM refresh_tokens rt
         JOIN users u ON u.id = rt.user_id
         WHERE rt.token_hash = ?
@@ -114,7 +131,8 @@ function createPostgresAuthSessionRepository(pool) {
 
     listActiveSessions(limit) {
       return queryMany(pool, `
-        SELECT rt.*, u.email, u.name, u.role
+        SELECT rt.id, rt.user_id, rt.user_agent, rt.ip_address, rt.expires_at,
+               rt.revoked_at, rt.created_at, u.email, u.name, u.role
         FROM refresh_tokens rt
         LEFT JOIN users u ON u.id = rt.user_id
         WHERE rt.revoked_at IS NULL AND rt.expires_at > now()
@@ -124,7 +142,7 @@ function createPostgresAuthSessionRepository(pool) {
     },
 
     findRefreshTokenById(id) {
-      return queryOne(pool, 'SELECT * FROM refresh_tokens WHERE id = ?', [id]);
+      return queryOne(pool, `SELECT ${REFRESH_TOKEN_COLUMNS} FROM refresh_tokens WHERE id = ?`, [id]);
     },
 
     updateUserPermissions({ userId, permissionsJson }) {

@@ -26,6 +26,15 @@ const { createBillingRepository } = require('./db/billing');
 const { createRuntimeSettingsRepository } = require('./db/runtime-settings');
 const { createStartupSeedRepository } = require('./db/startup-seed');
 const { createPool, initializePostgresSchema } = require('./db/postgres');
+const { asyncRoute, sendError } = require('./route-utils');
+const { registerSystemRoutes } = require('./routes/system-routes');
+const {
+  createAppointmentService,
+  appointmentDurationMinutes,
+  isAppointmentOverlapConstraintError,
+  sendAppointmentConflictError
+} = require('./services/appointment-service');
+const { createGoogleCalendarSyncService } = require('./services/google-calendar-sync-service');
 const {
   validateBody,
   loginSchema,
@@ -35,7 +44,19 @@ const {
   patientDocumentSchema,
   recordCreateSchema,
   publicBookingSchema,
-  importScanSchema
+  appointmentWriteSchema,
+  appointmentStatusSchema,
+  googlePullSchema,
+  importScanSchema,
+  medicalProfileSchema,
+  documentUpdateSchema,
+  recordUpdateSchema,
+  publicBookingSettingsSchema,
+  googleCalendarSettingsSchema,
+  googleOAuthExchangeSchema,
+  doctorWriteSchema,
+  codebookWriteSchema,
+  dailyCashReportSchema
 } = require('./validation');
 
 const app = express();
@@ -107,6 +128,26 @@ const clinicalRepo = createClinicalRepository({ pgPool });
 const billingRepo = createBillingRepository({ pgPool });
 const runtimeSettings = createRuntimeSettingsRepository({ pgPool });
 const startupSeed = createStartupSeedRepository({ pgPool });
+const appointmentService = createAppointmentService({
+  calendarRepo,
+  procedureByInput,
+  activeDoctorExists,
+  positiveInteger,
+  validatedText,
+  normalizeIsoDateTime,
+  normalizeAppointmentStatus
+});
+const googleCalendarSyncService = createGoogleCalendarSyncService({
+  cleanText,
+  normalizeIsoDateTime,
+  appointmentDurationMinutes
+});
+const {
+  googleEventTimeInfo,
+  googleEventProcedureName,
+  googleEventChairSearchText,
+  chairIdFromGoogleEvent
+} = googleCalendarSyncService;
 
 let server;
 let runtimeReadyPromise;
@@ -233,6 +274,12 @@ const publicBookingWriteLimiter = createRateLimiter({
   message: 'Too many booking requests. Try again later.'
 });
 
+const googleSyncLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.GOOGLE_SYNC_RATE_LIMIT_MAX || 8),
+  message: 'Too many Google Calendar sync requests. Try again later.'
+});
+
 const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '15m';
 const REFRESH_TOKEN_DAYS = Number(process.env.REFRESH_TOKEN_DAYS || 14);
 const LOCKOUT_ATTEMPTS = Number(process.env.LOCKOUT_ATTEMPTS || 5);
@@ -301,8 +348,12 @@ function setAppSetting(key, value) {
   return runtimeSettings.setAppSetting({ key, value });
 }
 
+function publicBookingFeatureAvailable() {
+  return String(process.env.PUBLIC_BOOKING_FEATURE_ENABLED || '0') === '1';
+}
+
 async function isPublicBookingEnabled() {
-  return await appSetting('public_booking_enabled', '1') === '1';
+  return publicBookingFeatureAvailable() && await appSetting('public_booking_enabled', '0') === '1';
 }
 
 async function requirePublicBookingEnabled(_req, res, next) {
@@ -939,9 +990,10 @@ function cleanText(value, { max = 255, required = false } = {}) {
 }
 
 function normalizeHexColor(value) {
-  const color = cleanText(value, { max: 7 });
+  const color = cleanText(value, { max: 20 });
   if (!color) return null;
-  return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : color;
+  const withHash = color.startsWith('#') ? color : `#${color}`;
+  return /^#[0-9a-fA-F]{6}$/.test(withHash) ? withHash.toLowerCase() : color;
 }
 
 function normalizeGoogleAuthCode(value) {
@@ -1003,6 +1055,27 @@ function validatedPhone(value, { required = false } = {}) {
 function positiveInteger(value) {
   const number = Number(value);
   return Number.isInteger(number) && number > 0 ? number : null;
+}
+
+function paginationFromQuery(query, { maxLimit = 200 } = {}) {
+  const requestedLimit = Number(query.limit);
+  const requestedOffset = Number(query.offset);
+  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+    ? Math.min(requestedLimit, maxLimit)
+    : null;
+  const offset = Number.isInteger(requestedOffset) && requestedOffset > 0 ? requestedOffset : 0;
+  return {
+    search: cleanText(query.search || query.q, { max: 120 }) || '',
+    limit,
+    offset
+  };
+}
+
+function timingSafeSecretEqual(actual, expected) {
+  if (!actual || !expected) return false;
+  const actualBuffer = Buffer.from(String(actual));
+  const expectedBuffer = Buffer.from(String(expected));
+  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
 const APPOINTMENT_STATUSES = new Set(['scheduled', 'confirmed', 'arrived', 'completed', 'cancelled', 'no_show']);
@@ -1075,6 +1148,8 @@ async function normalizePaymentPart(part) {
   };
 }
 
+const GENERAL_TREATMENT_TOOTH_NUMBER = '__general__';
+
 async function normalizedPaymentParts(record) {
   const parts = Array.isArray(record.paymentParts)
     ? record.paymentParts
@@ -1124,45 +1199,51 @@ async function totalAmountForPayment(record, paymentParts, currency) {
 }
 
 function normalizedTreatments(record) {
-  if (!record.treatments || typeof record.treatments !== 'object') return [];
-  return Object.entries(record.treatments).flatMap(([toothNumber, treatments]) => {
-    const treatmentList = Array.isArray(treatments) ? treatments : [treatments];
-    return treatmentList.map(treatment => {
-      const price = Math.max(0, Number(treatment.price || 0));
-      const discountType = treatment.discountType === 'percent' || treatment.discount_type === 'percent' ? 'percent' : 'amount';
-      const rawDiscountValue = Number(treatment.discountValue ?? treatment.discount_value ?? treatment.discount ?? 0);
-      const discountValue = discountType === 'percent'
-        ? Math.min(100, Math.max(0, rawDiscountValue))
-        : Math.max(0, rawDiscountValue);
-      const discount = discountType === 'percent'
-        ? Math.min(price, price * discountValue / 100)
-        : Math.min(price, discountValue);
-      return {
-        toothNumber: cleanText(toothNumber, { max: 10 }),
-        type: cleanText(treatment.type, { max: 255, required: true }),
-        status: normalizeStatus(treatment.status || 'Planirano'),
-        note: cleanText(treatment.note, { max: 1000 }),
-        price,
-        currency: normalizeCurrency(treatment.currency || treatment.priceCurrency || treatment.price_currency || record.currency),
-        discount,
-        discountType,
-        discountValue
-      };
-    });
-  });
+  const toothTreatments = Array.isArray(record.treatments)
+    ? record.treatments.map(treatment => normalizeTreatmentPayload(record, treatment.toothNumber || treatment.tooth, treatment))
+    : record.treatments && typeof record.treatments === 'object'
+      ? Object.entries(record.treatments).flatMap(([toothNumber, treatments]) => {
+        const treatmentList = Array.isArray(treatments) ? treatments : [treatments];
+        return treatmentList.map(treatment => normalizeTreatmentPayload(record, toothNumber, treatment));
+      })
+    : [];
+  const generalTreatments = Array.isArray(record.generalTreatments)
+    ? record.generalTreatments
+    : Array.isArray(record.general_treatments)
+      ? record.general_treatments
+      : [];
+  return [
+    ...toothTreatments,
+    ...generalTreatments.map(treatment => normalizeTreatmentPayload(record, GENERAL_TREATMENT_TOOTH_NUMBER, treatment))
+  ].filter(treatment => treatment.type);
+}
+
+function normalizeTreatmentPayload(record, toothNumber, treatment) {
+  const price = Math.max(0, Number(treatment.price || 0));
+  const discountType = treatment.discountType === 'percent' || treatment.discount_type === 'percent' ? 'percent' : 'amount';
+  const rawDiscountValue = Number(treatment.discountValue ?? treatment.discount_value ?? treatment.discount ?? 0);
+  const discountValue = discountType === 'percent'
+    ? Math.min(100, Math.max(0, rawDiscountValue))
+    : Math.max(0, rawDiscountValue);
+  const discount = discountType === 'percent'
+    ? Math.min(price, price * discountValue / 100)
+    : Math.min(price, discountValue);
+  return {
+    toothNumber: cleanText(toothNumber, { max: 20 }) || GENERAL_TREATMENT_TOOTH_NUMBER,
+    type: cleanText(treatment.type || treatment.treatmentType, { max: 255, required: true }),
+    status: normalizeStatus(treatment.status || 'Planirano'),
+    note: cleanText(treatment.note || treatment.notes, { max: 1000 }),
+    price,
+    currency: normalizeCurrency(treatment.currency || treatment.priceCurrency || treatment.price_currency || record.currency),
+    discount,
+    discountType,
+    discountValue
+  };
 }
 
 function signedMoney(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) ? number : 0;
-}
-
-function appointmentDurationMinutes(startsAt, endsAt) {
-  return Math.round((new Date(endsAt).getTime() - new Date(startsAt).getTime()) / 60000);
-}
-
-function appointmentConflict({ appointmentId = null, doctorId, chairId, startsAt, endsAt }) {
-  return calendarRepo.appointmentConflict({ appointmentId, doctorId, chairId, startsAt, endsAt });
 }
 
 function serializeAppointment(row) {
@@ -1186,6 +1267,13 @@ function serializeAppointment(row) {
     notes: row.notes,
     googleEventId: row.google_event_id,
     googleSyncStatus: row.google_sync_status,
+    googleEventType: row.google_event_type || 'appointment',
+    googleTitle: row.google_title || '',
+    googlePatientMatchStatus: row.google_patient_match_status || '',
+    googlePatientMatchNote: row.google_patient_match_note || '',
+    patientMatchLocked: Boolean(row.patient_match_locked),
+    googleSyncWarning: row.google_sync_warning || '',
+    googleSyncWarningCode: row.google_sync_warning_code || '',
     visitRecordId: row.visit_record_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -1349,9 +1437,89 @@ function googleEventColor(event, colorContext = {}) {
   const color = colorId ? colorContext.eventColors?.[colorId] : null;
   return {
     googleColorId: eventLabelId || colorId || null,
+    eventLabelId,
+    colorId,
     background: cleanText(label?.backgroundColor || color?.background, { max: 20 }),
     foreground: cleanText(color?.foreground, { max: 20 })
   };
+}
+
+function combineGoogleWarnings(...warnings) {
+  const parts = warnings
+    .map(warning => cleanText(warning, { max: 500 }))
+    .filter(Boolean);
+  return parts.length ? parts.join(' ') : null;
+}
+
+function combineGoogleWarningCodes(...codes) {
+  const parts = codes
+    .map(code => cleanText(code, { max: 80 }))
+    .filter(Boolean);
+  const conflictCode = parts.find(code => ['doctor_conflict', 'chair_conflict', 'chair_reassigned'].includes(code));
+  return conflictCode || parts[0] || null;
+}
+
+async function doctorForGoogleEvent(event, colorContext, { fallbackDoctorId = null } = {}) {
+  const googleColor = googleEventColor(event, colorContext);
+  const hasGoogleColor = Boolean(googleColor.googleColorId || googleColor.background);
+  let matchedDoctor = null;
+  if (hasGoogleColor) {
+    matchedDoctor = await calendarRepo.doctorByGoogleColor({
+      googleColorId: googleColor.googleColorId,
+      calendarColor: googleColor.background
+    });
+    if (!matchedDoctor?.id && googleColor.colorId && googleColor.colorId !== googleColor.googleColorId) {
+      matchedDoctor = await calendarRepo.doctorByGoogleColor({
+        googleColorId: googleColor.colorId,
+        calendarColor: googleColor.background
+      });
+    }
+  }
+
+  if (matchedDoctor?.id) {
+    return { doctor: matchedDoctor, warning: null, warningCode: null, googleColor };
+  }
+
+  const titleDoctor = await doctorFromGoogleTitle(event);
+  if (titleDoctor?.id) {
+    return { doctor: titleDoctor, warning: null, warningCode: null, googleColor };
+  }
+
+  const fallbackDoctor = fallbackDoctorId ? { id: fallbackDoctorId } : await calendarRepo.defaultActiveDoctor();
+  const fallbackLabel = fallbackDoctorId ? 'postojecem doktoru' : 'podrazumevanom doktoru';
+  const colorLabel = [googleColor.eventLabelId, googleColor.colorId, googleColor.background].filter(Boolean).join(' / ');
+  return {
+    doctor: fallbackDoctor,
+    warning: hasGoogleColor
+      ? `Google boja ${colorLabel} nije povezana ni sa jednim aktivnim doktorom. Termin je dodeljen ${fallbackLabel}.`
+      : null,
+    warningCode: hasGoogleColor ? 'google_doctor_color_unmapped' : null,
+    googleColor
+  };
+}
+
+function normalizeDoctorMatchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(?:dr|doktor|doktorka|doktorica|spec)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+async function doctorFromGoogleTitle(event) {
+  const title = normalizeDoctorMatchText([event?.summary, event?.description].filter(Boolean).join(' '));
+  if (!title) return null;
+  const doctors = await calendarRepo.activeDoctors();
+  const matches = doctors.filter(doctor => {
+    const name = normalizeDoctorMatchText(doctor.name);
+    if (!name) return false;
+    if (title.includes(name)) return true;
+    const tokens = name.split(/\s+/).filter(token => token.length >= 3);
+    return tokens.length >= 2 && tokens.every(token => title.includes(token));
+  });
+  return matches.length === 1 ? matches[0] : null;
 }
 
 async function queueCalendarSync(appointmentId, action) {
@@ -1405,23 +1573,6 @@ async function googleEventAppointmentId(event) {
   return null;
 }
 
-function googleEventTimes(event) {
-  const startsAt = normalizeIsoDateTime(event?.start?.dateTime);
-  const endsAt = normalizeIsoDateTime(event?.end?.dateTime);
-  if (!startsAt || !endsAt || appointmentDurationMinutes(startsAt, endsAt) <= 0) return null;
-  return { startsAt, endsAt };
-}
-
-function googleEventProcedureName(event, fallback) {
-  const summary = cleanText(event?.summary, { max: 255 });
-  if (!summary) return fallback;
-  if (event?.extendedProperties?.private?.drrosaSource === 'drrosa') {
-    const [procedure] = summary.split(' - ');
-    return cleanText(procedure, { max: 255 }) || fallback;
-  }
-  return summary;
-}
-
 function googleImportNotes(event) {
   const parts = [
     'Uvezeno iz Google Calendar-a. Pacijent nije povezan sa kartonom u aplikaciji.',
@@ -1434,33 +1585,242 @@ function googleImportNotes(event) {
   return cleanText(parts.join('\n'), { max: 2000 });
 }
 
+function googleNonAppointmentNotes(event, googleEventType = 'google_event') {
+  const typeLabel = googleEventType === 'doctor_absence'
+    ? 'Godišnji/odsustvo doktora'
+    : 'Google napomena';
+  const parts = [
+    `Uvezeno iz Google Calendar-a kao: ${typeLabel}.`,
+    'Ovaj dogadjaj ne blokira stolice i ne tretira se kao termin pacijenta.',
+    `Google naslov: ${cleanText(event?.summary, { max: 255 }) || 'Bez naslova'}`
+  ];
+  const description = cleanText(event?.description, { max: 1500 });
+  if (description) parts.push(`Google opis: ${description}`);
+  const location = cleanText(event?.location, { max: 255 });
+  if (location) parts.push(`Google lokacija: ${location}`);
+  return cleanText(parts.join('\n'), { max: 2000 });
+}
+
+function googleNotesForEvent(event, googleEventType = 'appointment') {
+  return googleEventType === 'appointment'
+    ? googleImportNotes(event)
+    : googleNonAppointmentNotes(event, googleEventType);
+}
+
+function normalizePatientMatchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function normalizePhoneDigits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function phoneMatchKeys(value) {
+  const digits = normalizePhoneDigits(value);
+  const keys = new Set();
+  if (digits) keys.add(digits);
+  if (digits.startsWith('381') && digits.length > 5) keys.add(`0${digits.slice(3)}`);
+  if (digits.startsWith('0') && digits.length > 5) keys.add(`381${digits.slice(1)}`);
+  return keys;
+}
+
+function googleTitleLooksLikeNonPatientEvent(title) {
+  const text = normalizePatientMatchText(title);
+  return /\b(go|godisnji|godisnji odmor|odmor|blokada|praznik)\b/.test(text);
+}
+
+function parseGooglePatientCandidate(title) {
+  const rawTitle = cleanText(title, { max: 255 }) || '';
+  const phone = rawTitle.match(/\+?\d[\d\s()./-]{5,}\d/)?.[0] || '';
+  const withoutPhone = rawTitle
+    .replace(phone, ' ')
+    .replace(/[;,:()[\]{}]+/g, ' ')
+    .replace(/\b(?:d|z|zub|stolica|s)\s*\d+\b/gi, ' ')
+    .replace(/\b\d{1,2}(?:[.,]\d{1,2})*\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const tokens = withoutPhone
+    .split(/\s+/)
+    .map(token => token.replace(/[^\p{L}'-]/gu, ''))
+    .filter(token => token.length >= 2);
+  return {
+    title: rawTitle,
+    firstName: tokens[0] || '',
+    lastName: tokens[1] || '',
+    phone: normalizePhoneDigits(phone)
+  };
+}
+
+async function patientMatchForGoogleEvent(event, googleEventType = 'appointment', current = null) {
+  const googleTitle = cleanText(event?.summary, { max: 255 }) || '';
+  if (current?.patient_match_locked) {
+    return {
+      patientId: current.patient_id,
+      status: 'manual',
+      note: 'Pacijent je rucno izabran i Google sync ga ne menja.',
+      locked: true,
+      googleTitle
+    };
+  }
+
+  const fallbackPatientId = await calendarRepo.ensureGoogleImportPatient();
+  if (googleEventType !== 'appointment' || googleTitleLooksLikeNonPatientEvent(googleTitle)) {
+    return {
+      patientId: fallbackPatientId,
+      status: 'ignored',
+      note: 'Ovo je Google dogadjaj, nije termin pacijenta.',
+      locked: false,
+      googleTitle
+    };
+  }
+
+  const candidate = parseGooglePatientCandidate(googleTitle);
+  if (!candidate.firstName && !candidate.lastName && !candidate.phone) {
+    return {
+      patientId: fallbackPatientId,
+      status: 'not_found',
+      note: 'Pacijent nije pronadjen u kartonima. Izaberite pacijenta rucno.',
+      locked: false,
+      googleTitle
+    };
+  }
+
+  const patients = await calendarRepo.findPatientsForGoogleTitle(candidate);
+  const candidatePhoneKeys = phoneMatchKeys(candidate.phone);
+  const phoneMatches = candidatePhoneKeys.size
+    ? patients.filter(patient => {
+      const patientKeys = phoneMatchKeys(patient.phone);
+      return Array.from(candidatePhoneKeys).some(key => patientKeys.has(key));
+    })
+    : [];
+  if (phoneMatches.length === 1) {
+    return {
+      patientId: phoneMatches[0].id,
+      status: 'matched',
+      note: 'Pacijent je automatski povezan na osnovu telefona iz Google naslova.',
+      locked: false,
+      googleTitle
+    };
+  }
+  if (phoneMatches.length > 1) {
+    return {
+      patientId: fallbackPatientId,
+      status: 'ambiguous',
+      note: 'Pronadjeno je vise pacijenata sa istim telefonom. Izaberite tacnog pacijenta.',
+      locked: false,
+      googleTitle
+    };
+  }
+
+  const expectedName = normalizePatientMatchText(`${candidate.firstName} ${candidate.lastName}`);
+  const nameMatches = expectedName
+    ? patients.filter(patient => normalizePatientMatchText(`${patient.first_name} ${patient.last_name}`) === expectedName)
+    : [];
+  if (nameMatches.length === 1) {
+    return {
+      patientId: nameMatches[0].id,
+      status: 'matched',
+      note: 'Pacijent je automatski povezan na osnovu Google naslova.',
+      locked: false,
+      googleTitle
+    };
+  }
+  if (nameMatches.length > 1) {
+    return {
+      patientId: fallbackPatientId,
+      status: 'ambiguous',
+      note: 'Pronadjeno je vise mogucih pacijenata. Izaberite tacnog pacijenta.',
+      locked: false,
+      googleTitle
+    };
+  }
+
+  return {
+    patientId: fallbackPatientId,
+    status: 'not_found',
+    note: 'Pacijent nije pronadjen u kartonima. Izaberite pacijenta rucno.',
+    locked: false,
+    googleTitle
+  };
+}
+
+function appendGoogleWarning(notes, warning) {
+  if (!warning) return notes;
+  return cleanText(`Upozorenje: ${warning}\n${notes || ''}`, { max: 2000 });
+}
+
+async function chairConflict({ appointmentId = null, chairId, startsAt, endsAt }) {
+  if (!chairId) return null;
+  return appointmentService.conflict({ appointmentId, doctorId: 0, chairId, startsAt, endsAt });
+}
+
+async function doctorConflict({ appointmentId = null, doctorId, startsAt, endsAt }) {
+  if (!doctorId) return null;
+  return appointmentService.conflict({ appointmentId, doctorId, chairId: 0, startsAt, endsAt });
+}
+
+async function chairForGoogleEvent({ appointmentId = null, preferredChairId = null, startsAt, endsAt, googleEventType = 'appointment', event = null }) {
+  const activeChairs = await calendarRepo.activeChairs();
+  const eventChairId = chairIdFromGoogleEvent(event, activeChairs) || preferredChairId;
+  const fallback = eventChairId ? activeChairs.find(chair => String(chair.id) === String(eventChairId)) || { id: eventChairId } : await calendarRepo.defaultActiveChair();
+  if (googleEventType !== 'appointment') return { chair: fallback, warning: null, warningCode: null };
+
+  const orderedChairs = [
+    ...activeChairs.filter(chair => String(chair.id) === String(eventChairId || fallback?.id)),
+    ...activeChairs.filter(chair => String(chair.id) !== String(eventChairId || fallback?.id))
+  ];
+
+  for (const chair of orderedChairs) {
+    if (!await chairConflict({ appointmentId, chairId: chair.id, startsAt, endsAt })) {
+      if (eventChairId && String(chair.id) !== String(eventChairId)) {
+        return {
+          chair,
+          warning: `Google event je oznacen za ${fallback?.name || `stolicu #${eventChairId}`}, ali je ta stolica zauzeta. Dogadjaj je prebacen u ${chair.name || `stolicu #${chair.id}`}.`,
+          warningCode: 'chair_reassigned'
+        };
+      }
+      return { chair, warning: null, warningCode: null };
+    }
+  }
+
+  return {
+    chair: fallback,
+    warning: 'Nema slobodne stolice u ovom terminu. Dogadjaj je uvezen sa upozorenjem.',
+    warningCode: 'chair_conflict'
+  };
+}
+
 async function importAppointmentFromGoogleEvent(event, times, colorContext) {
   if (event.status === 'cancelled') return { action: 'skipped_missing_local' };
 
-  const patientId = await calendarRepo.ensureGoogleImportPatient();
-  const googleColor = googleEventColor(event, colorContext);
-  const doctor = googleColor.googleColorId || googleColor.background
-    ? await calendarRepo.doctorByGoogleColor({
-      googleColorId: googleColor.googleColorId,
-      calendarColor: googleColor.background
-    }) || await calendarRepo.defaultActiveDoctor()
-    : await calendarRepo.defaultActiveDoctor();
-  const chair = await calendarRepo.defaultActiveChair();
+  const patientMatch = await patientMatchForGoogleEvent(event, times.googleEventType);
+  const doctorChoice = await doctorForGoogleEvent(event, colorContext);
+  const doctor = doctorChoice.doctor;
+  const chairChoice = await chairForGoogleEvent({
+    startsAt: times.startsAt,
+    endsAt: times.endsAt,
+    googleEventType: times.googleEventType,
+    event
+  });
+  const chair = chairChoice.chair;
   if (!doctor?.id || !chair?.id) return { action: 'skipped_missing_local' };
 
   const procedureName = cleanText(event.summary, { max: 255 }) || 'Google Calendar termin';
-  const conflict = await appointmentConflict({
-    doctorId: doctor.id,
-    chairId: chair.id,
-    startsAt: times.startsAt,
-    endsAt: times.endsAt
-  });
-  const conflictNote = conflict
-    ? `Upozorenje: moguci konflikt sa terminom #${conflict.id} (${conflict.patient_name || 'nepoznat pacijent'}).\n`
-    : '';
-  const notes = cleanText(`${conflictNote}${googleImportNotes(event)}`, { max: 2000 });
+  const doctorOverlap = times.googleEventType === 'appointment'
+    ? await doctorConflict({ doctorId: doctor.id, startsAt: times.startsAt, endsAt: times.endsAt })
+    : null;
+  const warning = combineGoogleWarnings(times.warning, doctorChoice.warning, chairChoice.warning, doctorOverlap
+    ? `Doktor vec ima termin #${doctorOverlap.id} u istom vremenu. Proveriti raspored.`
+    : null);
+  const warningCode = combineGoogleWarningCodes(times.warningCode, doctorChoice.warningCode, chairChoice.warningCode, doctorOverlap ? 'doctor_conflict' : null);
+  const notes = appendGoogleWarning(googleNotesForEvent(event, times.googleEventType), warning);
   const appointmentId = await calendarRepo.importAppointmentFromGoogle({
-    patientId,
+    patientId: patientMatch.patientId,
     doctorId: doctor.id,
     chairId: chair.id,
     procedureName,
@@ -1469,17 +1829,23 @@ async function importAppointmentFromGoogleEvent(event, times, colorContext) {
     durationMinutes: appointmentDurationMinutes(times.startsAt, times.endsAt),
     status: 'scheduled',
     notes,
-    googleEventId: cleanText(event.id, { max: 255 })
+    googleEventId: cleanText(event.id, { max: 255 }),
+    googleEventType: times.googleEventType,
+    warning,
+    warningCode,
+    googleTitle: patientMatch.googleTitle,
+    patientMatchStatus: patientMatch.status,
+    patientMatchNote: patientMatch.note,
+    patientMatchLocked: patientMatch.locked
   });
 
-  return { action: conflict ? 'imported_conflict' : 'imported', appointmentId };
+  return { action: warning ? 'imported_warning' : 'imported', appointmentId, warningCode };
 }
 
 async function updateAppointmentFromGoogleEvent(event, colorContext) {
   const appointmentId = await googleEventAppointmentId(event);
   if (!appointmentId) {
-    const times = googleEventTimes(event);
-    if (!times) return { action: 'skipped_unsupported_time' };
+    const times = googleEventTimeInfo(event);
     return importAppointmentFromGoogleEvent(event, times, colorContext);
   }
 
@@ -1494,33 +1860,52 @@ async function updateAppointmentFromGoogleEvent(event, colorContext) {
     return { action: 'unchanged', appointmentId };
   }
 
-  const times = googleEventTimes(event);
-  if (!times) return { action: 'skipped_unsupported_time', appointmentId };
-
-  const conflict = await appointmentConflict({
+  const times = googleEventTimeInfo(event);
+  const patientMatch = await patientMatchForGoogleEvent(event, times.googleEventType, current);
+  const doctorChoice = await doctorForGoogleEvent(event, colorContext, { fallbackDoctorId: current.doctor_id });
+  const doctor = doctorChoice.doctor;
+  const chairChoice = await chairForGoogleEvent({
     appointmentId: current.id,
-    doctorId: current.doctor_id,
-    chairId: current.chair_id,
+    preferredChairId: current.chair_id,
     startsAt: times.startsAt,
-    endsAt: times.endsAt
+    endsAt: times.endsAt,
+    googleEventType: times.googleEventType,
+    event
   });
-  if (conflict) return { action: 'skipped_conflict', appointmentId, conflictId: conflict.id };
+  const doctorOverlap = times.googleEventType === 'appointment'
+    ? await doctorConflict({ appointmentId: current.id, doctorId: doctor?.id || current.doctor_id, startsAt: times.startsAt, endsAt: times.endsAt })
+    : null;
+  const warning = combineGoogleWarnings(times.warning, doctorChoice.warning, chairChoice.warning, doctorOverlap
+    ? `Doktor vec ima termin #${doctorOverlap.id} u istom vremenu. Proveriti raspored.`
+    : null);
+  const warningCode = combineGoogleWarningCodes(times.warningCode, doctorChoice.warningCode, chairChoice.warningCode, doctorOverlap ? 'doctor_conflict' : null);
 
   const isDrRosaEvent = event?.extendedProperties?.private?.drrosaSource === 'drrosa';
   const procedureName = googleEventProcedureName(event, current.procedure_name);
-  const notes = isDrRosaEvent
+  const baseNotes = isDrRosaEvent
     ? cleanText(event.description, { max: 2000 })
-    : googleImportNotes(event);
+    : googleNotesForEvent(event, times.googleEventType);
+  const notes = appendGoogleWarning(baseNotes, warning);
   const status = normalizeAppointmentStatus(current.status);
   const changed = current.starts_at !== times.startsAt
     || current.ends_at !== times.endsAt
+    || String(current.patient_id) !== String(patientMatch.patientId)
     || current.procedure_name !== procedureName
     || (current.notes || null) !== notes
-    || current.google_event_id !== event.id;
+    || current.google_event_id !== event.id
+    || String(current.doctor_id) !== String(doctor?.id || current.doctor_id)
+    || String(current.chair_id) !== String(chairChoice.chair?.id)
+    || (current.google_event_type || 'appointment') !== times.googleEventType
+    || (current.google_title || null) !== (patientMatch.googleTitle || null)
+    || (current.google_patient_match_status || null) !== (patientMatch.status || null)
+    || (current.google_patient_match_note || null) !== (patientMatch.note || null)
+    || Boolean(current.patient_match_locked) !== Boolean(patientMatch.locked)
+    || (current.google_sync_warning || null) !== (warning || null)
+    || (current.google_sync_warning_code || null) !== (warningCode || null);
 
   if (!changed) return { action: 'unchanged', appointmentId };
 
-  await calendarRepo.updateFromGoogle({
+  await calendarRepo.updateFromGoogleWithWarning({
     id: current.id,
     startsAt: times.startsAt,
     endsAt: times.endsAt,
@@ -1528,12 +1913,22 @@ async function updateAppointmentFromGoogleEvent(event, colorContext) {
     procedureName,
     notes,
     googleEventId: event.id,
-    status
+    status,
+    patientId: patientMatch.patientId,
+    doctorId: doctor?.id || current.doctor_id,
+    chairId: chairChoice.chair?.id || current.chair_id,
+    googleEventType: times.googleEventType,
+    warning,
+    warningCode,
+    googleTitle: patientMatch.googleTitle,
+    patientMatchStatus: patientMatch.status,
+    patientMatchNote: patientMatch.note,
+    patientMatchLocked: patientMatch.locked
   });
-  return { action: 'updated', appointmentId };
+  return { action: warning ? 'updated_warning' : 'updated', appointmentId, warningCode };
 }
 
-async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast = 1, daysFuture = 14 } = {}) {
+async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast = 1, daysFuture = 14, complete = false, mode = 'incremental', timeMin = null, timeMax = null } = {}) {
   const settings = await calendarRepo.googleSettings();
   if (!settings?.sync_enabled) throw new Error('Google Calendar sync is disabled.');
   if (settings.sync_direction !== 'two_way') throw new Error('Two-way sync is not enabled.');
@@ -1544,8 +1939,12 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
   const batchLimit = Math.max(1, Math.min(100, Number(limit) || 50));
   const lookbackDays = Math.max(0, Math.min(30, Number(daysPast) || 1));
   const lookaheadDays = Math.max(1, Math.min(180, Number(daysFuture) || 14));
+  const rangeMode = mode === 'range';
+  const rangeStart = normalizeIsoDateTime(timeMin) || new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
+  const rangeEnd = normalizeIsoDateTime(timeMax) || new Date(Date.now() + lookaheadDays * 24 * 60 * 60 * 1000).toISOString();
   const startedAt = Date.now();
-  const timeBudgetMs = 12000;
+  const timeBudgetMs = complete ? (rangeMode ? 90000 : 45000) : 12000;
+  const maxPages = complete ? (rangeMode ? 100 : 20) : 2;
   const stats = {
     fetched: 0,
     imported: 0,
@@ -1556,8 +1955,23 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     skippedMissingLocal: 0,
     skippedUnsupportedTime: 0,
     skippedConflicts: 0,
-    fullSync: reset || !settings.events_sync_token,
-    partial: false
+    importedWithWarning: 0,
+    warningTotal: 0,
+    skippedTotal: 0,
+    allDayEvents: 0,
+    conflicts: 0,
+    conflictWarningTotal: 0,
+    doctorConflictWarnings: 0,
+    chairConflictWarnings: 0,
+    chairReassignedWarnings: 0,
+    unmappedDoctorColorWarnings: 0,
+    invalidTime: 0,
+    warnings: [],
+    fullSync: rangeMode || reset || !settings.events_sync_token,
+    partial: false,
+    mode: rangeMode ? 'range' : 'incremental',
+    timeMin: rangeMode ? rangeStart : null,
+    timeMax: rangeMode ? rangeEnd : null
   };
   let nextSyncToken = null;
   let pageToken = null;
@@ -1566,13 +1980,13 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
 
   do {
     const query = new URLSearchParams({ maxResults: String(batchLimit), eventLabelVersion: '1' });
-    if (!usedReset && settings.events_sync_token) {
+    if (!rangeMode && !usedReset && settings.events_sync_token) {
       query.set('syncToken', settings.events_sync_token);
     } else {
       query.set('singleEvents', 'true');
       query.set('showDeleted', 'true');
-      query.set('timeMin', new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString());
-      query.set('timeMax', new Date(Date.now() + lookaheadDays * 24 * 60 * 60 * 1000).toISOString());
+      query.set('timeMin', rangeStart);
+      query.set('timeMax', rangeEnd);
     }
     if (pageToken) query.set('pageToken', pageToken);
 
@@ -1582,7 +1996,7 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     } catch (error) {
       if (error.status === 410 && !usedReset) {
         await calendarRepo.clearGoogleEventsSyncToken();
-        return pullGoogleCalendarChanges({ limit, reset: true });
+        return pullGoogleCalendarChanges({ limit, reset: true, daysPast, daysFuture, complete, mode, timeMin, timeMax });
       }
       throw error;
     }
@@ -1591,35 +2005,166 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
       stats.fetched += 1;
       const result = await updateAppointmentFromGoogleEvent(event, colorContext);
       if (result.action === 'imported') stats.imported += 1;
-      if (result.action === 'imported_conflict') {
+      if (result.action === 'imported_warning') {
         stats.imported += 1;
-        stats.skippedConflicts += 1;
+        stats.importedWithWarning += 1;
       }
       if (result.action === 'updated') stats.updated += 1;
+      if (result.action === 'updated_warning') {
+        stats.updated += 1;
+        stats.importedWithWarning += 1;
+      }
       if (result.action === 'cancelled') stats.cancelled += 1;
       if (result.action === 'unchanged') stats.unchanged += 1;
       if (result.action === 'skipped_external') stats.skippedExternal += 1;
       if (result.action === 'skipped_missing_local') stats.skippedMissingLocal += 1;
       if (result.action === 'skipped_unsupported_time') stats.skippedUnsupportedTime += 1;
       if (result.action === 'skipped_conflict') stats.skippedConflicts += 1;
+      if (result.warningCode === 'all_day_event') stats.allDayEvents += 1;
+      if (result.warningCode === 'invalid_time') stats.invalidTime += 1;
+      if (result.warningCode === 'doctor_conflict') stats.doctorConflictWarnings += 1;
+      if (result.warningCode === 'chair_conflict') stats.chairConflictWarnings += 1;
+      if (result.warningCode === 'chair_reassigned') stats.chairReassignedWarnings += 1;
+      if (result.warningCode === 'google_doctor_color_unmapped') stats.unmappedDoctorColorWarnings += 1;
+      if (['doctor_conflict', 'chair_conflict'].includes(result.warningCode)) {
+        stats.conflicts += 1;
+        stats.conflictWarningTotal += 1;
+      }
+      if (result.warningCode) {
+        stats.warningTotal += 1;
+        stats.warnings.push({
+          eventId: cleanText(event?.id, { max: 255 }),
+          title: cleanText(event?.summary, { max: 255 }) || 'Bez naslova',
+          code: result.warningCode
+        });
+      }
     }
 
     pageToken = data.nextPageToken || null;
     nextSyncToken = data.nextSyncToken || nextSyncToken;
     pages += 1;
-    if (pageToken && (pages >= 2 || Date.now() - startedAt > timeBudgetMs)) {
+    if (pageToken && (pages >= maxPages || Date.now() - startedAt > timeBudgetMs)) {
       stats.partial = true;
       break;
     }
   } while (pageToken);
 
-  if (nextSyncToken && !stats.partial) {
+  if (!rangeMode && nextSyncToken && !stats.partial) {
     await calendarRepo.markGooglePull({ syncToken: nextSyncToken });
   } else {
     await calendarRepo.markGooglePull({});
   }
 
+  stats.skippedTotal = Number(stats.skippedExternal || 0)
+    + Number(stats.skippedMissingLocal || 0)
+    + Number(stats.skippedUnsupportedTime || 0)
+    + Number(stats.skippedConflicts || 0);
+
   return stats;
+}
+
+function googleSyncSummaryMessage(stats = {}) {
+  return [
+    `Procitano ${Number(stats.fetched || 0)}`,
+    `uvezeno ${Number(stats.imported || 0)}`,
+    `azurirano ${Number(stats.updated || 0)}`,
+    `upozorenja ${Number(stats.warningTotal || stats.importedWithWarning || 0)}`,
+    `all-day ${Number(stats.allDayEvents || 0)}`,
+    `konflikti rasporeda ${Number(stats.conflictWarningTotal || stats.conflicts || 0)}`,
+    `preskoceno ${Number(stats.skippedTotal || 0)}`
+  ].join(', ');
+}
+
+function serializeGoogleSyncJob(row) {
+  if (!row) return null;
+  const result = safeJsonParse(row.result_json, null);
+  return {
+    id: row.id,
+    status: row.status,
+    startedBy: row.started_by,
+    startedByName: row.started_by_name || '',
+    startedByRole: row.started_by_role || '',
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    fetched: Number(row.fetched || 0),
+    imported: Number(row.imported || 0),
+    updated: Number(row.updated || 0),
+    cancelled: Number(row.cancelled || 0),
+    unchanged: Number(row.unchanged || 0),
+    importedWithWarning: Number(row.imported_with_warning || 0),
+    allDayEvents: Number(row.all_day_events || 0),
+    conflicts: Number(row.conflicts || 0),
+    invalidTime: Number(row.invalid_time || 0),
+    partial: Boolean(row.partial),
+    errorMessage: row.error_message || '',
+    result
+  };
+}
+
+function serializeNotification(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    metadata: safeJsonParse(row.metadata, {}),
+    createdBy: row.created_by,
+    createdByName: row.created_by_name || '',
+    createdAt: row.created_at
+  };
+}
+
+async function notifyUsers({ type, title, message, metadata = null, userId = null }) {
+  try {
+    await calendarRepo.createNotification({ type, title, message, metadata, userId });
+  } catch (error) {
+    console.error('Notification create error:', error);
+  }
+}
+
+async function runGooglePullWithLock({ userId = null, req = null, reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true, mode = 'incremental', timeMin = null, timeMax = null } = {}) {
+  const lock = await calendarRepo.startGoogleSyncJob({ userId });
+  if (lock.alreadyRunning) {
+    const error = new Error('Google sync je vec u toku.');
+    error.status = 409;
+    error.runningJob = lock.job;
+    throw error;
+  }
+
+  const jobId = lock.job.id;
+  await notifyUsers({
+    type: 'google_sync_started',
+    title: 'Google sync pokrenut',
+    message: 'Sinhronizacija sa Google Kalendarom je pokrenuta.',
+    metadata: { jobId },
+    userId
+  });
+
+  try {
+    const stats = await pullGoogleCalendarChanges({ reset, limit, daysPast, daysFuture, complete, mode, timeMin, timeMax });
+    stats.jobId = jobId;
+    await calendarRepo.finishGoogleSyncJob({ jobId, status: 'success', stats });
+    await notifyUsers({
+      type: 'google_sync_finished',
+      title: 'Google sync zavrsen',
+      message: googleSyncSummaryMessage(stats),
+      metadata: { jobId, stats },
+      userId
+    });
+    if (req) await auditLog({ userId, action: 'google_calendar_pulled', entityType: 'google_calendar', entityId: 1, req, metadata: stats });
+    return stats;
+  } catch (error) {
+    const stats = { jobId, error: error.message || 'Google Calendar pull failed' };
+    await calendarRepo.finishGoogleSyncJob({ jobId, status: 'failed', stats, errorMessage: error.message || 'Google Calendar pull failed' });
+    await notifyUsers({
+      type: 'google_sync_failed',
+      title: 'Google sync nije uspeo',
+      message: error.message || 'Google Calendar pull failed',
+      metadata: { jobId },
+      userId
+    });
+    throw error;
+  }
 }
 
 const DOCUMENT_TYPES = new Set(['rtg', 'ortopan', 'photo', 'finding', 'lab', 'consent', 'invoice', 'other']);
@@ -1628,6 +2173,17 @@ const ALLOWED_SCAN_EXTENSIONS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
 const uploadRoot = path.resolve(__dirname, process.env.UPLOAD_DIR || './uploads');
 const scannerInboxDir = path.resolve(__dirname, process.env.SCANNER_IMPORT_DIR || './data/scanner-inbox');
+
+function storedDocumentPath(filePath) {
+  const resolved = path.resolve(String(filePath || ''));
+  const allowedRoot = `${uploadRoot}${path.sep}`;
+  if (resolved !== uploadRoot && !resolved.startsWith(allowedRoot)) {
+    const error = new Error('Document path is outside upload storage.');
+    error.status = 403;
+    throw error;
+  }
+  return resolved;
+}
 
 function normalizeDocumentType(value) {
   const type = cleanText(value, { max: 40 }) || 'other';
@@ -1683,8 +2239,6 @@ function serializeDocument(row) {
 }
 
 function safeExtension(filename, mimeType) {
-  const ext = path.extname(filename || '').toLowerCase();
-  if (ALLOWED_SCAN_EXTENSIONS.has(ext)) return ext;
   if (mimeType === 'application/pdf') return '.pdf';
   if (mimeType === 'image/jpeg') return '.jpg';
   if (mimeType === 'image/png') return '.png';
@@ -1705,7 +2259,6 @@ function mimeFromExtension(filename) {
 
 function detectedDocumentMime(buffer, filename) {
   if (!buffer || buffer.length < 4) return null;
-  const ext = path.extname(filename || '').toLowerCase();
   if (buffer.subarray(0, 4).toString() === '%PDF') return 'application/pdf';
   if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
   if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
@@ -1715,7 +2268,6 @@ function detectedDocumentMime(buffer, filename) {
     && buffer.subarray(8, 12).toString() === 'WEBP'
   ) return 'image/webp';
   if (buffer.length > 132 && buffer.subarray(128, 132).toString() === 'DICM') return 'application/dicom';
-  if (ext === '.dcm' || ext === '.dicom') return 'application/dicom';
   return null;
 }
 
@@ -1736,6 +2288,37 @@ function uniqueStoredFilename(originalFilename, mimeType) {
   return `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
 }
 
+async function validateAndStorePatientDocumentFile({ patientId, originalFilename, declaredMime, buffer }) {
+  if (!ALLOWED_DOCUMENT_MIME.has(declaredMime)) {
+    const error = new Error('Dozvoljeni su PDF, JPG, PNG, WEBP i DICOM fajlovi.');
+    error.status = 400;
+    throw error;
+  }
+  if (!buffer || buffer.length === 0 || buffer.length > MAX_DOCUMENT_SIZE) {
+    const error = new Error('Fajl mora biti manji od 10 MB.');
+    error.status = 400;
+    throw error;
+  }
+  const detectedMime = detectedDocumentMime(buffer, originalFilename);
+  if (!documentMimeMatches({ declaredMime, detectedMime })) {
+    const error = new Error('Sadrzaj fajla ne odgovara dozvoljenom tipu dokumenta.');
+    error.status = 400;
+    throw error;
+  }
+
+  const storedFilename = uniqueStoredFilename(originalFilename, detectedMime);
+  const targetPath = path.join(await patientUploadDir(patientId), storedFilename);
+  await fsp.writeFile(targetPath, buffer, { flag: 'wx' });
+  return {
+    originalFilename: cleanText(originalFilename, { max: 255, required: true }),
+    storedFilename,
+    filePath: targetPath,
+    mimeType: detectedMime,
+    fileSize: buffer.length,
+    fileHash: crypto.createHash('sha256').update(buffer).digest('hex')
+  };
+}
+
 async function savePatientDocument({ patientId, visitRecordId, documentType, title, description, documentDate, originalFilename, mimeType, buffer, source, userId, imagingModality, toothNumber, acquisitionDate, dicomStudyUid, claimAttachmentReady }) {
   if (!(await patientsRepo.findPatientById(patientId))) {
     const error = new Error('Patient not found');
@@ -1747,27 +2330,12 @@ async function savePatientDocument({ patientId, visitRecordId, documentType, tit
     error.status = 404;
     throw error;
   }
-  if (!ALLOWED_DOCUMENT_MIME.has(mimeType)) {
-    const error = new Error('Dozvoljeni su PDF, JPG, PNG, WEBP i DICOM fajlovi.');
-    error.status = 400;
-    throw error;
-  }
-  if (!buffer || buffer.length === 0 || buffer.length > MAX_DOCUMENT_SIZE) {
-    const error = new Error('Fajl mora biti manji od 10 MB.');
-    error.status = 400;
-    throw error;
-  }
-  const detectedMime = detectedDocumentMime(buffer, originalFilename);
-  if (!documentMimeMatches({ declaredMime: mimeType, detectedMime })) {
-    const error = new Error('Sadrzaj fajla ne odgovara dozvoljenom tipu dokumenta.');
-    error.status = 400;
-    throw error;
-  }
-
-  const storedFilename = uniqueStoredFilename(originalFilename, mimeType);
-  const targetPath = path.join(await patientUploadDir(patientId), storedFilename);
-  await fsp.writeFile(targetPath, buffer, { flag: 'wx' });
-  const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+  const storedFile = await validateAndStorePatientDocumentFile({
+    patientId,
+    originalFilename,
+    declaredMime: mimeType,
+    buffer
+  });
 
   return serializeDocument(await patientDocumentsRepo.createDocument({
     patientId,
@@ -1776,12 +2344,12 @@ async function savePatientDocument({ patientId, visitRecordId, documentType, tit
     title: cleanText(title || originalFilename, { max: 160, required: true }),
     description: cleanText(description, { max: 1000 }),
     documentDate: cleanText(documentDate, { max: 20 }),
-    originalFilename: cleanText(originalFilename, { max: 255, required: true }),
-    storedFilename,
-    filePath: targetPath,
-    mimeType,
-    fileSize: buffer.length,
-    fileHash: hash,
+    originalFilename: storedFile.originalFilename,
+    storedFilename: storedFile.storedFilename,
+    filePath: storedFile.filePath,
+    mimeType: storedFile.mimeType,
+    fileSize: storedFile.fileSize,
+    fileHash: storedFile.fileHash,
     source: source || 'upload',
     uploadedBy: userId,
     imagingModality: cleanText(imagingModality, { max: 40 }),
@@ -1993,9 +2561,9 @@ app.post('/api/auth/change-password', authenticateToken, validateBody(changePass
 
 // ============ PATIENTS ENDPOINTS ============
 
-app.get('/api/patients', authenticateToken, requirePermission('patients:read'), async (_req, res) => {
+app.get('/api/patients', authenticateToken, requirePermission('patients:read'), async (req, res) => {
   try {
-    const patients = await patientsRepo.listPatients();
+    const patients = await patientsRepo.listPatients(paginationFromQuery(req.query, { maxLimit: 500 }));
     res.json(patients);
   } catch (error) {
     console.error('Get patients error:', error);
@@ -2019,6 +2587,14 @@ app.post('/api/patients', authenticateToken, requirePermission('patients:write')
     const patientPayload = patientPayloadFromBody(req.body);
     if (!patientPayload.firstName || !patientPayload.lastName) {
       return res.status(400).json({ error: 'First name and last name required' });
+    }
+    const duplicate = await patientsRepo.findDuplicatePatient(patientPayload);
+    if (duplicate) {
+      return res.status(409).json({
+        error: 'Pacijent sa istim podacima već postoji.',
+        duplicatePatientId: duplicate.id,
+        duplicatePatientName: [duplicate.first_name, duplicate.last_name].filter(Boolean).join(' ')
+      });
     }
 
     const patient = await patientsRepo.createPatient(patientPayload);
@@ -2055,13 +2631,10 @@ app.delete('/api/patients/:id', authenticateToken, requirePermission('patients:w
     if (!current) return res.status(404).json({ error: 'Patient not found' });
 
     const related = await patientsRepo.patientDeleteCounts(patientId);
-    if (related.records > 0 || related.payments > 0) {
+    if (Object.values(related).some(count => Number(count) > 0)) {
       return res.status(409).json({
         error: 'Pacijent ima povezanu istoriju/posete i ne može biti obrisan dok se ti zapisi ne uklone.',
-        related: {
-          records: related.records,
-          payments: related.payments
-        }
+        related
       });
     }
 
@@ -2087,7 +2660,7 @@ app.get('/api/patients/:id/medical-profile', authenticateToken, requirePermissio
   }
 });
 
-app.put('/api/patients/:id/medical-profile', authenticateToken, requirePermission('patients:write'), async (req, res) => {
+app.put('/api/patients/:id/medical-profile', authenticateToken, requirePermission('patients:write'), validateBody(medicalProfileSchema), async (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
@@ -2187,14 +2760,16 @@ app.get('/api/documents/:id/view', authenticateToken, requirePermission('documen
     const documentId = positiveInteger(req.params.id);
     const row = await patientDocumentsRepo.findActiveById(documentId);
     if (!row) return res.status(404).json({ error: 'Document not found' });
+    const filePath = storedDocumentPath(row.file_path);
     try {
-      await fsp.access(row.file_path);
+      await fsp.access(filePath);
     } catch {
       return res.status(404).json({ error: 'File not found' });
     }
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Type', row.mime_type);
     res.setHeader('Content-Disposition', `inline; filename="${row.original_filename.replace(/"/g, '')}"`);
-    res.sendFile(row.file_path);
+    res.sendFile(filePath);
   } catch (error) {
     console.error('View document error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -2206,12 +2781,14 @@ app.get('/api/documents/:id/download', authenticateToken, requirePermission('doc
     const documentId = positiveInteger(req.params.id);
     const row = await patientDocumentsRepo.findActiveById(documentId);
     if (!row) return res.status(404).json({ error: 'Document not found' });
+    const filePath = storedDocumentPath(row.file_path);
     try {
-      await fsp.access(row.file_path);
+      await fsp.access(filePath);
     } catch {
       return res.status(404).json({ error: 'File not found' });
     }
-    res.download(row.file_path, row.original_filename);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.download(filePath, row.original_filename);
   } catch (error) {
     console.error('Download document error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -2231,11 +2808,21 @@ app.delete('/api/documents/:id', authenticateToken, requirePermission('documents
   }
 });
 
-app.put('/api/documents/:id', authenticateToken, requirePermission('documents:write'), async (req, res) => {
+app.put('/api/documents/:id', authenticateToken, requirePermission('documents:write'), validateBody(documentUpdateSchema), async (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const current = await patientDocumentsRepo.findActiveById(documentId);
     if (!current) return res.status(404).json({ error: 'Dokument nije pronadjen' });
+    let replacementFile = null;
+    if (req.body.fileBase64) {
+      const base64 = String(req.body.fileBase64 || '').replace(/^data:[^;]+;base64,/, '');
+      replacementFile = await validateAndStorePatientDocumentFile({
+        patientId: current.patient_id,
+        originalFilename: req.body.originalFilename || req.body.original_filename,
+        declaredMime: req.body.mimeType || req.body.mime_type,
+        buffer: Buffer.from(base64, 'base64')
+      });
+    }
 
     const updated = await patientDocumentsRepo.updateDocument(documentId, {
       visitRecordId: positiveInteger(req.body.visitRecordId || req.body.visit_record_id) || null,
@@ -2249,7 +2836,8 @@ app.put('/api/documents/:id', authenticateToken, requirePermission('documents:wr
       dicomStudyUid: cleanText(req.body.dicomStudyUid ?? req.body.dicom_study_uid ?? current.dicom_study_uid, { max: 120 }),
       claimAttachmentReady: req.body.claimAttachmentReady === undefined && req.body.claim_attachment_ready === undefined
         ? current.claim_attachment_ready
-        : normalizeBoolean(req.body.claimAttachmentReady ?? req.body.claim_attachment_ready)
+        : normalizeBoolean(req.body.claimAttachmentReady ?? req.body.claim_attachment_ready),
+      ...(replacementFile || {})
     });
     await auditLog({ userId: req.user.id, action: 'document_updated', entityType: 'document', entityId: documentId, req });
     res.json(serializeDocument(updated));
@@ -2271,7 +2859,7 @@ app.get('/api/patients/:id/imaging', authenticateToken, requirePermission('docum
   }
 });
 
-app.put('/api/documents/:id/imaging', authenticateToken, requirePermission('documents:write'), async (req, res) => {
+app.put('/api/documents/:id/imaging', authenticateToken, requirePermission('documents:write'), validateBody(documentUpdateSchema), async (req, res) => {
   try {
     const documentId = positiveInteger(req.params.id);
     const current = await patientDocumentsRepo.findActiveById(documentId);
@@ -2319,18 +2907,35 @@ app.post('/api/documents/:id/imaging/analyze', authenticateToken, requirePermiss
 
 // ============ VISIT RECORDS ENDPOINTS ============
 
-app.get('/api/records', authenticateToken, requirePermission('records:read'), async (_req, res) => {
+app.get('/api/records', authenticateToken, requirePermission('records:read'), async (req, res) => {
   try {
-    const records = await recordsPaymentsRepo.listRecords();
+    const records = await recordsPaymentsRepo.listRecords(paginationFromQuery(req.query, { maxLimit: 300 }));
+    const recordIds = records.map(record => Number(record.id)).filter(Boolean);
+    const [allTreatmentRows, allPaymentRows] = await Promise.all([
+      recordsPaymentsRepo.treatmentsForRecords(recordIds),
+      recordsPaymentsRepo.paymentPartsForRecords(recordIds)
+    ]);
+    const treatmentsByRecord = new Map();
+    const paymentsByRecord = new Map();
+    allTreatmentRows.forEach(treatment => {
+      const key = Number(treatment.visit_record_id);
+      if (!treatmentsByRecord.has(key)) treatmentsByRecord.set(key, []);
+      treatmentsByRecord.get(key).push(treatment);
+    });
+    allPaymentRows.forEach(part => {
+      const key = Number(part.visit_record_id);
+      if (!paymentsByRecord.has(key)) paymentsByRecord.set(key, []);
+      paymentsByRecord.get(key).push(part);
+    });
     const hydrated = [];
     for (const record of records) {
       const treatments = {};
+      const generalTreatments = [];
       let treatmentTotal = 0;
-      const treatmentRows = await recordsPaymentsRepo.treatmentsForRecord(record.id);
+      const treatmentRows = treatmentsByRecord.get(Number(record.id)) || [];
       treatmentRows.forEach(treatment => {
-        if (!treatments[treatment.tooth_number]) treatments[treatment.tooth_number] = [];
         treatmentTotal += Math.max(0, Number(treatment.price || 0) - Number(treatment.discount || 0));
-        treatments[treatment.tooth_number].push({
+        const item = {
           type: treatment.treatment_type,
           status: treatment.status,
           note: treatment.notes,
@@ -2339,10 +2944,16 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), as
           discount: Number(treatment.discount || 0),
           discountType: treatment.discount_type || 'amount',
           discountValue: Number(treatment.discount_value ?? treatment.discount ?? 0)
-        });
+        };
+        if (treatment.tooth_number === GENERAL_TREATMENT_TOOTH_NUMBER) {
+          generalTreatments.push(item);
+          return;
+        }
+        if (!treatments[treatment.tooth_number]) treatments[treatment.tooth_number] = [];
+        treatments[treatment.tooth_number].push(item);
       });
       const inferredPaid = Math.max(0, treatmentTotal - Number(record.amount_due || 0));
-      const paymentRows = await recordsPaymentsRepo.paymentPartsForRecord(record.id);
+      const paymentRows = paymentsByRecord.get(Number(record.id)) || [];
       const paymentParts = paymentRows.map(part => ({
         id: part.id,
         amount: Number(part.amount || 0),
@@ -2353,7 +2964,7 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), as
         paymentDate: part.payment_date || '',
         notes: part.notes || ''
       }));
-      hydrated.push({ ...record, amount_paid: Number(record.amount_paid || inferredPaid || 0), paymentParts, treatments });
+      hydrated.push({ ...record, amount_paid: Number(record.amount_paid || inferredPaid || 0), paymentParts, generalTreatments, treatments });
     }
     res.json(hydrated);
   } catch (error) {
@@ -2414,7 +3025,7 @@ app.post('/api/records', authenticateToken, requirePermission('records:write'), 
   }
 });
 
-app.put('/api/records/:id', authenticateToken, requirePermission('records:write'), async (req, res) => {
+app.put('/api/records/:id', authenticateToken, requirePermission('records:write'), validateBody(recordUpdateSchema), async (req, res) => {
   try {
     const recordId = positiveInteger(req.params.id);
     const current = await recordsPaymentsRepo.findRecordById(recordId);
@@ -2433,6 +3044,10 @@ app.put('/api/records/:id', authenticateToken, requirePermission('records:write'
       shift: normalizeShift(data.shift),
       notes: cleanText(data.notes, { max: 2000 })
     });
+
+    if (req.body.treatments !== undefined || req.body.generalTreatments !== undefined || req.body.general_treatments !== undefined) {
+      await recordsPaymentsRepo.replaceTreatments(recordId, normalizedTreatments({ ...data, ...req.body }));
+    }
 
     if (
       req.body.amount !== undefined
@@ -2516,121 +3131,59 @@ app.get('/api/appointments', authenticateToken, requirePermission('calendar:read
   }
 });
 
-app.post('/api/appointments', authenticateToken, requirePermission('calendar:write'), async (req, res) => {
+app.post('/api/appointments', authenticateToken, requirePermission('calendar:write'), validateBody(appointmentWriteSchema), async (req, res) => {
   try {
-    const patientId = positiveInteger(req.body.patient_id ?? req.body.patientId);
-    const doctorId = positiveInteger(req.body.doctor_id ?? req.body.doctorId);
-    const chairId = positiveInteger(req.body.chair_id ?? req.body.chairId);
-    const procedureIdInput = positiveInteger(req.body.procedure_id ?? req.body.procedureId);
-    const procedure = await procedureByInput({
-      procedureId: procedureIdInput,
-      procedureName: req.body.procedure_name ?? req.body.procedureName
-    });
-    const procedureNameResult = validatedText(req.body.procedure_name ?? req.body.procedureName ?? procedure?.label, { field: 'Postupak', max: 255, required: true });
-    const notesResult = validatedText(req.body.notes, { field: 'Napomena', max: 2000 });
-    const textError = procedureNameResult.error || notesResult.error;
-    if (textError) return res.status(400).json({ error: textError });
-    const procedureName = procedureNameResult.value;
-    const startsAt = normalizeIsoDateTime(req.body.starts_at ?? req.body.startsAt);
-    const durationMinutes = Math.max(5, Math.min(480, Number(req.body.duration_minutes ?? req.body.durationMinutes ?? 30)));
-    const endsAt = normalizeIsoDateTime(req.body.ends_at ?? req.body.endsAt) ||
-      (startsAt ? new Date(new Date(startsAt).getTime() + durationMinutes * 60000).toISOString() : null);
-    const status = normalizeAppointmentStatus(req.body.status);
-    const notes = notesResult.value;
-
-    if (!patientId || !doctorId || !chairId || !procedure || !procedureName || !startsAt || !endsAt) {
-      return res.status(400).json({ error: 'Pacijent, doktor, stolica, datum i postupak su obavezni.' });
-    }
-    if (appointmentDurationMinutes(startsAt, endsAt) <= 0) return res.status(400).json({ error: 'End time must be after start time' });
-    if (!(await calendarRepo.rowExists('patients', patientId))) return res.status(404).json({ error: 'Patient not found' });
-    if (!(await activeDoctorExists(doctorId))) return res.status(404).json({ error: 'Doctor not found' });
-    if (!(await calendarRepo.rowExists('chairs', chairId))) return res.status(404).json({ error: 'Chair not found' });
-
-    const conflict = await appointmentConflict({ doctorId, chairId, startsAt, endsAt });
+    const payload = await appointmentService.payloadFromInput(req.body);
+    if (payload.error) return res.status(payload.status).json({ error: payload.error });
+    const appointment = payload.value;
+    const conflict = await appointmentService.conflict(appointment);
     if (conflict) {
       return res.status(409).json({ error: 'Termin se preklapa sa postojećim zakazivanjem.', conflict });
     }
 
     const appointmentId = await calendarRepo.createAppointment({
-      patientId,
-      doctorId,
-      chairId,
-      procedureId: procedure.id,
-      procedureName,
-      startsAt,
-      endsAt,
-      durationMinutes: appointmentDurationMinutes(startsAt, endsAt),
-      status,
-      notes,
+      ...appointment,
       userId: req.user.id
     });
     await queueCalendarSync(appointmentId, 'create_google_event');
     processCalendarSyncRed({ limit: 5 });
     res.status(201).json(serializeAppointment(await appointmentById(appointmentId)));
   } catch (error) {
+    if (isAppointmentOverlapConstraintError(error)) return sendAppointmentConflictError(res);
     console.error('Create appointment error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:write'), async (req, res) => {
+app.put('/api/appointments/:id', authenticateToken, requirePermission('calendar:write'), validateBody(appointmentWriteSchema), async (req, res) => {
   try {
     const current = await appointmentById(req.params.id);
     if (!current) return res.status(404).json({ error: 'Appointment not found' });
 
-    const data = { ...current, ...req.body };
-    const patientId = positiveInteger(data.patient_id ?? data.patientId);
-    const doctorId = positiveInteger(data.doctor_id ?? data.doctorId);
-    const chairId = positiveInteger(data.chair_id ?? data.chairId);
-    const procedureIdInput = positiveInteger(data.procedure_id ?? data.procedureId);
-    const procedure = await procedureByInput({
-      procedureId: procedureIdInput,
-      procedureName: data.procedure_name ?? data.procedureName
-    });
-    const procedureNameResult = validatedText(data.procedure_name ?? data.procedureName ?? procedure?.label, { field: 'Postupak', max: 255, required: true });
-    const notesResult = validatedText(data.notes, { field: 'Napomena', max: 2000 });
-    const textError = procedureNameResult.error || notesResult.error;
-    if (textError) return res.status(400).json({ error: textError });
-    const procedureName = procedureNameResult.value;
-    const startsAt = normalizeIsoDateTime(data.starts_at ?? data.startsAt);
-    const endsAt = normalizeIsoDateTime(data.ends_at ?? data.endsAt);
-    const status = normalizeAppointmentStatus(data.status);
-    const notes = notesResult.value;
-
-    if (!patientId || !doctorId || !chairId || !procedure || !procedureName || !startsAt || !endsAt) {
-      return res.status(400).json({ error: 'Pacijent, doktor, stolica, datum i postupak su obavezni.' });
-    }
-    if (appointmentDurationMinutes(startsAt, endsAt) <= 0) return res.status(400).json({ error: 'End time must be after start time' });
-    if (!(await activeDoctorExists(doctorId))) return res.status(404).json({ error: 'Doctor not found' });
-
-    const conflict = await appointmentConflict({ appointmentId: current.id, doctorId, chairId, startsAt, endsAt });
+    const payload = await appointmentService.payloadFromInput({ ...current, ...req.body });
+    if (payload.error) return res.status(payload.status).json({ error: payload.error });
+    const appointment = payload.value;
+    const conflict = await appointmentService.conflict({ appointmentId: current.id, ...appointment });
     if (conflict) {
       return res.status(409).json({ error: 'Termin se preklapa sa postojećim zakazivanjem.', conflict });
     }
 
     await calendarRepo.updateAppointment(current.id, {
-      patientId,
-      doctorId,
-      chairId,
-      procedureId: procedure.id,
-      procedureName,
-      startsAt,
-      endsAt,
-      durationMinutes: appointmentDurationMinutes(startsAt, endsAt),
-      status,
-      notes,
+      ...appointment,
+      lockPatientMatch: Boolean(current.google_event_id) && String(current.patient_id) !== String(appointment.patientId),
       userId: req.user.id
     }, current.status);
-    await queueCalendarSync(current.id, status === 'cancelled' ? 'cancel_google_event' : 'update_google_event');
+    await queueCalendarSync(current.id, appointment.status === 'cancelled' ? 'cancel_google_event' : 'update_google_event');
     processCalendarSyncRed({ limit: 5 });
     res.json(serializeAppointment(await appointmentById(current.id)));
   } catch (error) {
+    if (isAppointmentOverlapConstraintError(error)) return sendAppointmentConflictError(res);
     console.error('Update appointment error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-app.patch('/api/appointments/:id/status', authenticateToken, requirePermission('calendar:write'), async (req, res) => {
+app.patch('/api/appointments/:id/status', authenticateToken, requirePermission('calendar:write'), validateBody(appointmentStatusSchema), async (req, res) => {
   try {
     const current = await appointmentById(req.params.id);
     if (!current) return res.status(404).json({ error: 'Appointment not found' });
@@ -2700,6 +3253,7 @@ app.get('/api/public/booking/status', publicBookingReadLimiter, async (_req, res
   try {
     res.json({
       enabled: await isPublicBookingEnabled(),
+      featureAvailable: publicBookingFeatureAvailable(),
       captcha: {
         required: turnstileConfigured(),
         siteKey: String(process.env.TURNSTILE_SITE_KEY || '').trim() || null
@@ -3093,6 +3647,35 @@ app.get('/api/patients/:id/clinical-notes', authenticateToken, requirePermission
   if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
   const rows = await clinicalRepo.clinicalNotesByPatient(patientId);
   res.json(rows.map(serializeClinicalNote));
+});
+
+app.get('/api/patients/:id/internal-comments', authenticateToken, requirePermission('patients:read'), async (req, res) => {
+  const patientId = positiveInteger(req.params.id);
+  if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
+  const rows = await clinicalRepo.internalCommentsByPatient(patientId);
+  res.json(rows.map(serializeClinicalNote));
+});
+
+app.post('/api/patients/:id/internal-comments', authenticateToken, requirePermission('patients:write'), async (req, res) => {
+  try {
+    const patientId = positiveInteger(req.params.id);
+    if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
+    const row = await clinicalRepo.createClinicalNote({
+      patientId,
+      visitRecordId: null,
+      templateId: null,
+      title: 'Interni komentar',
+      body: cleanText(req.body.body, { max: 8000, required: true }),
+      signedBy: cleanText(req.body.signedBy || req.body.signed_by || req.user.name || 'Osoblje', { max: 160 }),
+      signedAt: new Date().toISOString(),
+      createdBy: req.user.id
+    });
+    await auditLog({ userId: req.user.id, action: 'internal_comment_created', entityType: 'patient', entityId: patientId, req });
+    res.status(201).json(serializeClinicalNote(row));
+  } catch (error) {
+    console.error('Create internal comment error:', error);
+    res.status(500).json({ error: 'Interni komentar nije sacuvan.' });
+  }
 });
 
 app.post('/api/patients/:id/clinical-notes', authenticateToken, requirePermission('clinical:write'), async (req, res) => {
@@ -3955,47 +4538,87 @@ app.post('/api/auth/2fa/disable', authenticateToken, requireDirector, async (req
   }
 });
 
-app.get('/api/director/calendar-sync', authenticateToken, requireDirector, async (_req, res) => {
-  try {
-    const rows = await calendarRepo.calendarSyncRows(50);
-    res.json(rows);
-  } catch (error) {
-    console.error('Get sync queue error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+app.get('/api/director/calendar-sync', authenticateToken, requireDirector, asyncRoute(async (_req, res) => {
+  const rows = await calendarRepo.calendarSyncRows(50);
+  res.json(rows);
+}));
 
-app.post('/api/director/calendar-sync/retry', authenticateToken, requireDirector, async (_req, res) => {
-  try {
-    const processed = await processCalendarSyncRed({ limit: 25 });
-    res.json({ processed });
-  } catch (error) {
-    console.error('Retry sync queue error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+app.post('/api/director/calendar-sync/retry', authenticateToken, requireDirector, asyncRoute(async (_req, res) => {
+  const processed = await processCalendarSyncRed({ limit: 25 });
+  res.json({ processed });
+}));
 
-app.post('/api/director/calendar-sync/pull-google', authenticateToken, requireDirector, async (req, res) => {
+async function handleManualGooglePull(req, res) {
   try {
-    const stats = await pullGoogleCalendarChanges({
+    const stats = await runGooglePullWithLock({
+      userId: req.user.id,
+      req,
       reset: req.body?.reset === true,
-      limit: req.body?.limit,
+      limit: req.body?.limit || 100,
       daysPast: req.body?.daysPast ?? req.body?.days_past,
-      daysFuture: req.body?.daysFuture ?? req.body?.days_future
+      daysFuture: req.body?.daysFuture ?? req.body?.days_future,
+      complete: req.body?.complete !== false,
+      mode: req.body?.mode,
+      timeMin: req.body?.timeMin ?? req.body?.time_min,
+      timeMax: req.body?.timeMax ?? req.body?.time_max
     });
-    await auditLog({ userId: req.user.id, action: 'google_calendar_pulled', entityType: 'google_calendar', entityId: 1, req, metadata: stats });
     res.json(stats);
   } catch (error) {
-    console.error('Pull Google Calendar changes error:', error);
-    res.status(googleCalendarRouteStatus(error)).json({ error: error.message || 'Google Calendar pull failed' });
+    sendError(res, error, {
+      fallbackStatus: googleCalendarRouteStatus(error),
+      fallbackMessage: 'Google Calendar pull failed',
+      logLabel: 'Pull Google Calendar changes error:'
+    });
   }
-});
+}
+
+app.post('/api/director/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), validateBody(googlePullSchema), handleManualGooglePull);
+app.post('/api/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), validateBody(googlePullSchema), handleManualGooglePull);
+
+app.get('/api/calendar-sync/google/status', authenticateToken, requirePermission('calendar:read'), asyncRoute(async (_req, res) => {
+  res.json({ latest: serializeGoogleSyncJob(await calendarRepo.latestGoogleSyncJob()) });
+}));
+
+app.get('/api/notifications', authenticateToken, asyncRoute(async (req, res) => {
+  const sinceId = positiveInteger(req.query.since_id ?? req.query.sinceId) || 0;
+  const limit = Math.max(1, Math.min(50, Number(req.query.limit || 20)));
+  const latest = String(req.query.latest || '').toLowerCase() === 'true';
+  const rows = await calendarRepo.notificationsSince({ sinceId, limit, latest });
+  res.json(rows.map(serializeNotification));
+}));
+
+app.post('/api/calendar-sync/daily-google-pull', googleSyncLimiter, validateBody(googlePullSchema), asyncRoute(async (req, res) => {
+  const secret = process.env.GOOGLE_CALENDAR_CRON_SECRET;
+  const provided = req.headers['x-cron-secret'];
+  if (!timingSafeSecretEqual(provided, secret)) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const stats = await runGooglePullWithLock({
+      userId: null,
+      reset: req.body?.reset === true,
+      limit: req.body?.limit || 100,
+      daysPast: req.body?.daysPast ?? 1,
+      daysFuture: req.body?.daysFuture ?? 14,
+      complete: true,
+      mode: req.body?.mode || 'incremental',
+      timeMin: req.body?.timeMin ?? req.body?.time_min,
+      timeMax: req.body?.timeMax ?? req.body?.time_max
+    });
+    res.json(stats);
+  } catch (error) {
+    sendError(res, error, {
+      fallbackStatus: googleCalendarRouteStatus(error),
+      fallbackMessage: 'Google Calendar pull failed',
+      logLabel: 'Daily Google Calendar pull error:'
+    });
+  }
+}));
 
 app.get('/api/director/public-booking/settings', authenticateToken, requireDirector, async (_req, res) => {
   try {
     const setting = await runtimeSettings.appSetting('public_booking_enabled');
     res.json({
       enabled: await isPublicBookingEnabled(),
+      featureAvailable: publicBookingFeatureAvailable(),
       updatedAt: setting?.updated_at || null
     });
   } catch (error) {
@@ -4004,12 +4627,14 @@ app.get('/api/director/public-booking/settings', authenticateToken, requireDirec
   }
 });
 
-app.put('/api/director/public-booking/settings', authenticateToken, requireDirector, async (req, res) => {
+app.put('/api/director/public-booking/settings', authenticateToken, requireDirector, validateBody(publicBookingSettingsSchema), async (req, res) => {
   try {
     const enabled = req.body.enabled === true || req.body.enabled === 1 || req.body.enabled === '1';
     const setting = await setAppSetting('public_booking_enabled', enabled ? '1' : '0');
     res.json({
-      enabled,
+      enabled: await isPublicBookingEnabled(),
+      configuredEnabled: enabled,
+      featureAvailable: publicBookingFeatureAvailable(),
       updatedAt: setting?.updated_at || null
     });
   } catch (error) {
@@ -4032,7 +4657,35 @@ app.get('/api/director/google-calendar/settings', authenticateToken, requireDire
   }
 });
 
-app.put('/api/director/google-calendar/settings', authenticateToken, requireDirector, requireDirectorPassword, async (req, res) => {
+app.get('/api/director/google-calendar/colors', authenticateToken, requireDirector, async (_req, res) => {
+  try {
+    const settings = await calendarRepo.googleSettings();
+    if (!settings?.calendar_id) {
+      return res.status(400).json({ error: 'Google Calendar ID is required.' });
+    }
+
+    const colors = await callGoogleCalendar(settings, 'GET', '/colors');
+    const eventColors = Object.entries(colors?.event || {}).map(([colorId, color]) => ({
+      colorId,
+      background: cleanText(color?.background, { max: 20 }),
+      foreground: cleanText(color?.foreground, { max: 20 })
+    })).filter(color => color.colorId && color.background);
+
+    res.json({
+      updated: colors?.updated || '',
+      eventColors
+    });
+  } catch (error) {
+    console.error('Get Google Calendar colors error:', error);
+    res.status(googleCalendarRouteStatus(error)).json({
+      error: error.status === 403
+        ? 'Google boje nisu dostupne za trenutnu OAuth dozvolu. Unesite HEX rucno ili ponovo povezite Google nalog sa dozvolom za citanje boja.'
+        : error.message || 'Google Calendar colors failed'
+    });
+  }
+});
+
+app.put('/api/director/google-calendar/settings', authenticateToken, requireDirector, requireDirectorPassword, validateBody(googleCalendarSettingsSchema), async (req, res) => {
   try {
     const current = await calendarRepo.googleSettings();
     const connectedEmail = cleanText(req.body.connectedEmail ?? req.body.connected_email, { max: 255 });
@@ -4070,7 +4723,7 @@ app.put('/api/director/google-calendar/settings', authenticateToken, requireDire
   }
 });
 
-app.post('/api/director/google-calendar/oauth/exchange', authenticateToken, requireDirector, async (req, res) => {
+app.post('/api/director/google-calendar/oauth/exchange', authenticateToken, requireDirector, validateBody(googleOAuthExchangeSchema), async (req, res) => {
   try {
     const rawCode = req.body?.code;
     const code = normalizeGoogleAuthCode(rawCode);
@@ -4229,7 +4882,7 @@ app.get('/api/director/doctors', authenticateToken, requireDirector, async (_req
   }
 });
 
-app.post('/api/director/doctors', authenticateToken, requireDirector, async (req, res) => {
+app.post('/api/director/doctors', authenticateToken, requireDirector, validateBody(doctorWriteSchema), async (req, res) => {
   try {
     const payload = doctorPayloadFromBody(req.body);
     const payloadError = doctorPayloadError(payload);
@@ -4244,7 +4897,7 @@ app.post('/api/director/doctors', authenticateToken, requireDirector, async (req
   }
 });
 
-app.put('/api/director/doctors/:id', authenticateToken, requireDirector, async (req, res) => {
+app.put('/api/director/doctors/:id', authenticateToken, requireDirector, validateBody(doctorWriteSchema), async (req, res) => {
   try {
     const id = positiveInteger(req.params.id);
     const current = await directorAdmin.findDoctor(id);
@@ -4483,7 +5136,7 @@ app.get('/api/director/codebooks', authenticateToken, requireDirector, async (re
   }
 });
 
-app.post('/api/director/codebooks', authenticateToken, requireDirector, async (req, res) => {
+app.post('/api/director/codebooks', authenticateToken, requireDirector, validateBody(codebookWriteSchema), async (req, res) => {
   try {
     const type = normalizeCodebookType(req.body.type);
     const value = cleanText(req.body.value, { max: 120, required: true });
@@ -4518,7 +5171,7 @@ app.post('/api/director/codebooks', authenticateToken, requireDirector, async (r
   }
 });
 
-app.put('/api/director/codebooks/:id', authenticateToken, requireDirector, async (req, res) => {
+app.put('/api/director/codebooks/:id', authenticateToken, requireDirector, validateBody(codebookWriteSchema), async (req, res) => {
   try {
     const id = positiveInteger(req.params.id);
     const current = await directorAdmin.findCodebookItem(id);
@@ -4730,7 +5383,7 @@ app.get('/api/director/daily-cash-report', authenticateToken, requireDirector, a
   }
 });
 
-app.put('/api/director/daily-cash-report', authenticateToken, requireDirector, async (req, res) => {
+app.put('/api/director/daily-cash-report', authenticateToken, requireDirector, validateBody(dailyCashReportSchema), async (req, res) => {
   try {
     const reportDate = normalizeReportDate(req.body.date || req.body.reportDate);
     const shift = cleanText(req.body.shift, { max: 80 }) || '';
@@ -4777,22 +5430,11 @@ app.put('/api/director/daily-cash-report', authenticateToken, requireDirector, a
   }
 });
 
-// ============ HEALTH CHECK ============
-
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'API is running',
-    database: DB_CLIENT,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// ============ STATIC FRONTEND ============
-
 const frontendRoot = path.resolve(__dirname, '..');
-app.use('/src', express.static(path.join(frontendRoot, 'src')));
-app.get(['/', '/index.html'], (_req, res) => {
-  res.sendFile(path.join(frontendRoot, 'index.html'));
+registerSystemRoutes(app, {
+  express,
+  databaseClient: DB_CLIENT,
+  frontendRoot
 });
 
 // ============ ERROR HANDLING ============

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Karton pacijenta | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css" />
+  <link rel="stylesheet" href="../styles/styles.css?v=responsive-20260727" />
 </head>
 <body>
   <div class="app-shell">
@@ -24,7 +24,6 @@
         <a href="new-entry.html" class="nav-link">Novi unos</a>
         <a href="new-patient.html" class="nav-link">Novi pacijent</a>
         <a href="all-records.html" class="nav-link">Evidencija</a>
-        <a href="public-booking.html" class="nav-link">Onlajn zakazivanje</a>
         <a id="director-panel-link" href="director-panel.html" class="nav-link" style="display: none;">Direktor panel</a>
         <button id="logout-btn" class="nav-link" type="button">Odjava</button>
       </nav>
@@ -33,29 +32,74 @@
     <main>
       <section class="hero-card patient-hero">
         <div class="patient-hero-copy">
-          <p class="eyebrow">Pacijent</p>
-          <h2 id="patient-summary-title">Detalji i istorija</h2>
-          <p id="patient-summary-description">Pregledajte sve tretmane, naplate i dugovanja ovog pacijenta.</p>
-          <div class="hero-actions">
-            <a id="new-entry-for-patient" href="new-entry.html" class="primary-btn">Novi unos za ovog pacijenta</a>
-            <a id="edit-patient-link" href="new-patient.html" class="secondary-btn">Uredi pacijenta</a>
-            <button id="delete-patient-btn" class="danger-btn" type="button">Obriši pacijenta</button>
+          <div class="patient-hero-heading">
+            <p class="eyebrow">Pacijent</p>
+            <h2 id="patient-summary-title">Detalji i istorija</h2>
+            <p id="patient-summary-description">Pregledajte sve tretmane, naplate i dugovanja ovog pacijenta.</p>
           </div>
+          <div class="patient-action-toolbar" aria-label="Akcije pacijenta">
+            <a id="new-entry-for-patient" href="new-entry.html" class="primary-btn">Nova poseta</a>
+            <a id="schedule-patient-link" href="calendar.html" class="secondary-btn">Zakazi termin</a>
+            <a id="edit-patient-link" href="new-patient.html" class="secondary-btn">Uredi</a>
+            <button id="delete-patient-btn" class="danger-btn" type="button">Obrisi</button>
+          </div>
+          <p id="patient-schedule-message" class="form-alert" role="status"></p>
         </div>
         <div class="hero-stats" id="patient-summary-cards"></div>
       </section>
 
-      <section class="list-section" id="patient-info-section" style="display:none;">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Podaci o pacijentu</p>
-            <h2>Kontakt i medicinski podaci</h2>
+      <section class="patient-workspace" id="patient-workspace" style="display:none;">
+        <aside class="patient-sidebar">
+          <div class="patient-side-panel">
+            <p class="eyebrow">Kontakt</p>
+            <div id="patient-contact-summary"></div>
           </div>
-        </div>
-        <div class="info-card" id="patient-info"></div>
+          <div class="patient-side-panel">
+            <p class="eyebrow">Rizici</p>
+            <div id="patient-risk-summary"></div>
+          </div>
+          <div class="patient-side-panel">
+            <p class="eyebrow">Finansije</p>
+            <div id="patient-finance-summary"></div>
+          </div>
+        </aside>
+        <section class="patient-main-panel">
+          <div id="patient-upcoming-panel" class="patient-focus-panel"></div>
+          <div class="patient-focus-grid">
+            <section class="patient-focus-panel">
+              <div class="patient-focus-header">
+                <div>
+                  <p class="eyebrow">Dokumenti</p>
+                  <h2>Brzi dokumenti</h2>
+                </div>
+                <button id="quick-upload-document-btn" class="secondary-btn" type="button">Upload</button>
+              </div>
+              <div id="patient-quick-documents"></div>
+            </section>
+            <section class="patient-focus-panel">
+              <div class="patient-focus-header">
+                <div>
+                  <p class="eyebrow">Interno</p>
+                  <h2>Komentari osoblja</h2>
+                </div>
+              </div>
+              <form id="quick-internal-comment-form" class="quick-internal-comment-form">
+                <textarea id="quick-internal-comment" rows="3" placeholder="Kratka interna napomena za tim"></textarea>
+                <button class="primary-btn" type="submit">Dodaj</button>
+              </form>
+              <p id="quick-internal-comment-message" class="form-alert" role="status"></p>
+              <div id="patient-internal-comments"></div>
+            </section>
+          </div>
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Pregled aktivnosti</p>
+              <h2>Timeline pacijenta</h2>
+            </div>
+          </div>
+          <div id="patient-activity-timeline" class="patient-timeline"></div>
+        </section>
       </section>
-
-      <section class="patient-alerts" id="patient-alerts" aria-live="polite"></section>
 
       <section class="list-section patient-tabs-section" id="patient-clinical-section" style="display:none;">
         <div class="section-header">
@@ -64,20 +108,14 @@
             <h2>Karton i dokumenti</h2>
           </div>
         </div>
-        <div class="patient-tabs" role="tablist" aria-label="Karton pacijenta">
-          <button class="patient-tab active" type="button" data-patient-tab="medical-card">Karton</button>
-          <button class="patient-tab" type="button" data-patient-tab="initial-condition-card">Zateceno stanje</button>
-          <button class="patient-tab" type="button" data-patient-tab="clinical-chart-card">Zubni status</button>
-          <button class="patient-tab" type="button" data-patient-tab="clinical-notes-card">Klinicke beleske</button>
-          <button class="patient-tab" type="button" data-patient-tab="consents-card">Saglasnosti</button>
-          <button class="patient-tab" type="button" data-patient-tab="documents-card">Dokumenti</button>
-          <button class="patient-tab" type="button" data-patient-tab="plans-card">Plan terapije</button>
-          <button class="patient-tab" type="button" data-patient-tab="perio-card">Parodontologija</button>
-          <button class="patient-tab" type="button" data-patient-tab="invoices-card">Računi</button>
-          <button class="patient-tab" type="button" data-patient-tab="insurance-card">Osiguranje</button>
+        <div class="patient-tabs patient-group-tabs" role="tablist" aria-label="Grupe kartona pacijenta">
+          <button class="patient-group-tab active" type="button" data-patient-group="clinical">Klinika</button>
+          <button class="patient-group-tab" type="button" data-patient-group="teeth">Zubi</button>
+          <button class="patient-group-tab" type="button" data-patient-group="documents">Dokumenti</button>
+          <button class="patient-group-tab" type="button" data-patient-group="finance">Finansije</button>
+          <button class="patient-group-tab" type="button" data-patient-group="admin">Administracija</button>
         </div>
-
-        <div class="patient-tab-panel active" id="medical-card">
+        <div class="patient-tab-panel active" id="medical-card" data-patient-panel-group="clinical">
           <form id="medical-profile-form" class="admin-codebook-form">
             <div class="input-grid">
               <label>
@@ -132,11 +170,11 @@
           </form>
         </div>
 
-        <div class="patient-tab-panel" id="initial-condition-card">
+        <div class="patient-tab-panel" id="initial-condition-card" data-patient-panel-group="teeth">
           <div id="patient-initial-condition-editor"></div>
         </div>
 
-        <div class="patient-tab-panel" id="clinical-chart-card">
+        <div class="patient-tab-panel" id="clinical-chart-card" data-patient-panel-group="teeth">
           <form id="clinical-chart-form" class="admin-codebook-form">
             <input id="clinical-chart-entry-id" type="hidden" />
             <div class="input-grid">
@@ -194,7 +232,7 @@
           <div class="table-wrap"><table><thead><tr><th>Zub</th><th>Kodovi</th><th>Status</th><th>Dijagnoza</th><th>Akcije</th></tr></thead><tbody id="clinical-chart-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="clinical-notes-card">
+        <div class="patient-tab-panel" id="clinical-notes-card" data-patient-panel-group="clinical">
           <form id="clinical-note-form" class="admin-codebook-form">
             <input id="clinical-note-id" type="hidden" />
             <div class="input-grid">
@@ -220,7 +258,7 @@
           <div class="table-wrap"><table><thead><tr><th>Beleška</th><th>Potpis</th><th>Datum</th><th>Akcije</th></tr></thead><tbody id="clinical-notes-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="consents-card">
+        <div class="patient-tab-panel" id="consents-card" data-patient-panel-group="clinical">
           <form id="patient-consent-form" class="admin-codebook-form">
             <input id="consent-id" type="hidden" />
             <div class="input-grid">
@@ -254,7 +292,7 @@
           <div class="table-wrap"><table><thead><tr><th>Saglasnost</th><th>Potpisnik</th><th>Datum</th><th>Akcije</th></tr></thead><tbody id="patient-consents-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="documents-card">
+        <div class="patient-tab-panel" id="documents-card" data-patient-panel-group="documents">
           <form id="document-form" class="admin-codebook-form">
             <input id="document-id" type="hidden" />
             <div class="input-grid">
@@ -306,9 +344,10 @@
                 <textarea id="document-description" rows="2"></textarea>
               </label>
               <label class="full-width">
-                Otpremanje fajla
+                <span id="document-file-label">Otpremanje fajla</span>
                 <input id="document-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.dcm,.dicom,application/pdf,image/jpeg,image/png,image/webp,application/dicom" />
               </label>
+              <div class="document-current-file full-width" id="document-current-file" hidden></div>
             </div>
             <div class="form-actions">
               <button class="primary-btn" id="upload-document-btn" type="submit">Otpremi fajl</button>
@@ -375,7 +414,7 @@
           </div>
         </div>
 
-        <div class="patient-tab-panel" id="plans-card">
+        <div class="patient-tab-panel" id="plans-card" data-patient-panel-group="finance">
           <form id="treatment-plan-form" class="admin-codebook-form">
             <input id="plan-id" type="hidden" />
             <div class="input-grid">
@@ -424,7 +463,7 @@
           <div class="table-wrap"><table><thead><tr><th>Plan</th><th>Status</th><th>Ukupno</th><th>Akcije</th></tr></thead><tbody id="treatment-plans-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="perio-card">
+        <div class="patient-tab-panel" id="perio-card" data-patient-panel-group="teeth">
           <form id="perio-form" class="admin-codebook-form">
             <div class="input-grid">
               <label>
@@ -470,7 +509,7 @@
           <div class="table-wrap"><table><thead><tr><th>Datum</th><th>Merenja</th><th>Rizik</th></tr></thead><tbody id="perio-charts-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="invoices-card">
+        <div class="patient-tab-panel" id="invoices-card" data-patient-panel-group="finance">
           <form id="invoice-form" class="admin-codebook-form">
             <div class="input-grid">
               <label>
@@ -501,7 +540,7 @@
           <div class="table-wrap"><table><thead><tr><th>Broj</th><th>Status</th><th>Ukupno</th><th>Plaćeno</th><th>Akcije</th></tr></thead><tbody id="invoices-body"></tbody></table></div>
         </div>
 
-        <div class="patient-tab-panel" id="insurance-card">
+        <div class="patient-tab-panel" id="insurance-card" data-patient-panel-group="admin">
           <form id="insurance-form" class="admin-codebook-form">
             <div class="input-grid">
               <label>
@@ -542,52 +581,101 @@
         </div>
       </section>
 
-      <section class="list-section">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Pregled</p>
-            <h2>Sve zapise pacijenta</h2>
+      <div class="appointment-modal" id="patient-appointment-panel" hidden role="dialog" aria-modal="true" aria-labelledby="patient-appointment-panel-title">
+        <div class="appointment-modal-backdrop" data-close-patient-appointment-modal></div>
+        <section class="appointment-dialog">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Termin pacijenta</p>
+              <h2 id="patient-appointment-panel-title">Zakazi termin</h2>
+            </div>
+            <button id="close-patient-appointment-modal" class="secondary-btn" type="button" aria-label="Zatvori">X</button>
           </div>
-        </div>
+          <div id="patient-appointment-alert" class="form-alert" aria-live="polite"></div>
+          <div id="patient-appointment-context" class="entry-patient-context"></div>
+          <form id="patient-appointment-form" class="appointment-form-grid">
+            <div class="appointment-form-section appointment-title-section">
+              <label class="full-width">
+                Naziv termina
+                <input id="patient-appointment-title" type="text" maxlength="255" placeholder="Naziv termina" required />
+              </label>
+            </div>
+            <div class="appointment-form-section appointment-patient-section">
+              <label class="full-width">
+                Pacijent
+                <input id="patient-appointment-patient-name" type="text" readonly />
+              </label>
+            </div>
+            <div class="appointment-form-section appointment-time-section">
+              <label>
+                Datum
+                <input id="patient-appointment-date" type="date" required />
+              </label>
+              <label>
+                Vreme
+                <input id="patient-appointment-time" type="time" required />
+              </label>
+              <label>
+                Trajanje
+                <select id="patient-appointment-duration">
+                  <option value="15">15 min</option>
+                  <option value="30" selected>30 min</option>
+                  <option value="45">45 min</option>
+                  <option value="60">60 min</option>
+                  <option value="90">90 min</option>
+                  <option value="120">120 min</option>
+                </select>
+              </label>
+            </div>
+            <div class="appointment-form-section appointment-resource-section">
+              <label>
+                Doktor
+                <select id="patient-appointment-doctor" required></select>
+              </label>
+              <label>
+                Stolica
+                <select id="patient-appointment-chair" required></select>
+              </label>
+              <label>
+                Status
+                <select id="patient-appointment-status">
+                  <option value="scheduled">Zakazano</option>
+                  <option value="confirmed">Potvrdjeno</option>
+                  <option value="arrived">Dosao</option>
+                  <option value="completed">Zavrseno</option>
+                  <option value="cancelled">Otkazano</option>
+                  <option value="no_show">Nije dosao</option>
+                </select>
+              </label>
+            </div>
+            <div class="appointment-form-section appointment-service-section">
+              <label>
+                Postupak
+                <select id="patient-appointment-procedure" required></select>
+              </label>
+              <label class="full-width">
+                Napomena
+                <textarea id="patient-appointment-notes" rows="3"></textarea>
+              </label>
+            </div>
+            <div class="form-actions appointment-actions">
+              <button class="primary-btn" type="submit">Sacuvaj termin</button>
+              <button id="dismiss-patient-appointment-btn" class="secondary-btn" type="button">Odustani</button>
+            </div>
+          </form>
+        </section>
+      </div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Datum</th>
-                <th>Postupak</th>
-                <th>Doktor</th>
-                <th>Status</th>
-                <th>Plaćanje</th>
-                <th>Smena</th>
-                <th>Cena pregleda</th>
-                <th>Dugovanje</th>
-                <th>Napomena</th>
-                <th>Akcije</th>
-              </tr>
-            </thead>
-            <tbody id="patient-records-body"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="list-section">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">Tretmani zuba</p>
-            <h2>Detaljna istorija rada po zubima</h2>
-          </div>
-        </div>
-        <div class="info-card" id="treatment-list"></div>
-      </section>
     </main>
   </div>
 
+  <script src="../scripts/security-utils.js"></script>
   <script src="../scripts/api.js"></script>
-  <script src="../scripts/date-utils.js?v=picker-format-20260708"></script>
+  <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/tooth-condition-editor.js"></script>
   <script src="../scripts/treatment-history.js"></script>
-  <script src="../scripts/patient-dashboard.js"></script>
+  <script src="../scripts/appointment-modal.js?v=patient-scheduler-20260804"></script>
+  <script src="../scripts/patient-dashboard.js?v=patient-scheduler-20260804"></script>
 </body>
 </html>

@@ -5,13 +5,16 @@ const {
   queryOne,
   withTransaction
 } = require('./postgres');
+const ROW_EXISTS_TABLES = new Set(['patients']);
+
 function createRecordsPaymentsRepository({ pgPool }) {
   if (!pgPool) throw new Error('pgPool is required for postgres records repository.');
   return createPostgresRecordsRepository(pgPool);
 }
 
-function recordsListSql() {
-  return `
+function recordsListSql({ search = '', limit = null, offset = 0 } = {}) {
+  const params = [];
+  let sql = `
     SELECT
       vr.id,
       vr.patient_id,
@@ -33,14 +36,32 @@ function recordsListSql() {
     JOIN patients p ON vr.patient_id = p.id
     JOIN doctors d ON vr.doctor_id = d.id
     LEFT JOIN payments pay ON vr.id = pay.visit_record_id
-    ORDER BY vr.visit_date DESC, vr.id DESC
   `;
+  const cleanedSearch = String(search || '').trim();
+  if (cleanedSearch) {
+    params.push(`%${cleanedSearch}%`, `%${cleanedSearch}%`, `%${cleanedSearch}%`, `%${cleanedSearch}%`);
+    sql += `
+      WHERE (
+        p.first_name ILIKE ?
+        OR p.last_name ILIKE ?
+        OR d.name ILIKE ?
+        OR vr.procedure ILIKE ?
+      )
+    `;
+  }
+  sql += ' ORDER BY vr.visit_date DESC, vr.id DESC';
+  if (Number.isInteger(limit) && limit > 0) {
+    params.push(limit, Math.max(0, Number(offset) || 0));
+    sql += ' LIMIT ? OFFSET ?';
+  }
+  return { sql, params };
 }
 
 function createPostgresRecordsRepository(pool) {
   return {
-    listRecords() {
-      return queryMany(pool, recordsListSql());
+    listRecords(options = {}) {
+      const { sql, params } = recordsListSql(options);
+      return queryMany(pool, sql, params);
     },
 
     treatmentsForRecord(visitRecordId) {
@@ -49,6 +70,16 @@ function createPostgresRecordsRepository(pool) {
         FROM treatments
         WHERE visit_record_id = ?
       `, [visitRecordId]);
+    },
+
+    treatmentsForRecords(visitRecordIds) {
+      if (!Array.isArray(visitRecordIds) || visitRecordIds.length === 0) return [];
+      return queryMany(pool, `
+        SELECT visit_record_id, tooth_number, treatment_type, status, notes, price, currency, discount, discount_type, discount_value
+        FROM treatments
+        WHERE visit_record_id = ANY(?::int[])
+        ORDER BY visit_record_id, id
+      `, [visitRecordIds]);
     },
 
     paymentPartsForRecord(visitRecordId) {
@@ -60,11 +91,22 @@ function createPostgresRecordsRepository(pool) {
       `, [visitRecordId]);
     },
 
+    paymentPartsForRecords(visitRecordIds) {
+      if (!Array.isArray(visitRecordIds) || visitRecordIds.length === 0) return [];
+      return queryMany(pool, `
+        SELECT id, visit_record_id, amount, currency, exchange_rate_to_rsd, amount_rsd, payment_method, payment_date, notes
+        FROM payment_parts
+        WHERE visit_record_id = ANY(?::int[])
+        ORDER BY visit_record_id, payment_date, id
+      `, [visitRecordIds]);
+    },
+
     findRecordById(id) {
       return queryOne(pool, 'SELECT * FROM visit_records WHERE id = ?', [id]);
     },
 
     async rowExists(table, id) {
+      if (!ROW_EXISTS_TABLES.has(table)) throw new Error('Unsupported rowExists table.');
       const row = await queryOne(pool, `SELECT id FROM ${table} WHERE id = ?`, [id]);
       return Boolean(row);
     },
@@ -95,6 +137,11 @@ function createPostgresRecordsRepository(pool) {
         SET procedure = ?, status = ?, shift = ?, notes = ?, updated_at = now()
         WHERE id = ?
       `, [procedure, status, shift, notes, id]);
+    },
+
+    async replaceTreatments(visitRecordId, treatments) {
+      await execute(pool, 'DELETE FROM treatments WHERE visit_record_id = ?', [visitRecordId]);
+      await insertTreatmentsPostgres(pool, visitRecordId, treatments);
     },
 
     async upsertPayment({ visitRecordId, patientId, payment, paymentSummary, paymentParts, currency }) {

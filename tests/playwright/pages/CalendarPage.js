@@ -12,8 +12,8 @@ class CalendarPage {
     this.panel = page.locator("#appointment-panel");
     this.alert = page.locator("#appointment-alert");
     this.patient = page.locator("#appointment-patient");
-    this.date = page.locator("#appointment-date");
-    this.time = page.locator("#appointment-time");
+    this.date = page.locator('[data-drrosa-for="appointment-date"]');
+    this.time = page.locator('[data-drrosa-for="appointment-time"]');
     this.duration = page.locator("#appointment-duration");
     this.doctor = page.locator("#appointment-doctor");
     this.chair = page.locator("#appointment-chair");

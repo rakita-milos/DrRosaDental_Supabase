@@ -15,6 +15,16 @@
     element.className = `form-alert ${isError ? "alert-error" : "alert-success"}`;
   }
 
+  function showUnavailableMessage() {
+    const form = document.getElementById("public-booking-form");
+    form?.querySelectorAll("input, select, textarea, button").forEach(control => {
+      control.disabled = true;
+    });
+    form?.querySelector(".input-grid")?.setAttribute("hidden", "");
+    form?.querySelector(".form-actions")?.setAttribute("hidden", "");
+    message("Onlajn zakazivanje trenutno nije dostupno.", true);
+  }
+
   function normalizeText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
   }
@@ -148,6 +158,14 @@
   }
 
   async function init() {
+    const status = await window.DrRosaApi.getPublicBookingStatus();
+    if (!status.enabled) {
+      showUnavailableMessage();
+      document.getElementById("public-booking-back")?.addEventListener("click", () => {
+        window.location.href = "index.html";
+      });
+      return;
+    }
     document.getElementById("booking-date").value = today();
     await initializeCaptcha();
     const options = await window.DrRosaApi.getPublicBookingOptions();
@@ -186,6 +204,15 @@
         message("Potvrdite da niste robot.", true);
         return;
       }
+      if (event.currentTarget.dataset.drrosaBusy === "1") return;
+      const submitButton = event.currentTarget.querySelector("button[type='submit']");
+      const submitText = submitButton?.textContent;
+      event.currentTarget.dataset.drrosaBusy = "1";
+      event.currentTarget.setAttribute("aria-busy", "true");
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "Zakazivanje...";
+      }
       try {
         await window.DrRosaApi.createPublicBooking({
           firstName: document.getElementById("booking-first-name").value,
@@ -209,6 +236,13 @@
         message("Termin je zakazan. Ordinacija ce vas kontaktirati za potvrdu.");
       } catch (error) {
         message(error.message || "Termin nije zakazan.", true);
+      } finally {
+        delete event.currentTarget.dataset.drrosaBusy;
+        event.currentTarget.removeAttribute("aria-busy");
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.textContent = submitText;
+        }
       }
     });
   }

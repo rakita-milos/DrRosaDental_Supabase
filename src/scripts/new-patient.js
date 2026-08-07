@@ -25,8 +25,15 @@ async function requireAccess() {
 
 const form = document.getElementById("patient-form");
 const cancelBtn = document.getElementById("cancel-btn");
+const formMessage = document.getElementById("patient-form-message");
 const patientId = new URLSearchParams(window.location.search).get("patient");
 let initialConditionEditor;
+
+function setFormMessage(message = "", type = "info") {
+  if (!formMessage) return;
+  formMessage.textContent = message;
+  formMessage.className = message ? `form-alert ${type}` : "form-alert";
+}
 
 function patientFullName(patient) {
   return `${patient.firstName || patient.first_name || ""} ${patient.lastName || patient.last_name || ""}`.trim();
@@ -75,6 +82,16 @@ async function saveInitialConditionsForPatient(savedPatientId) {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (form.dataset.drrosaBusy === "1") return;
+  const submitButton = form.querySelector("button[type='submit']");
+  const submitText = submitButton?.textContent;
+  form.dataset.drrosaBusy = "1";
+  form.setAttribute("aria-busy", "true");
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = "Čuvanje...";
+  }
+  setFormMessage("Čuvanje pacijenta je u toku. Molimo sačekajte.", "info");
 
   const patient = {
     firstName: document.getElementById("first-name").value.trim(),
@@ -101,10 +118,18 @@ form.addEventListener("submit", async (event) => {
     const savedPatient = await window.DrRosaApi.createPatient(patient);
     await saveInitialConditionsForPatient(savedPatient.id);
     alert("Pacijent sačuvan!");
+    setFormMessage("Pacijent je sačuvan.", "success");
     form.reset();
     initialConditionEditor?.clear();
   } catch (error) {
     alert(error.message || "Pacijent nije sačuvan. Proverite vezu sa serverom.");
+  } finally {
+    delete form.dataset.drrosaBusy;
+    form.removeAttribute("aria-busy");
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = submitText;
+    }
   }
 });
 

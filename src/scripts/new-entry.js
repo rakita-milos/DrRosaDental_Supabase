@@ -27,19 +27,19 @@ const form = document.getElementById("new-entry-form");
 const alertBox = document.querySelector(".form-alert");
 const saveStatusBox = document.getElementById("save-status");
 const submitButton = form?.querySelector("button[type='submit']");
+const entryPatientContext = document.getElementById("entry-patient-context");
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
+const escapeAttribute = window.DrRosaSecurity.escapeAttribute;
 const previewElements = {
   name: document.getElementById("preview-name"),
-  visit: document.getElementById("preview-visit"),
   procedure: document.getElementById("preview-procedure"),
-  status: document.getElementById("preview-status"),
+  teethCount: document.getElementById("preview-teeth-count"),
   paymentStatus: document.getElementById("preview-payment-status"),
+  totalAmount: document.getElementById("preview-total-amount"),
   amountPaid: document.getElementById("preview-amount-paid"),
   amountDue: document.getElementById("preview-amount-due"),
-  currency: document.getElementById("preview-currency"),
-  paymentParts: document.getElementById("preview-payment-parts"),
-  shift: document.getElementById("preview-shift"),
-  note: document.getElementById("preview-note")
+  debtRow: document.getElementById("preview-debt-row"),
+  noteBadge: document.getElementById("preview-note-badge")
 };
 
 const inputs = {
@@ -47,6 +47,8 @@ const inputs = {
   lastVisit: document.getElementById("last-visit"),
   procedureActivity: document.getElementById("procedure-activity"),
   procedure: document.getElementById("procedure"),
+  addGeneralTreatment: document.getElementById("add-general-treatment"),
+  generalTreatmentList: document.getElementById("general-treatment-list"),
   doctor: document.getElementById("doctor"),
   status: document.getElementById("status"),
   paymentStatus: document.getElementById("payment-status"),
@@ -59,6 +61,7 @@ const inputs = {
   paymentTotalDisplay: document.getElementById("payment-total-display"),
   paymentPaidDisplay: document.getElementById("payment-paid-display"),
   paymentDebtDisplay: document.getElementById("payment-debt-display"),
+  paymentStatusDisplay: document.getElementById("payment-status-display"),
   shift: document.getElementById("shift"),
   note: document.getElementById("note")
 };
@@ -67,6 +70,7 @@ let patients = [];
 let doctors = [];
 let allRecords = [];
 let teethTreatments = {};
+let generalTreatments = [];
 let selectedTeeth = new Set();
 let initialConditionEntries = [];
 let paymentParts = [];
@@ -82,10 +86,11 @@ const procedureCatalog = window.DrRosaProcedureCatalog;
 const currencyUtils = window.DrRosaCurrencyUtils;
 
 const urlParams = new URLSearchParams(window.location.search);
+const patientIdParam = urlParams.get("patientId") || urlParams.get("id");
 const patientParam = urlParams.get("patient");
 const recordParam = urlParams.get("record");
-if (patientParam) {
-  inputs.patient.value = patientParam;
+if (patientParam || patientIdParam) {
+  inputs.patient.value = patientParam || "";
   const newPatientLink = document.getElementById("new-patient-link");
   if (newPatientLink) newPatientLink.style.display = "none";
 }
@@ -123,6 +128,78 @@ function showAlert(message, type = "success", options = {}) {
   }
 }
 
+function setupEntryStepNavigation() {
+  const stepLinks = [...document.querySelectorAll(".entry-step-strip a[href^='#']")];
+  if (!stepLinks.length) return;
+  let manualStepTarget = "";
+  let manualStepLockTimer = 0;
+
+  const sectionEntries = stepLinks
+    .map(link => ({ link, section: document.querySelector(link.getAttribute("href")) }))
+    .filter(entry => entry.section);
+
+  function setActiveStep(sectionId) {
+    sectionEntries.forEach(({ link, section }) => {
+      const active = section.id === sectionId;
+      link.classList.toggle("is-active", active);
+      if (active) link.setAttribute("aria-current", "step");
+      else link.removeAttribute("aria-current");
+    });
+  }
+
+  function clearManualStepLock() {
+    manualStepTarget = "";
+    window.clearTimeout(manualStepLockTimer);
+    manualStepLockTimer = 0;
+  }
+
+  function lockManualStep(sectionId) {
+    manualStepTarget = sectionId;
+    window.clearTimeout(manualStepLockTimer);
+    manualStepLockTimer = window.setTimeout(clearManualStepLock, 900);
+  }
+
+  function scrollToEntrySection(section) {
+    lockManualStep(section.id);
+    setActiveStep(section.id);
+    if (window.location.hash !== `#${section.id}`) {
+      window.history.replaceState(null, "", `#${section.id}`);
+    }
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  sectionEntries.forEach(({ link, section }) => {
+    link.addEventListener("click", event => {
+      event.preventDefault();
+      scrollToEntrySection(section);
+    });
+  });
+
+  setActiveStep(sectionEntries[0].section.id);
+
+  if (!("IntersectionObserver" in window)) return;
+
+  const observer = new IntersectionObserver(entries => {
+    if (manualStepTarget) {
+      const targetEntry = entries.find(entry => entry.target.id === manualStepTarget && entry.isIntersecting);
+      if (targetEntry && targetEntry.intersectionRatio >= 0.28) {
+        setActiveStep(manualStepTarget);
+        clearManualStepLock();
+      }
+      return;
+    }
+    const visibleEntry = entries
+      .filter(entry => entry.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visibleEntry) setActiveStep(visibleEntry.target.id);
+  }, {
+    rootMargin: "-120px 0px -58% 0px",
+    threshold: [0.12, 0.28, 0.5]
+  });
+
+  sectionEntries.forEach(({ section }) => observer.observe(section));
+}
+
 function setSubmitting(isSubmitting) {
   if (!submitButton) return;
   submitButton.disabled = isSubmitting;
@@ -138,23 +215,29 @@ function controlLabel(control) {
   return label.replace(/\s+/g, " ");
 }
 
+function selectedTreatmentTeethCount() {
+  return Object.keys(teethTreatments).filter(tooth => treatmentListForTooth(tooth).length > 0).length;
+}
+
 function updatePreview() {
-  const procedureText = inputs.procedure.value.trim();
-  const activityText = inputs.procedureActivity.value.trim();
+  const procedureText = currentCombinedTreatmentDescription();
   const summary = paymentSummary();
-  previewElements.name.textContent = inputs.patient.value.trim() || "-";
-  previewElements.visit.textContent = formatDate(inputs.lastVisit.value);
-  previewElements.procedure.textContent = procedureText ? `${activityText ? `${activityText} / ` : ""}${procedureText}` : (hasToothTreatments() ? "Rad po zubima" : "-");
-  previewElements.status.textContent = inputs.status.value;
-  previewElements.paymentStatus.textContent = inputs.paymentStatus.value;
+  const hasDebt = summary.debt > 0.009;
+  previewElements.name.textContent = inputs.patient.value.trim() || "Pacijent nije izabran";
+  previewElements.procedure.textContent = procedureText
+    || "Rad nije dodat";
+  previewElements.teethCount.textContent = String(selectedTreatmentTeethCount());
+  previewElements.paymentStatus.textContent = summary.status || inputs.paymentStatus.value;
+  previewElements.totalAmount.textContent = formatMoney(summary.total, summary.currency);
   previewElements.amountPaid.textContent = formatMoney(summary.paid, summary.currency);
-  previewElements.amountDue.textContent = formatMoney(summary.debt, summary.currency);
-  previewElements.currency.textContent = inputs.currency.value;
-  if (previewElements.paymentParts) {
-    previewElements.paymentParts.textContent = paymentParts.length ? paymentParts.map(paymentPartLabel).join(" / ") : "-";
+  previewElements.amountDue.textContent = hasDebt ? formatMoney(summary.debt, summary.currency) : "Bez duga";
+  if (previewElements.debtRow) {
+    previewElements.debtRow.classList.toggle("has-debt", hasDebt);
+    previewElements.debtRow.classList.toggle("is-clear", !hasDebt);
   }
-  previewElements.shift.textContent = inputs.shift.value;
-  previewElements.note.textContent = inputs.note.value.trim() || "-";
+  if (previewElements.noteBadge) {
+    previewElements.noteBadge.hidden = !inputs.note.value.trim();
+  }
 }
 
 function patientName(patient) {
@@ -163,6 +246,74 @@ function patientName(patient) {
 
 function findPatientByName(name) {
   return patients.find(patient => patientName(patient).toLowerCase() === name.toLowerCase());
+}
+
+function selectedPatient() {
+  if (patientIdParam) {
+    return patients.find(patient => String(patient.id) === String(patientIdParam));
+  }
+  return findPatientByName(inputs.patient.value.trim());
+}
+
+function hasProcedureFallbackValue() {
+  return Boolean(inputs.procedureActivity?.value || inputs.procedure?.value);
+}
+
+function setProcedureFallbackVisible(isVisible) {
+  const block = document.getElementById("procedure-fallback-block");
+  const button = document.getElementById("toggle-procedure-fallback");
+  if (!block || !button) return;
+  block.hidden = !isVisible;
+  button.setAttribute("aria-expanded", isVisible ? "true" : "false");
+  button.textContent = isVisible ? "Sakrij opste postupke" : "Prikazi opste postupke";
+}
+
+function setupProcedureFallbackToggle() {
+  const button = document.getElementById("toggle-procedure-fallback");
+  if (!button) return;
+  setProcedureFallbackVisible(hasProcedureFallbackValue());
+  button.addEventListener("click", () => {
+    const block = document.getElementById("procedure-fallback-block");
+    setProcedureFallbackVisible(Boolean(block?.hidden));
+  });
+}
+
+function patientDashboardUrl(patient, record) {
+  const params = new URLSearchParams();
+  if (patient?.id) {
+    params.set("patientId", patient.id);
+  } else {
+    params.set("patient", inputs.patient.value.trim());
+  }
+  if (record?.id) {
+    params.set("highlightRecord", record.id);
+  } else if (inputs.lastVisit.value) {
+    params.set("highlightVisit", inputs.lastVisit.value);
+  }
+  return `patient-dashboard.html?${params.toString()}`;
+}
+
+function lockPatientFromQuery() {
+  if (!patientIdParam) return;
+  const patient = selectedPatient();
+  if (!patient) return;
+  const name = patientName(patient);
+  inputs.patient.value = patientName(patient);
+  inputs.patient.readOnly = true;
+  inputs.patient.classList.add("locked-patient-input");
+  if (entryPatientContext) {
+    entryPatientContext.hidden = false;
+    entryPatientContext.innerHTML = `
+      <div>
+        <span>Pacijent</span>
+        <strong>${escapeHtml(name)}</strong>
+        <small>${escapeHtml([patient.phone, patient.email].filter(Boolean).join(" / ") || "Kontakt nije unet")}</small>
+      </div>
+      <a class="secondary-btn" href="patient-dashboard.html?patientId=${encodeURIComponent(patient.id)}">Karton</a>
+    `;
+  }
+  closePatientSuggestions();
+  updatePreview();
 }
 
 function findDoctorByName(name) {
@@ -194,7 +345,7 @@ function renderPatientSuggestions(query = inputs.patient.value) {
 
   list.innerHTML = names.length
     ? names.map(name => `
-      <button class="patient-autocomplete-option" type="button" role="option" data-patient-name="${escapeHtml(name)}">
+      <button class="patient-autocomplete-option" type="button" role="option" data-patient-name="${escapeAttribute(name)}">
         ${escapeHtml(name)}
       </button>
     `).join("")
@@ -208,11 +359,11 @@ function populatePatientList() {
 
 function populateDoctors() {
   if (!doctors.length) return;
-  inputs.doctor.innerHTML = doctors.map(doctor => `<option value="${escapeHtml(doctor.name)}">${escapeHtml(doctor.name)}</option>`).join("");
+  inputs.doctor.innerHTML = doctors.map(doctor => `<option value="${escapeAttribute(doctor.name)}">${escapeHtml(doctor.name)}</option>`).join("");
 }
 
 function option(value, label = value) {
-  return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+  return `<option value="${escapeAttribute(value)}">${escapeHtml(label)}</option>`;
 }
 
 function procedureOption(procedure) {
@@ -220,7 +371,7 @@ function procedureOption(procedure) {
     amount: procedureCatalog.getPrice(procedure),
     currency: procedureCatalog.getPriceCurrency?.(procedure) || "EUR"
   };
-  return `<option value="${escapeHtml(procedure)}" data-price="${Number(priceInfo.amount || 0)}" data-price-currency="${escapeHtml(priceInfo.currency || "EUR")}">${escapeHtml(procedure)}</option>`;
+  return `<option value="${escapeAttribute(procedure)}" data-price="${Number(priceInfo.amount || 0)}" data-price-currency="${escapeAttribute(priceInfo.currency || "EUR")}">${escapeHtml(procedure)}</option>`;
 }
 
 function paymentCurrency() {
@@ -250,6 +401,10 @@ function populateProcedureSelect(activitySelect, procedureSelect, placeholder = 
 
 function setSelectValue(select, value) {
   if (!select || !value) return;
+  if (!select.options) {
+    select.value = value;
+    return;
+  }
   if (!Array.from(select.options).some(item => item.value === value)) {
     select.appendChild(new Option(value, value));
   }
@@ -277,6 +432,13 @@ async function populateCodebookSelects() {
       if (!select) return;
       if (type === "currency") {
         currencyUtils?.setCurrencies(items);
+      }
+      if (!select.options) {
+        setSelectValue(select, select.value || items[0].value);
+        if (type === "currency") {
+          select.dataset.previousCurrency = select.value || "EUR";
+        }
+        return;
       }
       const current = select.value;
       select.innerHTML = items.map(item => {
@@ -323,6 +485,12 @@ function cloneTreatments(treatments, recordCurrency = "EUR") {
   return copy;
 }
 
+function cloneGeneralTreatments(treatments, recordCurrency = "EUR") {
+  return (Array.isArray(treatments) ? treatments : [])
+    .map(item => normalizeStoredTreatment(item, recordCurrency))
+    .filter(item => item.type);
+}
+
 function openRecordInForm(record) {
   if (!record) return;
   inputs.patient.value = record.patient || "";
@@ -339,11 +507,13 @@ function openRecordInForm(record) {
   setSelectValue(inputs.shift, record.shift || "");
   inputs.note.value = record.note === "-" ? "" : (record.note || "");
   teethTreatments = cloneTreatments(record.treatments, record.currency || paymentCurrency());
+  generalTreatments = cloneGeneralTreatments(record.generalTreatments, record.currency || paymentCurrency());
   const inferredTotal = Number(record.amountDue || 0) + Number(record.amountPaid || 0);
   inputs.totalAmount.value = inferredTotal > 0 ? inferredTotal.toFixed(2) : "";
   totalAmountTouched = inferredTotal > 0;
   updateTeethSummary();
   updateToothHighlights();
+  renderGeneralTreatments();
   updateAmountDueLimit();
   paymentParts = (record.paymentParts || []).map(normalizedPaymentPart);
   if (!paymentParts.length && Number(record.amountPaid || 0) > 0) {
@@ -358,6 +528,7 @@ const teethPanel = document.getElementById("tooth-treatment-panel");
 const selectedToothSpan = document.getElementById("selected-tooth");
 const closePanel = document.getElementById("close-panel");
 const saveTreatmentBtn = document.getElementById("save-treatment");
+const addTreatmentItemBtn = document.getElementById("add-treatment-item");
 const treatmentActivity = document.getElementById("treatment-activity");
 const treatmentType = document.getElementById("treatment-type");
 const treatmentNote = document.getElementById("treatment-note");
@@ -365,11 +536,13 @@ const treatmentDiscount = document.getElementById("treatment-discount");
 const treatmentDiscountType = document.getElementById("treatment-discount-type");
 const treatmentPrice = document.getElementById("treatment-price");
 const treatmentTotalPrice = document.getElementById("treatment-total-price");
+const pendingTreatmentList = document.getElementById("pending-treatment-list");
 const teethSummary = document.getElementById("teeth-summary");
 const initialConditionSummary = document.getElementById("initial-condition-summary");
 const showInitialConditionBtn = document.getElementById("show-initial-condition");
 const toothNodes = document.querySelectorAll(".tooth-node");
 let toothHistoryCollapsed = false;
+let pendingTreatmentItems = [];
 
 function formatMoney(amount, currency = paymentCurrency()) {
   return currencyUtils ? currencyUtils.formatMoney(amount, currency) : `${Number(amount || 0).toFixed(2)} ${currency}`;
@@ -422,6 +595,24 @@ function paymentSummary() {
   return { total, paid: clampedPaid, rawPaid: paid, debt, status, currency };
 }
 
+function paymentPartFromRow(row) {
+  const index = Number(row.dataset.paymentIndex);
+  return normalizedPaymentPart({
+    amount: row.querySelector(".payment-part-amount")?.value,
+    currency: row.querySelector(".payment-part-currency")?.value,
+    paymentMethod: row.querySelector(".payment-part-method")?.value,
+    paymentDate: row.querySelector(".payment-part-date")?.value,
+    notes: paymentParts[index]?.notes || ""
+  });
+}
+
+function syncPaymentPartsFromDom() {
+  if (!inputs.paymentPartsList) return;
+  const rows = Array.from(inputs.paymentPartsList.querySelectorAll(".payment-part-row"));
+  if (!rows.length) return;
+  paymentParts = rows.map(paymentPartFromRow);
+}
+
 function renderPaymentParts() {
   if (!inputs.paymentPartsList) return;
   const currencies = availableCurrencyCodes();
@@ -435,6 +626,7 @@ function renderPaymentParts() {
     const methodOptions = rowMethods.map(method => `<option value="${escapeHtml(method.value)}"${method.value === normalized.paymentMethod ? " selected" : ""}>${escapeHtml(method.label)}</option>`).join("");
     return `
       <div class="payment-part-row" data-payment-index="${index}">
+        <span class="payment-part-number">#${index + 1}</span>
         <label>
           Iznos
           <input class="payment-part-amount" type="number" min="0" step="0.01" value="${Number(normalized.amount || 0) || ""}" />
@@ -453,11 +645,7 @@ function renderPaymentParts() {
           Datum
           <input class="payment-part-date" type="date" value="${escapeHtml(normalized.paymentDate)}" />
         </label>
-        <label class="payment-part-notes">
-          Napomena
-          <input class="payment-part-note" type="text" maxlength="1000" value="${escapeHtml(normalized.notes)}" />
-        </label>
-        <button class="danger-btn payment-part-remove" type="button" aria-label="Obrisi uplatu">x</button>
+        <button class="danger-btn payment-part-remove" type="button" aria-label="Obrisi uplatu">×</button>
       </div>
     `;
   }).join("") : `<div class="payment-empty-state">Nema dodatih uplata. Dug ce biti jednak ukupnoj ceni.</div>`;
@@ -465,13 +653,7 @@ function renderPaymentParts() {
   inputs.paymentPartsList.querySelectorAll(".payment-part-row").forEach(row => {
     const index = Number(row.dataset.paymentIndex);
     const updatePart = () => {
-      paymentParts[index] = normalizedPaymentPart({
-        amount: row.querySelector(".payment-part-amount")?.value,
-        currency: row.querySelector(".payment-part-currency")?.value,
-        paymentMethod: row.querySelector(".payment-part-method")?.value,
-        paymentDate: row.querySelector(".payment-part-date")?.value,
-        notes: row.querySelector(".payment-part-note")?.value
-      });
+      paymentParts[index] = paymentPartFromRow(row);
       updatePaymentCalculation({ render: false });
       updatePreview();
     };
@@ -572,6 +754,10 @@ function hasToothTreatments() {
   return Object.values(teethTreatments).some(treatments => treatmentListForValue(treatments).length > 0);
 }
 
+function hasGeneralTreatments({ includeDraft = true } = {}) {
+  return currentGeneralTreatmentEntries({ includeDraft }).length > 0;
+}
+
 function treatmentListForValue(treatments) {
   if (!treatments) return [];
   return Array.isArray(treatments) ? treatments : [treatments];
@@ -582,6 +768,16 @@ function currentTreatmentEntries() {
     .flatMap(([tooth, toothTreatments]) => treatmentListForValue(toothTreatments).map((treatment, index) => ({ tooth, treatment, index })));
 }
 
+function currentGeneralDraftTreatment() {
+  return inputs.procedure?.value ? generalTreatmentFromCurrentInputs() : null;
+}
+
+function currentGeneralTreatmentEntries({ includeDraft = true } = {}) {
+  const entries = generalTreatments.map((treatment, index) => ({ treatment, index, isDraft: false }));
+  const draft = includeDraft ? currentGeneralDraftTreatment() : null;
+  return draft ? [...entries, { treatment: draft, index: -1, isDraft: true }] : entries;
+}
+
 function currentTreatmentTotal() {
   return currentTreatmentEntries().reduce((total, item) => total + Number(item.treatment.price || 0), 0);
 }
@@ -590,12 +786,28 @@ function currentTreatmentDiscountTotal() {
   return currentTreatmentEntries().reduce((total, item) => total + treatmentDiscountAmount(item.treatment), 0);
 }
 
+function currentGeneralTreatmentTotal({ includeDraft = true } = {}) {
+  return currentGeneralTreatmentEntries({ includeDraft }).reduce((total, item) => total + Number(item.treatment.price || 0), 0);
+}
+
+function currentGeneralTreatmentDiscountTotal({ includeDraft = true } = {}) {
+  return currentGeneralTreatmentEntries({ includeDraft }).reduce((total, item) => total + treatmentDiscountAmount(item.treatment), 0);
+}
+
+function currentToothFinalTotal() {
+  return Math.max(0, currentTreatmentTotal() - currentTreatmentDiscountTotal());
+}
+
+function currentGeneralFinalTotal({ includeDraft = true } = {}) {
+  return Math.max(0, currentGeneralTreatmentTotal({ includeDraft }) - currentGeneralTreatmentDiscountTotal({ includeDraft }));
+}
+
 function currentGrossTotal() {
-  return currentTreatmentTotal();
+  return currentTreatmentTotal() + currentGeneralTreatmentTotal();
 }
 
 function currentFinalTotal() {
-  return Math.max(0, currentGrossTotal() - currentTreatmentDiscountTotal());
+  return Math.max(0, currentGrossTotal() - currentTreatmentDiscountTotal() - currentGeneralTreatmentDiscountTotal());
 }
 
 function currentSelectedProcedureTotal() {
@@ -611,12 +823,12 @@ function currentSelectedProcedureTotal() {
 }
 
 function currentAutoVisitTotal() {
-  return hasToothTreatments() ? currentFinalTotal() : currentSelectedProcedureTotal();
+  return currentToothFinalTotal() + currentGeneralFinalTotal();
 }
 
 function currentVisitTotal() {
   const manualTotal = Number(inputs.totalAmount?.value || 0);
-  return manualTotal > 0 ? manualTotal : currentAutoVisitTotal();
+  return totalAmountTouched && manualTotal > 0 ? manualTotal : currentAutoVisitTotal();
 }
 
 function syncTotalAmountFromSelection({ force = false } = {}) {
@@ -689,6 +901,7 @@ function updatePaymentCalculation({ render = true } = {}) {
   if (inputs.paymentTotalDisplay) inputs.paymentTotalDisplay.textContent = formatMoney(summary.total, summary.currency);
   if (inputs.paymentPaidDisplay) inputs.paymentPaidDisplay.textContent = formatMoney(summary.paid, summary.currency);
   if (inputs.paymentDebtDisplay) inputs.paymentDebtDisplay.textContent = formatMoney(summary.debt, summary.currency);
+  if (inputs.paymentStatusDisplay) inputs.paymentStatusDisplay.textContent = inputs.paymentStatus.selectedOptions[0]?.textContent || summary.status;
   if (render) renderPaymentParts();
 }
 
@@ -712,6 +925,178 @@ function updateTreatmentPricePreview() {
   const selectedCount = Math.max(1, selectedTeeth.size);
   treatmentPrice.textContent = pricePreviewLabel(basePrice, baseCurrency);
   treatmentTotalPrice.textContent = formatMoney((price - discount) * selectedCount);
+}
+
+function currentGeneralTreatmentDescription({ includeDraft = true } = {}) {
+  return currentGeneralTreatmentEntries({ includeDraft })
+    .map(({ treatment }) => treatment.type)
+    .filter(Boolean)
+    .join(", ");
+}
+
+function currentCombinedTreatmentDescription({ includeDraft = true } = {}) {
+  return [
+    currentGeneralTreatmentDescription({ includeDraft }),
+    currentTreatmentDescription()
+  ].filter(Boolean).join("; ");
+}
+
+function generalTreatmentFromCurrentInputs() {
+  const procedureValue = inputs.procedure.value.trim();
+  const activityValue = inputs.procedureActivity.value.trim() || procedureCatalog.findActivityForProcedure(procedureValue);
+  const basePrice = Math.max(0, Number(
+    inputs.procedure.selectedOptions[0]?.dataset.price
+    || procedureCatalog.getPrice(procedureValue)
+    || 0
+  ));
+  const baseCurrency = inputs.procedure.selectedOptions[0]?.dataset.priceCurrency
+    || procedureCatalog.getPriceCurrency?.(procedureValue)
+    || "EUR";
+  return {
+    activity: activityValue,
+    type: procedureValue,
+    note: "",
+    status: "Planirano",
+    price: convertToPaymentCurrency(basePrice, baseCurrency),
+    currency: paymentCurrency(),
+    basePrice,
+    basePriceCurrency: baseCurrency,
+    basePriceEur: currencyUtils
+      ? currencyUtils.convert(basePrice, baseCurrency, "EUR")
+      : baseCurrency === "EUR" ? basePrice : 0,
+    discount: 0,
+    discountType: "amount",
+    discountValue: 0
+  };
+}
+
+function clearGeneralTreatmentInputs() {
+  inputs.procedureActivity.value = "";
+  populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
+  inputs.procedure.dispatchEvent(new Event("drrosa-select-value"));
+  inputs.procedureActivity.dispatchEvent(new Event("drrosa-select-value"));
+}
+
+function ensureDraftGeneralTreatmentAdded() {
+  const draft = currentGeneralDraftTreatment();
+  if (!draft) return false;
+  generalTreatments.push(draft);
+  clearGeneralTreatmentInputs();
+  renderGeneralTreatments();
+  return true;
+}
+
+function renderGeneralTreatments() {
+  if (!inputs.generalTreatmentList) return;
+  if (!generalTreatments.length) {
+    inputs.generalTreatmentList.innerHTML = `<div class="general-treatment-empty">Nema dodatih opštih postupaka.</div>`;
+    return;
+  }
+
+  inputs.generalTreatmentList.innerHTML = generalTreatments.map((treatment, index) => `
+    <div class="general-treatment-item" data-general-treatment-index="${index}">
+      <div>
+        <strong>${escapeHtml(treatment.type)}</strong>
+        ${treatment.activity ? `<span>${escapeHtml(treatment.activity)}</span>` : ""}
+      </div>
+      <div class="general-treatment-price">${formatMoney(treatmentNetPrice(treatment), treatment.currency || paymentCurrency())}</div>
+      <button type="button" class="danger-btn general-treatment-remove" aria-label="Obriši opšti postupak">x</button>
+    </div>
+  `).join("");
+
+  inputs.generalTreatmentList.querySelectorAll(".general-treatment-remove").forEach(button => {
+    button.addEventListener("click", () => {
+      const row = button.closest("[data-general-treatment-index]");
+      const index = Number(row?.dataset.generalTreatmentIndex);
+      if (Number.isInteger(index)) generalTreatments.splice(index, 1);
+      syncTotalAmountFromSelection({ force: !totalAmountTouched });
+      renderGeneralTreatments();
+      updatePaymentCalculation();
+      updatePreview();
+    });
+  });
+}
+
+function treatmentNetPrice(treatment) {
+  return Math.max(0, Number(treatment.price || 0) - treatmentDiscountAmount(treatment));
+}
+
+function pendingTreatmentTotal() {
+  const selectedCount = Math.max(1, selectedTeeth.size);
+  return pendingTreatmentItems.reduce((total, treatment) => total + treatmentNetPrice(treatment) * selectedCount, 0);
+}
+
+function treatmentFromCurrentInputs() {
+  const basePrice = selectedTreatmentBasePrice();
+  const basePriceCurrency = selectedTreatmentBaseCurrency();
+  const price = convertToPaymentCurrency(basePrice, basePriceCurrency);
+  const discountType = normalizeDiscountType(treatmentDiscountType.value);
+  const discountValue = normalizeDiscountValue(treatmentDiscount.value, discountType);
+  const discount = calculateTreatmentDiscount(price, discountValue, discountType);
+  return {
+    activity: treatmentActivity.value,
+    type: treatmentType.value,
+    note: treatmentNote.value,
+    price,
+    basePrice,
+    basePriceCurrency,
+    basePriceEur: currencyUtils ? currencyUtils.convert(basePrice, basePriceCurrency, "EUR") : basePriceCurrency === "EUR" ? basePrice : 0,
+    currency: paymentCurrency(),
+    discount,
+    discountType,
+    discountValue
+  };
+}
+
+function clearTreatmentInputsAfterAdd() {
+  treatmentNote.value = "";
+  treatmentDiscount.value = "";
+  treatmentDiscountType.value = "amount";
+  updateTreatmentPricePreview();
+}
+
+function renderPendingTreatmentItems() {
+  if (!pendingTreatmentList) return;
+  const selectedCount = Math.max(1, selectedTeeth.size);
+  if (!pendingTreatmentItems.length) {
+    pendingTreatmentList.innerHTML = `<div class="pending-treatment-empty">Nema dodatih postupaka za izabrane zube.</div>`;
+    return;
+  }
+
+  pendingTreatmentList.innerHTML = `
+    <div class="pending-treatment-header">
+      <span>Postupci za upis</span>
+      <strong>${formatMoney(pendingTreatmentTotal())}</strong>
+    </div>
+    ${pendingTreatmentItems.map((treatment, index) => `
+      <div class="pending-treatment-item" data-pending-treatment-index="${index}">
+        <div>
+          <strong>${escapeHtml(treatment.type)}</strong>
+          <span>${escapeHtml(treatment.activity || "Bez delatnosti")}</span>
+          ${treatment.note ? `<small>${escapeHtml(treatment.note)}</small>` : ""}
+        </div>
+        <div class="pending-treatment-price">
+          <span>${formatMoney(treatmentNetPrice(treatment), treatment.currency || paymentCurrency())} x ${selectedCount}</span>
+          <strong>${formatMoney(treatmentNetPrice(treatment) * selectedCount, treatment.currency || paymentCurrency())}</strong>
+        </div>
+        <button class="danger-btn pending-treatment-remove" type="button" aria-label="Ukloni postupak">x</button>
+      </div>
+    `).join("")}
+  `;
+  pendingTreatmentList.querySelectorAll(".pending-treatment-remove").forEach(button => {
+    button.addEventListener("click", () => {
+      const row = button.closest("[data-pending-treatment-index]");
+      const index = Number(row?.dataset.pendingTreatmentIndex);
+      if (!Number.isInteger(index)) return;
+      pendingTreatmentItems.splice(index, 1);
+      renderPendingTreatmentItems();
+    });
+  });
+}
+
+function resetPendingTreatmentBuilder() {
+  pendingTreatmentItems = [];
+  renderPendingTreatmentItems();
 }
 
 function updateDiscountCurrencyLabel() {
@@ -750,6 +1135,7 @@ function refreshSelectedTeethPanel() {
   }
 
   updateTreatmentPricePreview();
+  renderPendingTreatmentItems();
 }
 
 function toggleToothSelection(toothNode) {
@@ -786,40 +1172,48 @@ toothNodes.forEach(toothNode => {
 closePanel.addEventListener("click", () => {
   teethPanel.style.display = "none";
   selectedTeeth.clear();
+  resetPendingTreatmentBuilder();
   updateToothHighlights();
 });
 
-saveTreatmentBtn.addEventListener("click", () => {
+addTreatmentItemBtn?.addEventListener("click", () => {
   if (selectedTeeth.size === 0 || !treatmentActivity.value || !treatmentType.value) {
     alert("Odaberite zub, osnovnu delatnost i vrstu tretmana!");
     return;
   }
 
+  pendingTreatmentItems.push(treatmentFromCurrentInputs());
+  renderPendingTreatmentItems();
+  clearTreatmentInputsAfterAdd();
+});
+
+saveTreatmentBtn.addEventListener("click", () => {
+  if (selectedTeeth.size === 0) {
+    alert("Odaberite bar jedan zub!");
+    return;
+  }
+
+  if (!pendingTreatmentItems.length && treatmentActivity.value && treatmentType.value) {
+    pendingTreatmentItems.push(treatmentFromCurrentInputs());
+  }
+
+  if (!pendingTreatmentItems.length) {
+    alert("Dodajte bar jedan postupak pre čuvanja.");
+    renderPendingTreatmentItems();
+    return;
+  }
+
   selectedTeethList().forEach(tooth => {
-    const basePrice = selectedTreatmentBasePrice();
-    const basePriceCurrency = selectedTreatmentBaseCurrency();
-    const price = convertToPaymentCurrency(basePrice, basePriceCurrency);
-    const discountType = normalizeDiscountType(treatmentDiscountType.value);
-    const discountValue = normalizeDiscountValue(treatmentDiscount.value, discountType);
-    const discount = calculateTreatmentDiscount(price, discountValue, discountType);
     if (!Array.isArray(teethTreatments[tooth])) teethTreatments[tooth] = treatmentListForTooth(tooth);
-    teethTreatments[tooth].push({
-      activity: treatmentActivity.value,
-      type: treatmentType.value,
-      note: treatmentNote.value,
-      price,
-      basePrice,
-      basePriceCurrency,
-      basePriceEur: currencyUtils ? currencyUtils.convert(basePrice, basePriceCurrency, "EUR") : basePriceCurrency === "EUR" ? basePrice : 0,
-      currency: paymentCurrency(),
-      discount,
-      discountType,
-      discountValue
+    pendingTreatmentItems.forEach(treatment => {
+      teethTreatments[tooth].push({ ...treatment });
     });
   });
 
   teethPanel.style.display = "none";
   selectedTeeth.clear();
+  resetPendingTreatmentBuilder();
+  syncTotalAmountFromSelection({ force: !totalAmountTouched });
   updateTeethSummary();
   updateToothHighlights();
   updatePaymentCalculation();
@@ -861,7 +1255,38 @@ inputs.currency.addEventListener("change", () => {
       );
     });
   });
+  generalTreatments.forEach(treatment => {
+    const basePrice = Number(treatment.basePrice ?? treatment.base_price ?? treatment.basePriceEur ?? treatment.base_price_eur ?? 0);
+    const baseCurrency = treatment.basePriceCurrency ?? treatment.base_price_currency ?? (treatment.basePriceEur || treatment.base_price_eur ? "EUR" : treatment.currency || previousCurrency);
+    if (!basePrice) return;
+    treatment.basePrice = basePrice;
+    treatment.basePriceCurrency = baseCurrency;
+    treatment.price = convertToPaymentCurrency(basePrice, baseCurrency);
+    treatment.currency = paymentCurrency();
+    treatment.discount = calculateTreatmentDiscount(
+      treatment.price,
+      treatment.discountValue ?? treatment.discount_value ?? treatment.discount ?? 0,
+      treatment.discountType || treatment.discount_type || "amount"
+    );
+  });
+  pendingTreatmentItems.forEach(treatment => {
+    const basePrice = Number(treatment.basePrice ?? treatment.base_price ?? treatment.basePriceEur ?? treatment.base_price_eur ?? 0);
+    const baseCurrency = treatment.basePriceCurrency ?? treatment.base_price_currency ?? (treatment.basePriceEur || treatment.base_price_eur ? "EUR" : treatment.currency || previousCurrency);
+    if (!basePrice) return;
+    treatment.basePrice = basePrice;
+    treatment.basePriceCurrency = baseCurrency;
+    treatment.price = convertToPaymentCurrency(basePrice, baseCurrency);
+    treatment.currency = paymentCurrency();
+    treatment.discount = calculateTreatmentDiscount(
+      treatment.price,
+      treatment.discountValue ?? treatment.discount_value ?? treatment.discount ?? 0,
+      treatment.discountType || treatment.discount_type || "amount"
+    );
+  });
   updateTreatmentPricePreview();
+  renderGeneralTreatments();
+  renderPendingTreatmentItems();
+  syncTotalAmountFromSelection({ force: !totalAmountTouched });
   updateTeethSummary();
   updatePaymentCalculation();
   updatePreview();
@@ -877,6 +1302,7 @@ inputs.amountPaid.addEventListener("input", () => {
 });
 
 inputs.amountPaid.closest("label")?.setAttribute("hidden", "");
+inputs.paymentStatus.closest("label")?.setAttribute("hidden", "");
 
 inputs.totalAmount?.addEventListener("input", () => {
   totalAmountTouched = true;
@@ -885,6 +1311,7 @@ inputs.totalAmount?.addEventListener("input", () => {
 });
 
 inputs.addPaymentPart?.addEventListener("click", () => {
+  syncPaymentPartsFromDom();
   paymentParts.push(normalizedPaymentPart({ currency: paymentCurrency() }));
   updatePaymentCalculation();
   updatePreview();
@@ -908,6 +1335,19 @@ inputs.procedure.addEventListener("change", () => {
   updatePreview();
 });
 
+inputs.addGeneralTreatment?.addEventListener("click", () => {
+  if (!inputs.procedureActivity.value || !inputs.procedure.value) {
+    showAlert("Odaberite osnovnu delatnost i opšti postupak koji želite da dodate.", "error", { persist: true, scroll: true });
+    return;
+  }
+  generalTreatments.push(generalTreatmentFromCurrentInputs());
+  clearGeneralTreatmentInputs();
+  syncTotalAmountFromSelection({ force: !totalAmountTouched });
+  renderGeneralTreatments();
+  updatePaymentCalculation();
+  updatePreview();
+});
+
 function updateTeethSummary() {
   const treatments = currentTreatmentEntries();
   const history = getPatientToothHistory(inputs.patient.value.trim());
@@ -925,11 +1365,11 @@ function updateTeethSummary() {
       <span>Rađeno</span>
       <strong>${escapeHtml(currentDescription)}</strong>
       <span>Osnovna cena</span>
-      <strong>${formatMoney(currentGrossTotal())}</strong>
+      <strong>${formatMoney(currentTreatmentTotal())}</strong>
       <span>Popust po usluzi</span>
       <strong>${escapeHtml(currentTreatmentDiscountSummary())}</strong>
       <span>Za naplatu</span>
-      <strong>${formatMoney(currentFinalTotal())}</strong>
+      <strong>${formatMoney(currentToothFinalTotal())}</strong>
     </div>
     ${treatments.map(({ tooth, treatment, index }) => `
     <div class="treatment-item">
@@ -977,6 +1417,7 @@ function updateTeethSummary() {
       } else {
         delete teethTreatments[tooth];
       }
+      syncTotalAmountFromSelection({ force: !totalAmountTouched });
       updateTeethSummary();
       updatePaymentCalculation();
       updatePreview();
@@ -993,7 +1434,7 @@ function updateTeethSummary() {
 
 function getPatientToothHistory(name) {
   if (!name) return [];
-  const patient = findPatientByName(name);
+  const patient = selectedPatient();
   return window.DrRosaTreatmentHistory.entriesFromRecords(allRecords, {
     patientId: patient?.id,
     patientName: name,
@@ -1045,7 +1486,7 @@ function renderInitialConditionSummary() {
 
 async function loadInitialConditionForCurrentPatient() {
   const patientNameValue = inputs.patient.value.trim();
-  const patient = findPatientByName(patientNameValue);
+  const patient = selectedPatient();
   if (!patient) {
     showAlert("Prvo odaberite postojeceg pacijenta da bi se prikazalo zateceno stanje.", "error", { persist: true, scroll: true });
     return;
@@ -1065,23 +1506,28 @@ inputs.patient.addEventListener("change", () => {
   renderInitialConditionSummary();
   updateTeethSummary();
   updateToothHighlights();
+  updatePreview();
 });
 
 inputs.patient.addEventListener("input", () => {
+  if (inputs.patient.readOnly) return;
   inputs.patient.value = inputs.patient.value.replace(/\s+/g, " ");
   initialConditionEntries = [];
   renderInitialConditionSummary();
   renderPatientSuggestions();
   updateTeethSummary();
   updateToothHighlights();
+  updatePreview();
 });
 
 inputs.patient.addEventListener("focus", () => {
+  if (inputs.patient.readOnly) return;
   renderPatientSuggestions();
 });
 
 inputs.patient.addEventListener("blur", () => {
   inputs.patient.value = inputs.patient.value.replace(/\s+/g, " ").trim();
+  updatePreview();
   setTimeout(() => {
     if (!document.activeElement?.closest(".patient-autocomplete-field")) closePatientSuggestions();
   }, 120);
@@ -1145,23 +1591,23 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const patientNameValue = inputs.patient.value.trim();
-  const procedureValue = inputs.procedure.value.trim();
-  const procedureActivityValue = inputs.procedureActivity.value.trim() || procedureCatalog.findActivityForProcedure(procedureValue);
-  const hasProcedureSelection = Boolean(procedureValue);
-  const procedureForSave = procedureValue || currentTreatmentDescription() || "Rad po zubima";
+  ensureDraftGeneralTreatmentAdded();
+  const procedureActivityValue = generalTreatments[0]?.activity || inputs.procedureActivity.value.trim() || "";
+  const procedureForSave = currentCombinedTreatmentDescription({ includeDraft: false }) || "Rad po zubima";
   const hasTreatments = hasToothTreatments();
+  const hasGeneralSelection = hasGeneralTreatments({ includeDraft: false });
   const finalTotal = currentFinalTotal();
   updatePaymentCalculation({ render: false });
   const summary = paymentSummary();
   const amountDueValue = summary.debt;
   const amountPaidValue = summary.paid;
-  if (!patientNameValue || !inputs.lastVisit.value || (!hasProcedureSelection && !hasTreatments)) {
-    showAlert("Ispunite pacijenta, datum i odaberite osnovnu delatnost/postupak ili rad na mapi zuba.", "error", { persist: true, scroll: true });
+  if (!patientNameValue || !inputs.lastVisit.value || (!hasGeneralSelection && !hasTreatments)) {
+    showAlert("Ispunite pacijenta, datum i dodajte rad na mapi zuba ili izaberite postupak bez mape zuba.", "error", { persist: true, scroll: true });
     return;
   }
 
-  if (hasTreatments && amountDueValue > finalTotal) {
-    inputs.amountDue.value = finalTotal.toFixed(2);
+  if ((hasTreatments || hasGeneralSelection) && amountDueValue > summary.total) {
+    inputs.amountDue.value = summary.total.toFixed(2);
     updatePreview();
     showAlert("Iznos duga ne može biti veći od ukupne cene svih radova.", "error", { persist: true, scroll: true });
     return;
@@ -1181,7 +1627,7 @@ form.addEventListener("submit", async (event) => {
   showAlert("Čuvanje unosa...", "info", { persist: true });
 
   const hasBackendSession = Boolean(window.DrRosaApi.getSession?.());
-  let patient = findPatientByName(patientNameValue);
+  let patient = selectedPatient();
   const doctor = findDoctorByName(inputs.doctor.value);
 
   // If we're authenticated but patient isn't found locally, refresh patient list
@@ -1191,7 +1637,7 @@ form.addEventListener("submit", async (event) => {
     try {
       patients = await window.DrRosaApi.getPatients();
       populatePatientList();
-      patient = findPatientByName(patientNameValue);
+      patient = selectedPatient();
     } catch (e) {
       console.error('Error refreshing patients list:', e);
     }
@@ -1226,33 +1672,23 @@ form.addEventListener("submit", async (event) => {
     paymentParts: paymentParts.map(normalizedPaymentPart).filter(part => part.amount > 0),
     shift: inputs.shift.value,
     note: inputs.note.value.trim() || "-",
+    generalTreatments,
     treatments: teethTreatments
   };
 
   try {
     if (recordParam) {
       await window.DrRosaApi.updateRecord(recordParam, newRecord);
-      showAlert("Unos je azuriran! Vratite se na dashboard da ga pregledate.");
-      allRecords = await window.DrRosaApi.getRecords();
+      showAlert("Unos je azuriran. Otvaram karton pacijenta...", "success", { persist: true });
       setSubmitting(false);
+      window.location.href = patientDashboardUrl(patient, { id: recordParam });
       return;
     }
 
-    await window.DrRosaApi.createRecord(newRecord);
-    showAlert("Unos je spremljen! Vratite se na dashboard da ga pregledate.");
-    form.reset();
-    teethTreatments = {};
-    paymentParts = [];
-    totalAmountTouched = false;
-    populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
-    populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
-    updateDiscountCurrencyLabel();
-    allRecords = await window.DrRosaApi.getRecords();
-    updateTeethSummary();
-    updateToothHighlights();
-    updatePaymentCalculation();
-    updatePreview();
-    setSubmitting(false);
+    const savedRecord = await window.DrRosaApi.createRecord(newRecord);
+    showAlert("Unos je spremljen. Otvaram karton pacijenta...", "success", { persist: true });
+    window.location.href = patientDashboardUrl(patient, savedRecord);
+    return;
   } catch (error) {
     setSubmitting(false);
     showAlert(error.message || "Unos nije sačuvan.", "error", { persist: true, scroll: true });
@@ -1260,6 +1696,8 @@ form.addEventListener("submit", async (event) => {
 });
 
 (async function init() {
+  setupEntryStepNavigation();
+  setupProcedureFallbackToggle();
   if (!await requireAccess()) return;
   try {
     await procedureCatalog.loadFromApi?.();
@@ -1272,6 +1710,7 @@ form.addEventListener("submit", async (event) => {
     patients = loadedPatients;
     doctors = loadedDoctors;
     allRecords = loadedRecords;
+    lockPatientFromQuery();
     populatePatientList();
     populateDoctors();
     populateActivitySelect(inputs.procedureActivity);
@@ -1287,6 +1726,7 @@ form.addEventListener("submit", async (event) => {
   updatePreview();
   updateTeethSummary();
   updateToothHighlights();
+  renderGeneralTreatments();
   updatePaymentCalculation();
   spreadToothMap();
 })();

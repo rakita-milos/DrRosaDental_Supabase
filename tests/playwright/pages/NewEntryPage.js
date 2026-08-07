@@ -4,7 +4,7 @@ class NewEntryPage {
   constructor(page) {
     this.page = page;
     this.patientName = page.locator("#patient-name");
-    this.lastVisit = page.locator("#last-visit");
+    this.lastVisit = page.locator('[data-drrosa-for="last-visit"]');
     this.activity = page.locator("#procedure-activity");
     this.procedure = page.locator("#procedure");
     this.status = page.locator("#status");
@@ -15,7 +15,7 @@ class NewEntryPage {
     this.amountDue = page.locator("#amount-due");
     this.totalAmount = page.locator("#total-amount");
     this.note = page.locator("#note");
-    this.submit = page.getByRole("button", { name: /Spremi unos/i });
+    this.submit = page.getByRole("button", { name: /Sačuvaj unos|Sacuvaj unos/i });
     this.alert = page.locator(".form-alert");
   }
 
@@ -29,7 +29,7 @@ class NewEntryPage {
 
   async fillVisit(data) {
     await this.patientName.fill(data.patientName);
-    await this.lastVisit.fill(data.lastVisit || "2026-05-08");
+    await this.lastVisit.fill(data.lastVisitDisplay || "08.05.2026");
     if (data.activityLabel) {
       await this.activity.selectOption({ label: data.activityLabel });
     } else {
@@ -72,10 +72,10 @@ class NewEntryPage {
     await expect(this.activity).toBeVisible();
     await expect(this.procedure).toBeVisible();
     await expect(this.status).toBeVisible();
-    await expect(this.paymentStatus).toBeVisible();
+    await expect(this.paymentStatus).toBeHidden();
     await expect(this.currency).toBeVisible();
     await expect(this.shift).toBeVisible();
-    await expect(this.amountPaid).toBeVisible();
+    await expect(this.amountPaid).toBeHidden();
     await expect(this.amountDue).toBeVisible();
     await expect(this.totalAmount).toBeVisible();
     await expect(this.note).toBeVisible();
