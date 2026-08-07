@@ -108,6 +108,26 @@ test('calendar week view groups slots and agenda by chair', () => {
   assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.calendar-board-week \.week-agenda-chair-columns[\s\S]*grid-template-columns: 1fr/);
 });
 
+test('calendar month mobile view renders as a readable day agenda', () => {
+  assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.calendar-board-month \.month-week-days,[\s\S]*\.calendar-board-month \.month-absence-lane[\s\S]*grid-template-columns: 1fr/);
+  assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.calendar-board-month \.calendar-day-muted[\s\S]*display: none/);
+  assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.calendar-board-month \.calendar-day-list[\s\S]*overflow: visible/);
+  assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.calendar-board-month \.appointment-card small,[\s\S]*\.calendar-board-month \.appointment-card em[\s\S]*display: block/);
+});
+
+test('mobile modals and pickers stay within the viewport', () => {
+  assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.appointment-dialog[\s\S]*max-height: calc\(100dvh - 20px\)/);
+  assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.appointment-dialog[\s\S]*overscroll-behavior: contain/);
+  assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.drrosa-picker-popover[\s\S]*position: fixed/);
+  assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.drrosa-picker-popover[\s\S]*max-height: calc\(100dvh - 20px\)/);
+});
+
+test('mobile data tables use compact overflow instead of forcing desktop width', () => {
+  assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.table-wrap table:not\(\.excel-sheet-table\):not\(\.doctor-admin-table\)[\s\S]*min-width: 560px/);
+  assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.excel-sheet-table[\s\S]*min-width: 640px/);
+  assert.match(stylesSource, /@media \(max-width: 640px\)[\s\S]*\.excel-sheet-table th,[\s\S]*\.excel-sheet-table td[\s\S]*min-width: 58px/);
+});
+
 test('calendar event cards use compact title-first content', () => {
   assert.match(calendarSource, /function appointmentDisplayTitle\(appointment\)/);
   assert.match(calendarSource, /function compactAppointmentMarkup\(appointment, starts, ends, options = \{\}\)/);

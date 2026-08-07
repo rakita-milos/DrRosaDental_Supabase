@@ -157,15 +157,27 @@
   }
 
   function googleSyncMessage(result = {}) {
-    const warnings = Number(result.importedWithWarning || 0);
+    const warnings = Number(result.warningTotal || result.importedWithWarning || 0);
+    const conflictWarnings = Number(result.conflictWarningTotal || result.conflicts || 0);
+    const skipped = Number(result.skippedTotal || 0)
+      || Number(result.skippedExternal || 0)
+      + Number(result.skippedMissingLocal || 0)
+      + Number(result.skippedUnsupportedTime || 0)
+      + Number(result.skippedConflicts || 0);
     const parts = [
       `Procitano: ${Number(result.fetched || 0)}`,
       `uvezeno: ${Number(result.imported || 0)}`,
       `azurirano: ${Number(result.updated || 0)}`,
-      `upozorenja: ${warnings}`,
+      `uvezeno/ažurirano sa upozorenjem: ${warnings}`,
       `all-day: ${Number(result.allDayEvents || 0)}`,
-      `konflikti: ${Number(result.conflicts || 0)}`
+      `konflikti rasporeda kao upozorenje: ${conflictWarnings}`,
+      `preskoceno: ${skipped}`
     ];
+    const doctorConflicts = Number(result.doctorConflictWarnings || 0);
+    const chairConflicts = Number(result.chairConflictWarnings || 0);
+    if (doctorConflicts || chairConflicts) {
+      parts.push(`detalji konflikata: doktor ${doctorConflicts}, stolica ${chairConflicts}`);
+    }
     if (result.partial) parts.push("NIJE zavrseno sve - pokrenite sync ponovo");
     return parts.join(", ");
   }

@@ -207,6 +207,14 @@ test('Google pull records warnings instead of skipping all-day and conflict even
   assert.match(serverSource, /action: warning \? 'imported_warning' : 'imported'/);
   assert.match(serverSource, /action: warning \? 'updated_warning' : 'updated'/);
   assert.match(serverSource, /stats\.importedWithWarning \+= 1/);
+  assert.match(serverSource, /stats\.warningTotal \+= 1/);
+  assert.match(serverSource, /stats\.skippedTotal = Number\(stats\.skippedExternal \|\| 0\)/);
+  assert.match(serverSource, /stats\.doctorConflictWarnings \+= 1/);
+  assert.match(serverSource, /stats\.chairConflictWarnings \+= 1/);
+  assert.match(serverSource, /stats\.conflictWarningTotal \+= 1/);
+  assert.match(calendarSource, /konflikti rasporeda kao upozorenje/);
+  assert.match(calendarSource, /preskoceno: \$\{skipped\}/);
+  assert.match(directorReportsSource, /konflikti rasporeda kao upozorenje/);
   assert.match(schemaSource, /CREATE TABLE IF NOT EXISTS google_calendar_sync_jobs/);
   assert.match(schemaSource, /CREATE TABLE IF NOT EXISTS app_notifications/);
 });
@@ -217,6 +225,10 @@ test('Google all-day GO events are imported as doctor absence instead of patient
   assert.match(serverSource, /function doctorFromGoogleTitle\(event\)/);
   assert.match(serverSource, /googleNotesForEvent\(event, times\.googleEventType\)/);
   assert.match(serverSource, /Ovaj dogadjaj ne blokira stolice/);
+  assert.match(calendarRepoSource, /const filters = \['a\.starts_at < \?', 'a\.ends_at > \?'\]/);
+  assert.match(calendarSource, /parseLocalDateTime\(item\.startsAt\) < dayEnd && parseLocalDateTime\(item\.endsAt\) > dayStart/);
+  assert.match(calendarSource, /function weekVisibleAbsences\(days\)/);
+  assert.match(calendarSource, /parseLocalDateTime\(appointment\.startsAt\) < weekEnd && parseLocalDateTime\(appointment\.endsAt\) > weekStart/);
 });
 
 test('Google import can infer preferred chair from event text', () => {

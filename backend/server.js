@@ -1956,8 +1956,15 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     skippedUnsupportedTime: 0,
     skippedConflicts: 0,
     importedWithWarning: 0,
+    warningTotal: 0,
+    skippedTotal: 0,
     allDayEvents: 0,
     conflicts: 0,
+    conflictWarningTotal: 0,
+    doctorConflictWarnings: 0,
+    chairConflictWarnings: 0,
+    chairReassignedWarnings: 0,
+    unmappedDoctorColorWarnings: 0,
     invalidTime: 0,
     warnings: [],
     fullSync: rangeMode || reset || !settings.events_sync_token,
@@ -2015,8 +2022,16 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
       if (result.action === 'skipped_conflict') stats.skippedConflicts += 1;
       if (result.warningCode === 'all_day_event') stats.allDayEvents += 1;
       if (result.warningCode === 'invalid_time') stats.invalidTime += 1;
-      if (['doctor_conflict', 'chair_conflict'].includes(result.warningCode)) stats.conflicts += 1;
+      if (result.warningCode === 'doctor_conflict') stats.doctorConflictWarnings += 1;
+      if (result.warningCode === 'chair_conflict') stats.chairConflictWarnings += 1;
+      if (result.warningCode === 'chair_reassigned') stats.chairReassignedWarnings += 1;
+      if (result.warningCode === 'google_doctor_color_unmapped') stats.unmappedDoctorColorWarnings += 1;
+      if (['doctor_conflict', 'chair_conflict'].includes(result.warningCode)) {
+        stats.conflicts += 1;
+        stats.conflictWarningTotal += 1;
+      }
       if (result.warningCode) {
+        stats.warningTotal += 1;
         stats.warnings.push({
           eventId: cleanText(event?.id, { max: 255 }),
           title: cleanText(event?.summary, { max: 255 }) || 'Bez naslova',
@@ -2040,6 +2055,11 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     await calendarRepo.markGooglePull({});
   }
 
+  stats.skippedTotal = Number(stats.skippedExternal || 0)
+    + Number(stats.skippedMissingLocal || 0)
+    + Number(stats.skippedUnsupportedTime || 0)
+    + Number(stats.skippedConflicts || 0);
+
   return stats;
 }
 
@@ -2048,9 +2068,10 @@ function googleSyncSummaryMessage(stats = {}) {
     `Procitano ${Number(stats.fetched || 0)}`,
     `uvezeno ${Number(stats.imported || 0)}`,
     `azurirano ${Number(stats.updated || 0)}`,
-    `upozorenja ${Number(stats.importedWithWarning || 0)}`,
+    `upozorenja ${Number(stats.warningTotal || stats.importedWithWarning || 0)}`,
     `all-day ${Number(stats.allDayEvents || 0)}`,
-    `konflikti ${Number(stats.conflicts || 0)}`
+    `konflikti rasporeda ${Number(stats.conflictWarningTotal || stats.conflicts || 0)}`,
+    `preskoceno ${Number(stats.skippedTotal || 0)}`
   ].join(', ');
 }
 

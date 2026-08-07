@@ -6880,4 +6880,145 @@ td:nth-child(5) {
   .topbar.menu-open .topbar-actions {
     grid-template-columns: 1fr;
   }
+
+  .calendar-board-month {
+    gap: 12px;
+  }
+
+  .calendar-board-month .month-week {
+    gap: 10px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    overflow: visible;
+  }
+
+  .calendar-board-month .month-week-days,
+  .calendar-board-month .month-absence-lane {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    background: transparent;
+  }
+
+  .calendar-board-month .month-absence-lane {
+    order: 0;
+  }
+
+  .calendar-board-month .calendar-day-muted {
+    display: none;
+  }
+
+  .calendar-board-month .calendar-day {
+    min-height: auto;
+    border: 1px solid #d8e3ee;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .calendar-board-month .calendar-day-header {
+    min-height: 46px;
+    place-items: start;
+    padding: 9px 12px;
+  }
+
+  .calendar-board-month .calendar-day-header strong {
+    font-size: 1rem;
+  }
+
+  .calendar-board-month .calendar-day-list {
+    max-height: none;
+    overflow: visible;
+    padding: 10px;
+  }
+
+  .calendar-board-month .appointment-card,
+  .calendar-board-month .appointment-compact,
+  .calendar-board-month .month-google-event {
+    min-height: 52px;
+    padding: 8px 10px;
+  }
+
+  .calendar-board-month .appointment-card small,
+  .calendar-board-month .appointment-card em {
+    display: block;
+  }
+
+  .calendar-board-week .week-agenda-chair-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-board-week .week-agenda-chair {
+    padding: 10px;
+  }
+
+  .calendar-board-week .agenda-appointment {
+    min-height: 52px;
+    padding: 9px 10px;
+  }
+
+  .appointment-modal {
+    align-items: start;
+    justify-items: stretch;
+    padding: 10px;
+  }
+
+  .appointment-dialog {
+    width: 100%;
+    max-height: calc(100dvh - 20px);
+    padding: 14px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .appointment-dialog .section-header {
+    gap: 10px;
+  }
+
+  .appointment-form-section {
+    padding: 12px;
+  }
+
+  .drrosa-picker-popover {
+    position: fixed;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    top: auto;
+    width: auto;
+    max-height: calc(100dvh - 20px);
+    overflow-y: auto;
+    z-index: 1200;
+  }
+
+  .drrosa-picker-days button,
+  .drrosa-picker-header button,
+  .drrosa-picker-today {
+    min-height: 40px;
+  }
+
+  .table-wrap {
+    padding: 8px;
+  }
+
+  .table-wrap table:not(.excel-sheet-table):not(.doctor-admin-table) {
+    min-width: 560px;
+    font-size: 0.84rem;
+  }
+
+  .table-wrap table:not(.excel-sheet-table):not(.doctor-admin-table) th,
+  .table-wrap table:not(.excel-sheet-table):not(.doctor-admin-table) td {
+    padding: 9px 10px;
+  }
+
+  .excel-sheet-table {
+    min-width: 640px;
+    font-size: 0.82rem;
+  }
+
+  .excel-sheet-table th,
+  .excel-sheet-table td {
+    min-width: 58px;
+    padding: 7px 8px;
+  }
 }
