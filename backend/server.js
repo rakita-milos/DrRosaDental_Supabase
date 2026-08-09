@@ -1928,7 +1928,21 @@ async function updateAppointmentFromGoogleEvent(event, colorContext) {
   return { action: warning ? 'updated_warning' : 'updated', appointmentId, warningCode };
 }
 
-async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast = 1, daysFuture = 14, complete = false, mode = 'incremental', timeMin = null, timeMax = null } = {}) {
+async function pullGoogleCalendarChanges({
+  limit = 50,
+  reset = false,
+  daysPast = 1,
+  daysFuture = 14,
+  complete = false,
+  mode = 'incremental',
+  timeMin = null,
+  timeMax = null,
+  cursor = null,
+  existingStats = null,
+  stepBudgetMs = null,
+  maxPagesOverride = null,
+  deferMarkGooglePull = false
+} = {}) {
   const settings = await calendarRepo.googleSettings();
   if (!settings?.sync_enabled) throw new Error('Google Calendar sync is disabled.');
   if (settings.sync_direction !== 'two_way') throw new Error('Two-way sync is not enabled.');
@@ -1943,9 +1957,9 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
   const rangeStart = normalizeIsoDateTime(timeMin) || new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toISOString();
   const rangeEnd = normalizeIsoDateTime(timeMax) || new Date(Date.now() + lookaheadDays * 24 * 60 * 60 * 1000).toISOString();
   const startedAt = Date.now();
-  const timeBudgetMs = complete ? (rangeMode ? 90000 : 45000) : 12000;
-  const maxPages = complete ? (rangeMode ? 100 : 20) : 2;
-  const stats = {
+  const timeBudgetMs = Number(stepBudgetMs) || (complete ? (rangeMode ? 90000 : 45000) : 12000);
+  const maxPages = Number(maxPagesOverride) || (complete ? (rangeMode ? 100 : 20) : 2);
+  const defaultStats = {
     fetched: 0,
     imported: 0,
     updated: 0,
@@ -1973,9 +1987,12 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     timeMin: rangeMode ? rangeStart : null,
     timeMax: rangeMode ? rangeEnd : null
   };
-  let nextSyncToken = null;
-  let pageToken = null;
-  let usedReset = reset;
+  const stats = { ...defaultStats, ...(existingStats || {}) };
+  stats.warnings = Array.isArray(stats.warnings) ? stats.warnings : [];
+  stats.partial = false;
+  let nextSyncToken = cursor?.nextSyncToken || null;
+  let pageToken = cursor?.pageToken || null;
+  let usedReset = typeof cursor?.usedReset === 'boolean' ? cursor.usedReset : reset;
   let pages = 0;
 
   do {
@@ -1996,7 +2013,20 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     } catch (error) {
       if (error.status === 410 && !usedReset) {
         await calendarRepo.clearGoogleEventsSyncToken();
-        return pullGoogleCalendarChanges({ limit, reset: true, daysPast, daysFuture, complete, mode, timeMin, timeMax });
+        return pullGoogleCalendarChanges({
+          limit,
+          reset: true,
+          daysPast,
+          daysFuture,
+          complete,
+          mode,
+          timeMin,
+          timeMax,
+          existingStats,
+          stepBudgetMs,
+          maxPagesOverride,
+          deferMarkGooglePull
+        });
       }
       throw error;
     }
@@ -2032,11 +2062,13 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
       }
       if (result.warningCode) {
         stats.warningTotal += 1;
-        stats.warnings.push({
-          eventId: cleanText(event?.id, { max: 255 }),
-          title: cleanText(event?.summary, { max: 255 }) || 'Bez naslova',
-          code: result.warningCode
-        });
+        if (stats.warnings.length < 100) {
+          stats.warnings.push({
+            eventId: cleanText(event?.id, { max: 255 }),
+            title: cleanText(event?.summary, { max: 255 }) || 'Bez naslova',
+            code: result.warningCode
+          });
+        }
       }
     }
 
@@ -2049,10 +2081,14 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     }
   } while (pageToken);
 
-  if (!rangeMode && nextSyncToken && !stats.partial) {
-    await calendarRepo.markGooglePull({ syncToken: nextSyncToken });
-  } else {
-    await calendarRepo.markGooglePull({});
+  const nextCursor = stats.partial ? { pageToken, nextSyncToken, usedReset } : null;
+
+  if (!deferMarkGooglePull || !stats.partial) {
+    if (!rangeMode && nextSyncToken && !stats.partial) {
+      await calendarRepo.markGooglePull({ syncToken: nextSyncToken });
+    } else {
+      await calendarRepo.markGooglePull({});
+    }
   }
 
   stats.skippedTotal = Number(stats.skippedExternal || 0)
@@ -2060,6 +2096,7 @@ async function pullGoogleCalendarChanges({ limit = 50, reset = false, daysPast =
     + Number(stats.skippedUnsupportedTime || 0)
     + Number(stats.skippedConflicts || 0);
 
+  if (nextCursor) stats.cursor = nextCursor;
   return stats;
 }
 
@@ -2078,6 +2115,7 @@ function googleSyncSummaryMessage(stats = {}) {
 function serializeGoogleSyncJob(row) {
   if (!row) return null;
   const result = safeJsonParse(row.result_json, null);
+  const progress = safeJsonParse(row.progress_json, null);
   return {
     id: row.id,
     status: row.status,
@@ -2097,7 +2135,8 @@ function serializeGoogleSyncJob(row) {
     invalidTime: Number(row.invalid_time || 0),
     partial: Boolean(row.partial),
     errorMessage: row.error_message || '',
-    result
+    result,
+    progress: progress || result || null
   };
 }
 
@@ -2161,6 +2200,106 @@ async function runGooglePullWithLock({ userId = null, req = null, reset = false,
       title: 'Google sync nije uspeo',
       message: error.message || 'Google Calendar pull failed',
       metadata: { jobId },
+      userId
+    });
+    throw error;
+  }
+}
+
+function googlePullRequestFromBody(body = {}) {
+  return {
+    reset: body?.reset === true,
+    limit: body?.limit || 100,
+    daysPast: body?.daysPast ?? body?.days_past,
+    daysFuture: body?.daysFuture ?? body?.days_future,
+    complete: body?.complete !== false,
+    mode: body?.mode,
+    timeMin: body?.timeMin ?? body?.time_min,
+    timeMax: body?.timeMax ?? body?.time_max
+  };
+}
+
+async function startGooglePullJobWithLock({ userId = null, req = null, request = {} } = {}) {
+  const lock = await calendarRepo.startGoogleSyncJob({ userId, request });
+  if (lock.alreadyRunning) {
+    return {
+      alreadyRunning: true,
+      job: serializeGoogleSyncJob(await calendarRepo.googleSyncJobById(lock.job.id))
+    };
+  }
+
+  const job = await calendarRepo.googleSyncJobById(lock.job.id);
+  await notifyUsers({
+    type: 'google_sync_started',
+    title: 'Google sync pokrenut',
+    message: 'Sinhronizacija sa Google Kalendarom je pokrenuta.',
+    metadata: { jobId: job.id },
+    userId
+  });
+  if (req) await auditLog({ userId, action: 'google_calendar_pull_started', entityType: 'google_calendar', entityId: 1, req, metadata: { jobId: job.id, request } });
+  return { alreadyRunning: false, job: serializeGoogleSyncJob(job) };
+}
+
+async function processGooglePullJobStep({ jobId = null, userId = null, req = null } = {}) {
+  const job = jobId
+    ? await calendarRepo.googleSyncJobById(jobId)
+    : await calendarRepo.latestRunningGoogleSyncJob();
+  if (!job) {
+    const latest = await calendarRepo.latestGoogleSyncJob();
+    return { running: false, job: serializeGoogleSyncJob(latest), stats: safeJsonParse(latest?.result_json, null) };
+  }
+  if (job.status !== 'running') {
+    return { running: false, job: serializeGoogleSyncJob(job), stats: safeJsonParse(job.result_json, null) };
+  }
+
+  const request = safeJsonParse(job.request_json, {}) || {};
+  const cursor = safeJsonParse(job.cursor_json, null);
+  const progress = safeJsonParse(job.progress_json, null);
+  try {
+    const stats = await pullGoogleCalendarChanges({
+      ...request,
+      limit: Math.max(1, Math.min(25, Number(request.limit) || 25)),
+      complete: false,
+      cursor,
+      existingStats: progress,
+      stepBudgetMs: 18000,
+      maxPagesOverride: 1,
+      deferMarkGooglePull: true
+    });
+    const nextCursor = stats.cursor || null;
+    if (nextCursor) {
+      const progressStats = { ...stats };
+      delete progressStats.cursor;
+      await calendarRepo.updateGoogleSyncJobProgress({ jobId: job.id, stats: progressStats, cursor: nextCursor });
+      return {
+        running: true,
+        job: serializeGoogleSyncJob(await calendarRepo.googleSyncJobById(job.id)),
+        stats: progressStats
+      };
+    }
+
+    await calendarRepo.finishGoogleSyncJob({ jobId: job.id, status: 'success', stats });
+    await notifyUsers({
+      type: 'google_sync_finished',
+      title: 'Google sync zavrsen',
+      message: googleSyncSummaryMessage(stats),
+      metadata: { jobId: job.id, stats },
+      userId
+    });
+    if (req) await auditLog({ userId, action: 'google_calendar_pulled', entityType: 'google_calendar', entityId: 1, req, metadata: stats });
+    return {
+      running: false,
+      job: serializeGoogleSyncJob(await calendarRepo.googleSyncJobById(job.id)),
+      stats
+    };
+  } catch (error) {
+    const stats = { ...(progress || {}), jobId: job.id, error: error.message || 'Google Calendar pull failed' };
+    await calendarRepo.finishGoogleSyncJob({ jobId: job.id, status: 'failed', stats, errorMessage: error.message || 'Google Calendar pull failed' });
+    await notifyUsers({
+      type: 'google_sync_failed',
+      title: 'Google sync nije uspeo',
+      message: error.message || 'Google Calendar pull failed',
+      metadata: { jobId: job.id },
       userId
     });
     throw error;
@@ -4550,18 +4689,12 @@ app.post('/api/director/calendar-sync/retry', authenticateToken, requireDirector
 
 async function handleManualGooglePull(req, res) {
   try {
-    const stats = await runGooglePullWithLock({
-      userId: req.user.id,
-      req,
-      reset: req.body?.reset === true,
-      limit: req.body?.limit || 100,
-      daysPast: req.body?.daysPast ?? req.body?.days_past,
-      daysFuture: req.body?.daysFuture ?? req.body?.days_future,
-      complete: req.body?.complete !== false,
-      mode: req.body?.mode,
-      timeMin: req.body?.timeMin ?? req.body?.time_min,
-      timeMax: req.body?.timeMax ?? req.body?.time_max
-    });
+    const request = googlePullRequestFromBody(req.body);
+    if (req.body?.async === true) {
+      const started = await startGooglePullJobWithLock({ userId: req.user.id, req, request });
+      return res.status(started.alreadyRunning ? 200 : 202).json(started);
+    }
+    const stats = await runGooglePullWithLock({ userId: req.user.id, req, ...request });
     res.json(stats);
   } catch (error) {
     sendError(res, error, {
@@ -4574,6 +4707,14 @@ async function handleManualGooglePull(req, res) {
 
 app.post('/api/director/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), validateBody(googlePullSchema), handleManualGooglePull);
 app.post('/api/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), validateBody(googlePullSchema), handleManualGooglePull);
+app.post('/api/calendar-sync/pull-google/step', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), asyncRoute(async (req, res) => {
+  const result = await processGooglePullJobStep({
+    jobId: positiveInteger(req.body?.jobId ?? req.body?.job_id),
+    userId: req.user.id,
+    req
+  });
+  res.json(result);
+}));
 
 app.get('/api/calendar-sync/google/status', authenticateToken, requirePermission('calendar:read'), asyncRoute(async (_req, res) => {
   res.json({ latest: serializeGoogleSyncJob(await calendarRepo.latestGoogleSyncJob()) });

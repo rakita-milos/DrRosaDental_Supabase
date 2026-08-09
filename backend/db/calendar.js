@@ -418,7 +418,7 @@ function createPostgresCalendarRepository(pool) {
       return queryMany(pool, 'SELECT * FROM calendar_sync_queue ORDER BY created_at DESC LIMIT ?', [limit]);
     },
 
-    async startGoogleSyncJob({ userId = null } = {}) {
+    async startGoogleSyncJob({ userId = null, request = null } = {}) {
       return withTransaction(pool, async client => {
         await execute(client, `
           UPDATE google_calendar_sync_jobs
@@ -436,9 +436,9 @@ function createPostgresCalendarRepository(pool) {
         if (running) return { alreadyRunning: true, job: running };
         try {
           const id = await insertReturningId(client, `
-            INSERT INTO google_calendar_sync_jobs (status, started_by)
-            VALUES ('running', ?)
-          `, [userId]);
+            INSERT INTO google_calendar_sync_jobs (status, started_by, request_json, progress_json, last_heartbeat_at)
+            VALUES ('running', ?, ?, ?, now())
+          `, [userId, request ? JSON.stringify(request) : null, JSON.stringify({})]);
           return { alreadyRunning: false, job: { id, started_by: userId } };
         } catch (error) {
           if (error?.code === '23505') {
@@ -456,12 +456,57 @@ function createPostgresCalendarRepository(pool) {
       });
     },
 
+    googleSyncJobById(jobId) {
+      return queryOne(pool, `
+        SELECT j.*, u.name as started_by_name, u.role as started_by_role
+        FROM google_calendar_sync_jobs j
+        LEFT JOIN users u ON u.id = j.started_by
+        WHERE j.id = ?
+        LIMIT 1
+      `, [jobId]);
+    },
+
+    latestRunningGoogleSyncJob() {
+      return queryOne(pool, `
+        SELECT j.*, u.name as started_by_name, u.role as started_by_role
+        FROM google_calendar_sync_jobs j
+        LEFT JOIN users u ON u.id = j.started_by
+        WHERE j.status = 'running'
+        ORDER BY j.started_at DESC
+        LIMIT 1
+      `);
+    },
+
+    updateGoogleSyncJobProgress({ jobId, stats, cursor = null }) {
+      return execute(pool, `
+        UPDATE google_calendar_sync_jobs
+        SET fetched = ?, imported = ?, updated = ?, cancelled = ?, unchanged = ?,
+            imported_with_warning = ?, all_day_events = ?, conflicts = ?, invalid_time = ?,
+            partial = ?, progress_json = ?, cursor_json = ?, last_heartbeat_at = now()
+        WHERE id = ? AND status = 'running'
+      `, [
+        Number(stats?.fetched || 0),
+        Number(stats?.imported || 0),
+        Number(stats?.updated || 0),
+        Number(stats?.cancelled || 0),
+        Number(stats?.unchanged || 0),
+        Number(stats?.importedWithWarning || 0),
+        Number(stats?.allDayEvents || 0),
+        Number(stats?.conflicts || 0),
+        Number(stats?.invalidTime || 0),
+        Boolean(stats?.partial),
+        JSON.stringify(stats || {}),
+        cursor ? JSON.stringify(cursor) : null,
+        jobId
+      ]);
+    },
+
     finishGoogleSyncJob({ jobId, status, stats, errorMessage = null }) {
       return execute(pool, `
         UPDATE google_calendar_sync_jobs
         SET status = ?, finished_at = now(), fetched = ?, imported = ?, updated = ?, cancelled = ?,
             unchanged = ?, imported_with_warning = ?, all_day_events = ?, conflicts = ?,
-            invalid_time = ?, partial = ?, error_message = ?, result_json = ?
+            invalid_time = ?, partial = ?, error_message = ?, cursor_json = NULL, progress_json = ?, result_json = ?
         WHERE id = ?
       `, [
         status,
@@ -476,6 +521,7 @@ function createPostgresCalendarRepository(pool) {
         Number(stats?.invalidTime || 0),
         Boolean(stats?.partial),
         errorMessage,
+        JSON.stringify(stats || {}),
         JSON.stringify(stats || {}),
         jobId
       ]);

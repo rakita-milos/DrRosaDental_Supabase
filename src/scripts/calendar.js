@@ -182,6 +182,40 @@
     return parts.join(", ");
   }
 
+  function googleSyncStatsFromJob(job = {}) {
+    return job.progress || job.result || {
+      fetched: job.fetched,
+      imported: job.imported,
+      updated: job.updated,
+      cancelled: job.cancelled,
+      unchanged: job.unchanged,
+      importedWithWarning: job.importedWithWarning,
+      allDayEvents: job.allDayEvents,
+      conflicts: job.conflicts,
+      invalidTime: job.invalidTime,
+      partial: job.partial
+    };
+  }
+
+  function wait(ms) {
+    return new Promise(resolve => window.setTimeout(resolve, ms));
+  }
+
+  async function runGoogleSyncJob(jobId) {
+    let currentJobId = jobId;
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const result = await window.DrRosaApi.stepGoogleCalendarSync({ jobId: currentJobId });
+      currentJobId = result?.job?.id || currentJobId;
+      const stats = result?.stats || googleSyncStatsFromJob(result?.job);
+      if (stats) {
+        setGoogleSyncStatus(`Google sync je u toku. ${googleSyncMessage(stats)}.`, "info");
+      }
+      if (!result?.running) return stats || googleSyncStatsFromJob(result?.job);
+      await wait(1200);
+    }
+    throw new Error("Google sync i dalje traje. Proverite status za nekoliko sekundi.");
+  }
+
   function setGoogleSyncLoading(isLoading) {
     const button = document.getElementById("google-calendar-sync-btn");
     const label = button?.querySelector("[data-google-sync-label]");
@@ -982,19 +1016,29 @@
     });
     document.getElementById("google-calendar-sync-btn")?.addEventListener("click", async () => {
       setGoogleSyncLoading(true);
-      setGoogleSyncStatus("Sinhronizacija sa Google Kalendarom je u toku...", "info");
+      setGoogleSyncStatus("Pokrecem sinhronizaciju sa Google Kalendarom...", "info");
       try {
-        const result = await window.DrRosaApi.pullGoogleCalendarChanges({
+        const started = await window.DrRosaApi.pullGoogleCalendarChanges({
           mode: "range",
           reset: true,
-          limit: 100,
-          complete: true,
+          limit: 25,
+          complete: false,
+          async: true,
           ...visibleSyncRange()
         });
+        const job = started?.job || {};
+        setGoogleSyncStatus(started?.alreadyRunning
+          ? "Google sync je vec u toku. Nastavljam pracenje statusa..."
+          : "Google sync je pokrenut. Obradjujem termine u manjim koracima...", "info");
+        const result = await runGoogleSyncJob(job.id);
         setGoogleSyncStatus(`Google sync zavrsen. ${googleSyncMessage(result)}.`, result.partial ? "error" : "success");
         await loadAppointments();
       } catch (error) {
-        setGoogleSyncStatus(error.message || "Google sync nije uspeo.", "error");
+        let message = error.message || "Google sync nije uspeo.";
+        if (/API request failed|timeout|504/i.test(message)) {
+          message = "Google sync traje duze od ocekivanog. Osvezite status ili pokrenite proveru ponovo za nekoliko sekundi.";
+        }
+        setGoogleSyncStatus(message, "error");
       } finally {
         setGoogleSyncLoading(false);
       }

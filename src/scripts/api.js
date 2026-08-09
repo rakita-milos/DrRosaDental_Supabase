@@ -365,10 +365,17 @@
     return request("/director/calendar-sync/retry", { method: "POST" });
   }
 
-  async function pullGoogleCalendarChanges({ reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true, mode = "incremental", timeMin = null, timeMax = null } = {}) {
+  async function pullGoogleCalendarChanges({ reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true, mode = "incremental", timeMin = null, timeMax = null, async: asyncJob = false } = {}) {
     return request("/calendar-sync/pull-google", {
       method: "POST",
-      body: JSON.stringify({ reset, limit, daysPast, daysFuture, complete, mode, timeMin, timeMax })
+      body: JSON.stringify({ reset, limit, daysPast, daysFuture, complete, mode, timeMin, timeMax, async: asyncJob })
+    });
+  }
+
+  async function stepGoogleCalendarSync({ jobId = null } = {}) {
+    return request("/calendar-sync/pull-google/step", {
+      method: "POST",
+      body: JSON.stringify({ jobId })
     });
   }
 
@@ -944,6 +951,7 @@
     getGoogleCalendarColors,
     retryCalendarSync,
     pullGoogleCalendarChanges,
+    stepGoogleCalendarSync,
     getGoogleCalendarSyncStatus,
     getNotifications,
     testGoogleCalendarSync,

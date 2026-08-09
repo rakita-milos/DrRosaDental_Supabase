@@ -229,6 +229,10 @@ CREATE TABLE IF NOT EXISTS google_calendar_sync_jobs (
   invalid_time INTEGER NOT NULL DEFAULT 0,
   partial BOOLEAN NOT NULL DEFAULT false,
   error_message TEXT,
+  request_json TEXT,
+  cursor_json TEXT,
+  progress_json TEXT,
+  last_heartbeat_at TIMESTAMPTZ,
   result_json TEXT
 );
 
@@ -640,6 +644,14 @@ ALTER TABLE appointments
   ADD COLUMN IF NOT EXISTS google_patient_match_note TEXT;
 ALTER TABLE appointments
   ADD COLUMN IF NOT EXISTS patient_match_locked BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE google_calendar_sync_jobs
+  ADD COLUMN IF NOT EXISTS request_json TEXT;
+ALTER TABLE google_calendar_sync_jobs
+  ADD COLUMN IF NOT EXISTS cursor_json TEXT;
+ALTER TABLE google_calendar_sync_jobs
+  ADD COLUMN IF NOT EXISTS progress_json TEXT;
+ALTER TABLE google_calendar_sync_jobs
+  ADD COLUMN IF NOT EXISTS last_heartbeat_at TIMESTAMPTZ;
 
 CREATE OR REPLACE FUNCTION prevent_appointment_overlap()
 RETURNS trigger AS $$

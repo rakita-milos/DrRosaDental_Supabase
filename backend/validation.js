@@ -190,7 +190,8 @@ const googlePullSchema = Joi.object({
   time_min: Joi.string().isoDate().optional(),
   timeMax: Joi.string().isoDate().optional(),
   time_max: Joi.string().isoDate().optional(),
-  complete: Joi.boolean().optional().default(true)
+  complete: Joi.boolean().optional().default(true),
+  async: Joi.boolean().optional().default(false)
 });
 
 const importScanSchema = Joi.object({

@@ -179,13 +179,33 @@ test('Google OAuth verification uses saved tokens without asking for a new code'
 });
 
 test('Manual Google pull uses a bounded date window and can complete all pages', () => {
-  assert.match(serverSource, /async function pullGoogleCalendarChanges\(\{ limit = 50, reset = false, daysPast = 1, daysFuture = 14, complete = false/);
+  assert.match(serverSource, /async function pullGoogleCalendarChanges\(\{/);
+  assert.match(serverSource, /complete = false/);
   assert.match(serverSource, /query\.set\('timeMax'/);
   assert.match(serverSource, /daysPast: req\.body\?\.daysPast/);
-  assert.match(serverSource, /const maxPages = complete \? \(rangeMode \? 100 : 20\) : 2/);
+  assert.match(serverSource, /complete \? \(rangeMode \? 100 : 20\) : 2/);
   assert.match(apiSource, /pullGoogleCalendarChanges\(\{ reset = false, limit = 100, daysPast = 1, daysFuture = 14, complete = true, mode = "incremental"/);
   assert.match(directorReportsSource, /pullGoogleCalendarChanges\(\{ reset: false, limit: 50, daysPast: 1, daysFuture: 14 \}\)/);
   assert.doesNotMatch(directorReportsSource, /pullGoogleCalendarChanges\(\{ reset: true \}\)/);
+});
+
+test('Calendar Google sync can run through short async job steps to avoid Vercel timeout', () => {
+  assert.match(schemaSource, /request_json TEXT/);
+  assert.match(schemaSource, /cursor_json TEXT/);
+  assert.match(schemaSource, /progress_json TEXT/);
+  assert.match(schemaSource, /last_heartbeat_at TIMESTAMPTZ/);
+  assert.match(serverSource, /function googlePullRequestFromBody/);
+  assert.match(serverSource, /startGooglePullJobWithLock/);
+  assert.match(serverSource, /processGooglePullJobStep/);
+  assert.match(serverSource, /app\.post\('\/api\/calendar-sync\/pull-google\/step'/);
+  assert.match(serverSource, /maxPagesOverride: 1/);
+  assert.match(serverSource, /stepBudgetMs: 18000/);
+  assert.match(serverSource, /deferMarkGooglePull: true/);
+  assert.match(apiSource, /stepGoogleCalendarSync/);
+  assert.match(calendarSource, /async: true/);
+  assert.match(calendarSource, /limit: 25/);
+  assert.match(calendarSource, /runGoogleSyncJob\(job\.id\)/);
+  assert.doesNotMatch(calendarSource, /limit: 100,\s*\n\s*complete: true/);
 });
 
 test('Calendar page Google sync refreshes the visible date range instead of using incremental token mode', () => {
