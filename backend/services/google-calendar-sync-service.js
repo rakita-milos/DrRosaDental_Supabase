@@ -24,7 +24,7 @@ function createGoogleCalendarSyncService({
       event?.summary,
       event?.description
     ].filter(Boolean).join(' '));
-    return /\b(go|godisnji|godisnji odmor|odmor)\b/.test(text);
+    return /\b(go|godisnji|godisnjem|godisnji odmor|odmor)\b/.test(text);
   }
 
   function googleEventTimeInfo(event) {

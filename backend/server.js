@@ -1631,7 +1631,7 @@ function phoneMatchKeys(value) {
 
 function googleTitleLooksLikeNonPatientEvent(title) {
   const text = normalizePatientMatchText(title);
-  return /\b(go|godisnji|godisnji odmor|odmor|blokada|praznik)\b/.test(text);
+  return /\b(go|godisnji|godisnjem|godisnji odmor|odmor|blokada|praznik)\b/.test(text);
 }
 
 function parseGooglePatientCandidate(title) {

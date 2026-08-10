@@ -464,7 +464,7 @@
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
-    if (!/\b(go|godisnji|godisnji odmor|odmor)\b/.test(text)) return false;
+    if (!/\b(go|godisnji|godisnjem|godisnji odmor|odmor)\b/.test(text)) return false;
     const starts = parseLocalDateTime(appointment.startsAt);
     const ends = parseLocalDateTime(appointment.endsAt);
     const durationHours = (ends - starts) / 3600000;
