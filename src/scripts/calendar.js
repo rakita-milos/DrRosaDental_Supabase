@@ -311,9 +311,8 @@
     const doctor = appointmentDoctorLine(appointment);
     return `
       <span class="google-event-type">${isAbsence ? "GO" : "Google napomena"}</span>
-      <strong class="appointment-title-line" title="${window.DrRosaSecurity.escapeAttribute(title)}">${window.DrRosaSecurity.escapeHtml(isAbsence && doctor ? doctor : title)}</strong>
+      <strong class="appointment-title-line" title="${window.DrRosaSecurity.escapeAttribute(title)}">${window.DrRosaSecurity.escapeHtml(title)}</strong>
       <small class="google-event-date-range">${googleEventDateRangeLine(appointment)}</small>
-      ${isAbsence && title ? `<small class="appointment-doctor-line">${window.DrRosaSecurity.escapeHtml(title)}</small>` : ""}
       ${!isAbsence && doctor ? `<small class="appointment-doctor-line">${window.DrRosaSecurity.escapeHtml(doctor)}</small>` : ""}
       ${appointment.googleSyncWarning ? `<span class="appointment-warning-marker" aria-label="Google upozorenje">!</span>` : ""}
     `;

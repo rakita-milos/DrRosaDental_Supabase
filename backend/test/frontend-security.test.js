@@ -147,6 +147,7 @@ test('calendar renders Google doctor absence separately from chair appointments'
   assert.match(calendarSource, /appointment\.googleEventType === "doctor_absence"/);
   assert.match(calendarSource, /appointment\.googleEventType === "appointment"/);
   assert.match(calendarSource, /\(go\|godisnji\|godisnjem\|godisnji odmor\|odmor\)/);
+  assert.doesNotMatch(calendarSource, /isAbsence && doctor \? doctor : title/);
   assert.match(calendarSource, /durationHours >= 12/);
   assert.match(calendarSource, /function googleEventDateRangeLine\(appointment\)/);
   assert.match(calendarSource, /function renderGoogleEventCard\(appointment, baseClass = "agenda-appointment"\)/);
