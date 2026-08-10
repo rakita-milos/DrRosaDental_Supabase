@@ -548,8 +548,7 @@
 
   function renderMonthAbsenceBar(appointment, days) {
     const title = appointmentDisplayTitle(appointment);
-    const doctor = appointmentDoctorLine(appointment);
-    const label = doctor || title || "Godišnji";
+    const label = title || "Godišnji";
     return `
       <button class="${appointmentUiClass(appointment, "month-absence-bar")}" type="button" data-appointment-id="${appointment.id}" style="grid-column:${absenceGridColumn(appointment, days, 1)};${appointmentInlineColor(appointment)}">
         <span>GO</span>
@@ -642,8 +641,7 @@
 
   function renderWeekAbsenceBar(appointment, days) {
     const title = appointmentDisplayTitle(appointment);
-    const doctor = appointmentDoctorLine(appointment);
-    const label = doctor || title || "Godišnji";
+    const label = title || "Godišnji";
     return `
       <button class="${appointmentUiClass(appointment, "week-absence-bar")}" type="button" data-appointment-id="${appointment.id}" style="grid-column:${weekAbsenceGridColumn(appointment, days)};${appointmentInlineColor(appointment)}">
         <span>GO</span>
