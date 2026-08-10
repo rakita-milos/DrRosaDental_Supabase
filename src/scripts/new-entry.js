@@ -369,20 +369,20 @@ function option(value, label = value) {
 function procedureOption(procedure) {
   const priceInfo = procedureCatalog.getPriceInfo?.(procedure) || {
     amount: procedureCatalog.getPrice(procedure),
-    currency: procedureCatalog.getPriceCurrency?.(procedure) || "EUR"
+    currency: procedureCatalog.getPriceCurrency?.(procedure) || "RSD"
   };
-  return `<option value="${escapeAttribute(procedure)}" data-price="${Number(priceInfo.amount || 0)}" data-price-currency="${escapeAttribute(priceInfo.currency || "EUR")}">${escapeHtml(procedure)}</option>`;
+  return `<option value="${escapeAttribute(procedure)}" data-price="${Number(priceInfo.amount || 0)}" data-price-currency="${escapeAttribute(priceInfo.currency || "RSD")}">${escapeHtml(procedure)}</option>`;
 }
 
 function paymentCurrency() {
-  return inputs.currency?.value || "EUR";
+  return inputs.currency?.value || "RSD";
 }
 
-function convertToPaymentCurrency(amount, fromCurrency = "EUR") {
+function convertToPaymentCurrency(amount, fromCurrency = "RSD") {
   return currencyUtils ? currencyUtils.convert(amount, fromCurrency, paymentCurrency()) : Number(amount || 0);
 }
 
-function pricePreviewLabel(amount, fromCurrency = "EUR") {
+function pricePreviewLabel(amount, fromCurrency = "RSD") {
   return currencyUtils ? currencyUtils.conversionLabel(amount, fromCurrency, paymentCurrency()) : formatMoney(amount, fromCurrency);
 }
 
@@ -436,7 +436,7 @@ async function populateCodebookSelects() {
       if (!select.options) {
         setSelectValue(select, select.value || items[0].value);
         if (type === "currency") {
-          select.dataset.previousCurrency = select.value || "EUR";
+          select.dataset.previousCurrency = select.value || "RSD";
         }
         return;
       }
@@ -448,7 +448,7 @@ async function populateCodebookSelects() {
       }).join("");
       setSelectValue(select, current || items[0].value);
       if (type === "currency") {
-        select.dataset.previousCurrency = select.value || "EUR";
+        select.dataset.previousCurrency = select.value || "RSD";
       }
     } catch (error) {
       console.error(`${type} codebook load error:`, error);
@@ -456,11 +456,11 @@ async function populateCodebookSelects() {
   }));
 }
 
-function normalizeStoredTreatment(treatment, recordCurrency = "EUR") {
+function normalizeStoredTreatment(treatment, recordCurrency = "RSD") {
   const item = { ...treatment };
-  const treatmentCurrency = item.currency || recordCurrency || "EUR";
+  const treatmentCurrency = item.currency || recordCurrency || "RSD";
   const catalogBasePrice = Number(procedureCatalog.getPrice(item.type) || 0);
-  const catalogBaseCurrency = procedureCatalog.getPriceCurrency?.(item.type) || "EUR";
+  const catalogBaseCurrency = procedureCatalog.getPriceCurrency?.(item.type) || "RSD";
   const storedBasePrice = item.basePrice ?? item.base_price ?? item.basePriceEur ?? item.base_price_eur ?? catalogBasePrice;
   const storedBaseCurrency = item.basePriceCurrency ?? item.base_price_currency ?? (item.basePriceEur || item.base_price_eur ? "EUR" : catalogBaseCurrency);
   item.currency = treatmentCurrency;
@@ -476,7 +476,7 @@ function normalizeStoredTreatment(treatment, recordCurrency = "EUR") {
   return item;
 }
 
-function cloneTreatments(treatments, recordCurrency = "EUR") {
+function cloneTreatments(treatments, recordCurrency = "RSD") {
   const copy = JSON.parse(JSON.stringify(treatments || {}));
   Object.entries(copy).forEach(([tooth, toothTreatments]) => {
     const list = treatmentListForValue(toothTreatments).map(item => normalizeStoredTreatment(item, recordCurrency));
@@ -485,7 +485,7 @@ function cloneTreatments(treatments, recordCurrency = "EUR") {
   return copy;
 }
 
-function cloneGeneralTreatments(treatments, recordCurrency = "EUR") {
+function cloneGeneralTreatments(treatments, recordCurrency = "RSD") {
   return (Array.isArray(treatments) ? treatments : [])
     .map(item => normalizeStoredTreatment(item, recordCurrency))
     .filter(item => item.type);
@@ -503,7 +503,7 @@ function openRecordInForm(record) {
   setSelectValue(inputs.paymentStatus, record.paymentStatus || "");
   inputs.amountDue.value = Number(record.amountDue || 0).toFixed(2);
   inputs.amountPaid.value = "";
-  setSelectValue(inputs.currency, record.currency || "EUR");
+  setSelectValue(inputs.currency, record.currency || "RSD");
   setSelectValue(inputs.shift, record.shift || "");
   inputs.note.value = record.note === "-" ? "" : (record.note || "");
   teethTreatments = cloneTreatments(record.treatments, record.currency || paymentCurrency());
@@ -561,7 +561,7 @@ function availableCurrencyCodes() {
 function normalizedPaymentPart(part = {}) {
   return {
     amount: Math.max(0, Number(part.amount || 0)),
-    currency: String(part.currency || paymentCurrency() || "EUR").toUpperCase(),
+    currency: String(part.currency || paymentCurrency() || "RSD").toUpperCase(),
     paymentMethod: part.paymentMethod || part.payment_method || "Gotovina",
     paymentDate: part.paymentDate || part.payment_date || todayInputDate(),
     notes: part.notes || ""
@@ -679,7 +679,7 @@ function selectedTreatmentPrice() {
 function selectedTreatmentPriceInfo() {
   return procedureCatalog.getPriceInfo?.(treatmentType.value) || {
     amount: Number(procedureCatalog.getPrice(treatmentType.value) || 0),
-    currency: procedureCatalog.getPriceCurrency?.(treatmentType.value) || "EUR"
+    currency: procedureCatalog.getPriceCurrency?.(treatmentType.value) || "RSD"
   };
 }
 
@@ -688,7 +688,7 @@ function selectedTreatmentBasePrice() {
 }
 
 function selectedTreatmentBaseCurrency() {
-  return selectedTreatmentPriceInfo().currency || "EUR";
+  return selectedTreatmentPriceInfo().currency || "RSD";
 }
 
 function normalizeDiscountType(type) {
@@ -818,7 +818,7 @@ function currentSelectedProcedureTotal() {
   ));
   const baseCurrency = inputs.procedure.selectedOptions[0]?.dataset.priceCurrency
     || procedureCatalog.getPriceCurrency?.(inputs.procedure.value)
-    || "EUR";
+    || "RSD";
   return convertToPaymentCurrency(basePrice, baseCurrency);
 }
 
@@ -951,7 +951,7 @@ function generalTreatmentFromCurrentInputs() {
   ));
   const baseCurrency = inputs.procedure.selectedOptions[0]?.dataset.priceCurrency
     || procedureCatalog.getPriceCurrency?.(procedureValue)
-    || "EUR";
+    || "RSD";
   return {
     activity: activityValue,
     type: procedureValue,
@@ -1228,7 +1228,7 @@ treatmentType.addEventListener("change", updateTreatmentPricePreview);
 treatmentDiscount.addEventListener("input", updateTreatmentPricePreview);
 treatmentDiscountType.addEventListener("change", updateTreatmentPricePreview);
 inputs.currency.addEventListener("change", () => {
-  const previousCurrency = inputs.currency.dataset.previousCurrency || "EUR";
+  const previousCurrency = inputs.currency.dataset.previousCurrency || "RSD";
   const nextCurrency = paymentCurrency();
   if (previousCurrency !== nextCurrency && Number(inputs.amountPaid.value || 0) > 0) {
     const convertedPaid = currencyUtils

@@ -29,7 +29,7 @@ function recordsListSql({ search = '', limit = null, offset = 0 } = {}) {
       vr.shift,
       COALESCE(pay.amount, 0) as amount_due,
       COALESCE(pay.amount_paid, 0) as amount_paid,
-      COALESCE(pay.currency, 'EUR') as currency,
+      COALESCE(pay.currency, 'RSD') as currency,
       pay.payment_status,
       vr.notes
     FROM visit_records vr

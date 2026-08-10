@@ -52,7 +52,7 @@ function createPostgresStartupSeedRepository(pool) {
       `);
     },
 
-    insertCodebookItem({ type, value, label, groupName = null, metadata = null, price = 0, priceCurrency = 'EUR', sortOrder = 0 }) {
+    insertCodebookItem({ type, value, label, groupName = null, metadata = null, price = 0, priceCurrency = 'RSD', sortOrder = 0 }) {
       return execute(pool, `
         INSERT INTO codebook_items (type, value, label, group_name, metadata, price, price_currency, sort_order)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)

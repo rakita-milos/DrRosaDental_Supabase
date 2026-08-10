@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS codebook_items (
   group_name TEXT,
   metadata TEXT,
   price NUMERIC(12, 2) NOT NULL DEFAULT 0,
-  price_currency TEXT NOT NULL DEFAULT 'EUR',
+  price_currency TEXT NOT NULL DEFAULT 'RSD',
   is_active BOOLEAN NOT NULL DEFAULT true,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT now(),
@@ -309,7 +309,7 @@ CREATE TABLE IF NOT EXISTS treatments (
   status TEXT DEFAULT 'Planirano',
   notes TEXT,
   price NUMERIC(12, 2) NOT NULL DEFAULT 0,
-  currency TEXT NOT NULL DEFAULT 'EUR',
+  currency TEXT NOT NULL DEFAULT 'RSD',
   discount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   discount_type TEXT NOT NULL DEFAULT 'amount' CHECK (discount_type IN ('amount', 'percent')),
   discount_value NUMERIC(12, 2) NOT NULL DEFAULT 0,
@@ -322,7 +322,7 @@ CREATE TABLE IF NOT EXISTS payments (
   patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE RESTRICT,
   amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   amount_paid NUMERIC(12, 2) NOT NULL DEFAULT 0,
-  currency TEXT NOT NULL DEFAULT 'EUR',
+  currency TEXT NOT NULL DEFAULT 'RSD',
   payment_status TEXT NOT NULL,
   payment_method TEXT,
   payment_date DATE,
@@ -337,7 +337,7 @@ CREATE TABLE IF NOT EXISTS payment_parts (
   visit_record_id INTEGER NOT NULL REFERENCES visit_records(id) ON DELETE CASCADE,
   patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE RESTRICT,
   amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
-  currency TEXT NOT NULL DEFAULT 'EUR',
+  currency TEXT NOT NULL DEFAULT 'RSD',
   exchange_rate_to_rsd NUMERIC(14, 6) NOT NULL DEFAULT 1,
   amount_rsd NUMERIC(12, 2) NOT NULL DEFAULT 0,
   payment_method TEXT,
@@ -399,7 +399,7 @@ CREATE TABLE IF NOT EXISTS treatment_plans (
   patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'presented', 'accepted', 'declined', 'completed')),
-  currency TEXT NOT NULL DEFAULT 'EUR',
+  currency TEXT NOT NULL DEFAULT 'RSD',
   discount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   accepted_at TIMESTAMPTZ,
   signature_name TEXT,
@@ -461,7 +461,7 @@ CREATE TABLE IF NOT EXISTS clinical_chart_entries (
   status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'in_progress', 'completed', 'watch', 'referred')),
   phase INTEGER NOT NULL DEFAULT 1,
   price NUMERIC(12, 2) NOT NULL DEFAULT 0,
-  currency TEXT NOT NULL DEFAULT 'EUR',
+  currency TEXT NOT NULL DEFAULT 'RSD',
   price_rsd NUMERIC(12, 2) NOT NULL DEFAULT 0,
   exchange_rate_to_rsd NUMERIC(14, 6) NOT NULL DEFAULT 0,
   provider_id INTEGER REFERENCES doctors(id),
@@ -518,7 +518,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'issued', 'partially_paid', 'paid', 'void', 'refunded')),
   issue_date DATE NOT NULL,
   due_date DATE,
-  currency TEXT NOT NULL DEFAULT 'EUR',
+  currency TEXT NOT NULL DEFAULT 'RSD',
   subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0,
   discount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   tax NUMERIC(12, 2) NOT NULL DEFAULT 0,
@@ -600,7 +600,7 @@ CREATE TABLE IF NOT EXISTS patient_ledger_entries (
   claim_id INTEGER REFERENCES insurance_claims(id) ON DELETE SET NULL,
   entry_type TEXT NOT NULL CHECK (entry_type IN ('charge', 'patient_payment', 'insurance_payment', 'adjustment', 'refund')),
   amount NUMERIC(12, 2) NOT NULL,
-  currency TEXT NOT NULL DEFAULT 'EUR',
+  currency TEXT NOT NULL DEFAULT 'RSD',
   description TEXT NOT NULL,
   entry_date DATE NOT NULL,
   source TEXT NOT NULL DEFAULT 'manual',
@@ -614,10 +614,10 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 
 ALTER TABLE codebook_items
-  ADD COLUMN IF NOT EXISTS price_currency TEXT NOT NULL DEFAULT 'EUR';
+  ADD COLUMN IF NOT EXISTS price_currency TEXT NOT NULL DEFAULT 'RSD';
 
 ALTER TABLE treatments
-  ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'EUR';
+  ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'RSD';
 
 ALTER TABLE doctors
   ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;

@@ -371,38 +371,81 @@ async function seedCodebooks() {
   if (count > 0) return;
 
   const inserts = [];
-  const add = (type, value, label = value, groupName = null, price = 0, sortOrder = 0, metadata = null) => {
-    inserts.push(startupSeed.insertCodebookItem({ type, value, label, groupName, metadata, price, sortOrder }));
+  const add = (type, value, label = value, groupName = null, price = 0, sortOrder = 0, metadata = null, priceCurrency = 'RSD') => {
+    inserts.push(startupSeed.insertCodebookItem({ type, value, label, groupName, metadata, price, priceCurrency, sortOrder }));
   };
 
-  ['Opsta stomatologija', 'Hirurgija', 'Protetika', 'Ortodoncija'].forEach((item, index) => add('activity', item, item, null, 0, index + 1));
   [
-    ['Kontrola', 'Opsta stomatologija', 30],
-    ['Ciscenje', 'Opsta stomatologija', 50],
-    ['Kontrola i ciscenje', 'Opsta stomatologija', 50],
-    ['Plomba', 'Opsta stomatologija', 60],
-    ['Endodontija', 'Opsta stomatologija', 120],
-    ['Izbeljivanje', 'Opsta stomatologija', 150],
-    ['Parodontologija', 'Opsta stomatologija', 90],
-    ['Vadjenja zuba', 'Hirurgija', 50],
-    ['Hirursko vadjenje', 'Hirurgija', 90],
-    ['Impakcija umnjaka', 'Hirurgija', 180],
-    ['Apikotomija', 'Hirurgija', 180],
-    ['Implant', 'Hirurgija', 600],
-    ['Keramicka kruna', 'Protetika', 250],
-    ['Cirkonijum kruna', 'Protetika', 300],
-    ['Totalna proteza', 'Protetika', 450],
-    ['Parcijalna proteza', 'Protetika', 350],
-    ['Fasete', 'Protetika', 220],
-    ['Mobilna', 'Ortodoncija', 600],
-    ['Fiksna', 'Ortodoncija', 900],
-    ['Ostalo', 'Ortodoncija', 0]
-  ].forEach(([value, groupName, price], index) => add('procedure', value, value, groupName, price, index + 1));
+    'Pregledi i dijagnostika',
+    'Preventivna stomatologija',
+    'Konzervativna stomatologija',
+    'Endodoncija',
+    'Decja stomatologija',
+    'Oralna hirurgija',
+    'Parodontologija',
+    'Protetika',
+    'Estetska stomatologija',
+    'Okluzija i splint terapija'
+  ].forEach((item, index) => add('activity', item, item, null, 0, index + 1));
+  [
+    ['Analiza snimka', 'Pregledi i dijagnostika', 1000],
+    ['Pregled sa planom', 'Pregledi i dijagnostika', 2000],
+    ['Zalivanje fisura', 'Preventivna stomatologija', 2000],
+    ['Pesikiranje zuba', 'Preventivna stomatologija', 1000, null, { pricePrefix: '+' }],
+    ['Kompozitna plomba I klasa', 'Konzervativna stomatologija', 4000],
+    ['Kompozitna plomba V klasa', 'Konzervativna stomatologija', 4000],
+    ['Kompozitna plomba II klasa', 'Konzervativna stomatologija', 4500],
+    ['Kompozitna plomba MOD', 'Konzervativna stomatologija', 5000],
+    ['Indirektno prekrivanje pulpe', 'Konzervativna stomatologija', 1500],
+    ['Amalgamska plomba', 'Konzervativna stomatologija', 2500],
+    ['Kompozitna nadogradnja zuba', 'Konzervativna stomatologija', 5000],
+    ['Kompozitni ispun na lecenom zubu / kom', 'Konzervativna stomatologija', 4000, '106'],
+    ['Lecenje zuba I faza', 'Endodoncija', 2000],
+    ['Lecenje zuba II faza', 'Endodoncija', 2000],
+    ['Lecenje zuba III faza', 'Endodoncija', 3000],
+    ['Lecenje zuba', 'Endodoncija', 3000],
+    ['Lecenje zuba - Ca kanalno punjenje', 'Endodoncija', 2000],
+    ['Revizija', 'Endodoncija', 4000],
+    ['Masinska endodoncija I faza', 'Endodoncija', 2000],
+    ['Masinska endodoncija II faza', 'Endodoncija', 4000],
+    ['Masinska endodoncija III faza', 'Endodoncija', 3000],
+    ['Lecenje zuba - trepanacija komore i ekstirpacija pulpe / kom', 'Endodoncija', 2000, '107'],
+    ['Interseansna medikacija kanala / kom', 'Endodoncija', 2000, '103*'],
+    ['Lecenje zuba - instrumentacija kanala - incizivi / kom', 'Endodoncija', 4000, '102'],
+    ['Lecenje zuba - instrumentacija kanala - premolari / kom', 'Endodoncija', 5000, '101'],
+    ['Lecenje zuba - instrumentacija kanala - molari / kom', 'Endodoncija', 6000, '100'],
+    ['Lecenje zuba - opturacija kanala - premolari i incizivi / kom', 'Endodoncija', 3000, '105'],
+    ['Lecenje zuba - opturacija kanala - molari / kom', 'Endodoncija', 4000, '104'],
+    ['Plomba na mlecnom zubu I klasa', 'Decja stomatologija', 2500],
+    ['Plomba na mlecnom zubu II klasa', 'Decja stomatologija', 3000],
+    ['Indirektno prekrivanje pulpe na mlecnom zubu', 'Decja stomatologija', 1000],
+    ['Kompozitna plomba na mlecnom zubu', 'Decja stomatologija', 3000],
+    ['Lecenje mlecnog zuba I faza', 'Decja stomatologija', 2000],
+    ['Vadjenje mlecnog zuba', 'Decja stomatologija', 2500],
+    ['Vadjenje zuba', 'Oralna hirurgija', 4000],
+    ['Komplikovano vadjenje', 'Oralna hirurgija', 6000],
+    ['Uklanjanje zubnog kamenca i uklanjanje mekih naslaga', 'Parodontologija', 3500],
+    ['Uklanjanje zubnog kamenca i mekih naslaga sa ispiranjem dzepova', 'Parodontologija', 4000],
+    ['Kiretaza parodontalnog dzepa', 'Parodontologija', 1500],
+    ['Lasersko oblikovanje gingive', 'Parodontologija', 3600],
+    ['Parodontoloska rezanj operacija / kom', 'Parodontologija', 25000, '99'],
+    ['Metalni kocic', 'Protetika', 4500],
+    ['Livena nadogradnja', 'Protetika', 8000],
+    ['Skidanje stare krune po zubu', 'Protetika', 1500],
+    ['Privremena krunica', 'Protetika', 4700],
+    ['Fasete kompozitne', 'Estetska stomatologija', 7000],
+    ['Korekcija fasete', 'Estetska stomatologija', 4000],
+    ['Izbeljivanje zuba', 'Estetska stomatologija', 18000],
+    ['Sportski splint', 'Okluzija i splint terapija', 8000],
+    ['Splint terapija bruksizma', 'Okluzija i splint terapija', 8000]
+  ].forEach(([value, groupName, price, code, metadata], index) => {
+    add('procedure', value, value, groupName, price, index + 1, code ? { ...(metadata || {}), code } : metadata, 'RSD');
+  });
   ['Zakazano', 'U toku', 'Završeno', 'Otkazano'].forEach((item, index) => add('visit_status', item, item, null, 0, index + 1));
   ['Plaćeno', 'Dugovanje', 'Delimično'].forEach((item, index) => add('payment_status', item, item, null, 0, index + 1));
   [
-    ['EUR', { exchangeRate: 117, rateDate: 'manual', rateBase: 'EUR', rateCurrency: 'RSD', rateSource: 'default' }],
     ['RSD', { exchangeRate: 1, rateDate: 'manual', rateBase: 'RSD', rateCurrency: 'RSD', rateSource: 'default' }],
+    ['EUR', { exchangeRate: 117, rateDate: 'manual', rateBase: 'EUR', rateCurrency: 'RSD', rateSource: 'default' }],
     ['USD', { exchangeRate: 108, rateDate: 'manual', rateBase: 'USD', rateCurrency: 'RSD', rateSource: 'default' }]
   ].forEach(([item, metadata], index) => add('currency', item, item, null, 0, index + 1, metadata));
   add('shift', 'Prva smena', 'Prva smena', null, 0, 1, { timeFrom: '08:00', timeTo: '14:00', days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] });
@@ -808,7 +851,7 @@ function normalizeCurrency(value) {
   if (raw === 'RSD' || raw.includes('DIN')) return 'RSD';
   if (raw === 'USD' || raw.includes('DOL')) return 'USD';
   if (/^[A-Z]{3,10}$/.test(raw)) return raw;
-  return 'EUR';
+  return 'RSD';
 }
 
 function normalizeShift(value) {
@@ -3079,7 +3122,7 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), as
           status: treatment.status,
           note: treatment.notes,
           price: Number(treatment.price || 0),
-          currency: treatment.currency || record.currency || 'EUR',
+          currency: treatment.currency || record.currency || 'RSD',
           discount: Number(treatment.discount || 0),
           discountType: treatment.discount_type || 'amount',
           discountValue: Number(treatment.discount_value ?? treatment.discount ?? 0)
@@ -3096,7 +3139,7 @@ app.get('/api/records', authenticateToken, requirePermission('records:read'), as
       const paymentParts = paymentRows.map(part => ({
         id: part.id,
         amount: Number(part.amount || 0),
-        currency: part.currency || 'EUR',
+        currency: part.currency || 'RSD',
         exchangeRateToRsd: Number(part.exchange_rate_to_rsd || 0),
         amountRsd: Number(part.amount_rsd || 0),
         paymentMethod: part.payment_method || '',
@@ -3200,7 +3243,7 @@ app.put('/api/records/:id', authenticateToken, requirePermission('records:write'
       const payment = await recordsPaymentsRepo.findPaymentByVisitRecordId(recordId);
       const patientId = payment?.patient_id || current.patient_id;
       const amount = req.body.amount ?? payment?.amount ?? 0;
-      const currency = req.body.currency ?? payment?.currency ?? 'EUR';
+      const currency = req.body.currency ?? payment?.currency ?? 'RSD';
       const paymentParts = await normalizedPaymentParts({
         ...req.body,
         amount_paid: req.body.amount_paid ?? req.body.amountPaid ?? payment?.amount_paid ?? 0,
@@ -3371,7 +3414,7 @@ app.post('/api/appointments/:id/create-visit', authenticateToken, requirePermiss
       status: 'Završeno',
       notes: appointment.notes || `Termin ${appointment.starts_at}`,
       amount: req.body.amount || 0,
-      currency: req.body.currency || 'EUR',
+      currency: req.body.currency || 'RSD',
       payment_status: req.body.payment_status || 'Plaćeno',
       shift: req.body.shift || 'Prva smena',
       treatments: req.body.treatments || {}
@@ -3658,7 +3701,7 @@ function serializeClinicalChart(row) {
     status: row.status,
     phase: Number(row.phase || 1),
     price: Number(row.price || 0),
-    currency: row.currency || 'EUR',
+    currency: row.currency || 'RSD',
     priceRsd: Number(row.price_rsd || 0),
     exchangeRateToRsd: Number(row.exchange_rate_to_rsd || 0),
     providerId: row.provider_id,
@@ -3674,7 +3717,7 @@ function normalizeClinicalEntryType(value) {
 
 function clinicalPriceFields(entryType, body, fallback = {}) {
   if (entryType === 'initial_condition') {
-    return { price: 0, currency: 'EUR', priceRsd: 0, exchangeRateToRsd: 0 };
+    return { price: 0, currency: 'RSD', priceRsd: 0, exchangeRateToRsd: 0 };
   }
   return {
     price: money(body.price ?? fallback.price),
@@ -4347,7 +4390,7 @@ app.post('/api/insurance-claims/:id/era', authenticateToken, requirePermission('
         claimId,
         entryType: 'insurance_payment',
         amount: -paidAmount,
-        currency: 'EUR',
+        currency: 'RSD',
         description: `ERA uplata ${claim.provider}`,
         source: 'era',
         entryDate: todayIsoDate(),
@@ -5148,7 +5191,7 @@ function normalizeCodebookMetadata(type, metadata) {
         ? null
         : Math.max(0, Number(input.exchangeRate || 0)),
       rateDate: cleanText(input.rateDate, { max: 20 }),
-      rateBase: cleanText(input.rateBase, { max: 10 }) || 'EUR',
+      rateBase: cleanText(input.rateBase, { max: 10 }),
       rateCurrency: cleanText(input.rateCurrency, { max: 10 }) || null,
       rateSource: cleanText(input.rateSource, { max: 80 }) || null,
       autoUpdatedAt: cleanText(input.autoUpdatedAt, { max: 20 }) || null
@@ -5178,9 +5221,19 @@ function normalizeCodebookMetadata(type, metadata) {
   };
 }
 
+function normalizeCurrencyCodebookMetadata(value, metadata) {
+  const code = normalizeCurrency(value);
+  return {
+    ...metadata,
+    exchangeRate: code === 'RSD' ? 1 : metadata.exchangeRate,
+    rateBase: metadata.rateBase || code,
+    rateCurrency: metadata.rateCurrency || 'RSD'
+  };
+}
+
 app.get('/api/director/exchange-rate', authenticateToken, requireDirector, async (req, res) => {
   try {
-    const base = cleanText(req.query.base || 'EUR', { max: 10, required: true }).toUpperCase();
+    const base = cleanText(req.query.base || 'RSD', { max: 10, required: true }).toUpperCase();
     const currency = cleanText(req.query.currency, { max: 10, required: true }).toUpperCase();
     if (!currency) return res.status(400).json({ error: 'Currency is required' });
     if (currency === base) {
@@ -5214,7 +5267,7 @@ app.get('/api/director/exchange-rate', authenticateToken, requireDirector, async
   } catch (error) {
     console.warn('Exchange rate provider unavailable:', error.message);
     const fallback = await localExchangeRate(
-      cleanText(req.query.base || 'EUR', { max: 10, required: true }).toUpperCase(),
+      cleanText(req.query.base || 'RSD', { max: 10, required: true }).toUpperCase(),
       cleanText(req.query.currency, { max: 10, required: true }).toUpperCase()
     );
     if (fallback) return res.json(fallback);
@@ -5283,9 +5336,10 @@ app.post('/api/director/codebooks', authenticateToken, requireDirector, validate
     const value = cleanText(req.body.value, { max: 120, required: true });
     const label = cleanText(req.body.label || req.body.value, { max: 120, required: true });
     const groupName = cleanText(req.body.groupName || req.body.group_name, { max: 120 });
-    const metadata = normalizeCodebookMetadata(type, req.body.metadata);
+    let metadata = normalizeCodebookMetadata(type, req.body.metadata);
+    if (type === 'currency') metadata = normalizeCurrencyCodebookMetadata(value, metadata);
     const price = Math.max(0, Number(req.body.price || 0));
-    const priceCurrency = type === 'procedure' ? normalizeCurrency(req.body.priceCurrency || req.body.price_currency) : 'EUR';
+    const priceCurrency = type === 'procedure' ? normalizeCurrency(req.body.priceCurrency || req.body.price_currency) : 'RSD';
     const sortOrder = Number.isInteger(Number(req.body.sortOrder)) ? Number(req.body.sortOrder) : 0;
 
     if (!type || !value || !label) return res.status(400).json({ error: 'Type, value and label are required' });
@@ -5323,9 +5377,10 @@ app.put('/api/director/codebooks/:id', authenticateToken, requireDirector, valid
     const value = current.value;
     const label = cleanText(data.label || data.value, { max: 120, required: true });
     const groupName = cleanText(data.groupName ?? data.group_name, { max: 120 });
-    const metadata = normalizeCodebookMetadata(type, data.metadata);
+    let metadata = normalizeCodebookMetadata(type, data.metadata);
+    if (type === 'currency') metadata = normalizeCurrencyCodebookMetadata(value, metadata);
     const price = Math.max(0, Number(data.price || 0));
-    const priceCurrency = type === 'procedure' ? normalizeCurrency(data.priceCurrency || data.price_currency) : 'EUR';
+    const priceCurrency = type === 'procedure' ? normalizeCurrency(data.priceCurrency || data.price_currency) : 'RSD';
     const isActive = data.isActive === false || data.is_active === 0 ? 0 : 1;
     const sortOrder = Number.isInteger(Number(data.sortOrder ?? data.sort_order)) ? Number(data.sortOrder ?? data.sort_order) : 0;
 
@@ -5384,7 +5439,7 @@ function normalizeReportDate(value) {
 async function reportCurrencies() {
   const rows = await directorAdmin.activeCurrencyValues();
   const values = rows.map(row => normalizeCurrency(row.value)).filter(Boolean);
-  return Array.from(new Set([...values, 'EUR', 'RSD']));
+  return Array.from(new Set(['RSD', ...values, 'EUR']));
 }
 
 function zeroCurrencyMap(currencies) {
@@ -5491,7 +5546,7 @@ async function buildDailyCashReport({ reportDate, shift, userId }) {
     procedure: row.procedure,
     shift: row.shift,
     amount: Number(row.amount || 0),
-    currency: row.currency || 'EUR'
+    currency: row.currency || 'RSD'
   }));
 
   return {

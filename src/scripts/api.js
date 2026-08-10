@@ -109,7 +109,7 @@
       paymentStatus: row.payment_status || row.paymentStatus || "Plaćeno",
       amountDue: Number(row.amount_due ?? row.amountDue ?? 0),
       amountPaid: Number(row.amount_paid ?? row.amountPaid ?? 0),
-      currency: row.currency || row.paymentCurrency || "EUR",
+      currency: row.currency || row.paymentCurrency || "RSD",
       paymentParts: row.paymentParts || row.payment_parts || [],
       shift: row.shift || "Prva smena",
       generalTreatments: row.generalTreatments || row.general_treatments || [],
@@ -756,7 +756,7 @@
     return result;
   }
 
-  async function getExchangeRate(currency, base = "EUR") {
+  async function getExchangeRate(currency, base = "RSD") {
     return request(`/director/exchange-rate?base=${encodeURIComponent(base)}&currency=${encodeURIComponent(currency)}`);
   }
 

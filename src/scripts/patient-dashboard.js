@@ -41,7 +41,7 @@ function isDebt(record) {
   return Number(record.amountDue || 0) > 0 && ["dugovanje", "delimično"].includes(payment);
 }
 
-function formatMoney(amount, currency = "EUR") {
+function formatMoney(amount, currency = "RSD") {
   return window.DrRosaCurrencyUtils
     ? window.DrRosaCurrencyUtils.formatMoney(amount, currency)
     : `${Number(amount || 0).toFixed(2)} ${currency}`;
@@ -127,7 +127,7 @@ function recordVisitCost(record) {
 
 function formatDebtTotals(records) {
   const totals = records.reduce((acc, record) => {
-    const currency = record.currency || "EUR";
+    const currency = record.currency || "RSD";
     acc[currency] = (acc[currency] || 0) + Number(record.amountDue || 0);
     return acc;
   }, {});
@@ -657,7 +657,7 @@ function userFacingError(error, fallback) {
 
 function rateToRsd(currency) {
   if (window.DrRosaCurrencyUtils) return window.DrRosaCurrencyUtils.rateToRsd(currency);
-  const code = String(currency || "EUR").toUpperCase();
+  const code = String(currency || "RSD").toUpperCase();
   if (code === "RSD") return 1;
   const item = currencyItems.find(entry => String(entry.value || "").toUpperCase() === code);
   const metadata = item?.metadata || {};
@@ -671,7 +671,7 @@ function rateToRsd(currency) {
 
 function clinicalPriceState() {
   const price = Number(document.getElementById("clinical-price")?.value || 0);
-  const currency = document.getElementById("clinical-currency")?.value || "EUR";
+  const currency = document.getElementById("clinical-currency")?.value || "RSD";
   const exchangeRateToRsd = rateToRsd(currency);
   const priceRsd = currency === "RSD" ? price : price * exchangeRateToRsd;
   return { price, currency, exchangeRateToRsd, priceRsd };
@@ -1380,7 +1380,7 @@ function resetClinicalChartForm() {
   form.reset();
   document.getElementById("clinical-chart-entry-id").value = "";
   document.getElementById("clinical-phase").value = "1";
-  document.getElementById("clinical-currency").value = "EUR";
+  document.getElementById("clinical-currency").value = "RSD";
   document.getElementById("cancel-clinical-chart-edit-btn").hidden = true;
   form.querySelector('button[type="submit"]').textContent = "Sačuvaj zubni status";
   updateClinicalPricePreview();
@@ -1395,7 +1395,7 @@ function fillClinicalChartForm(entry) {
   document.getElementById("clinical-status").value = entry.status || "planned";
   document.getElementById("clinical-phase").value = entry.phase || 1;
   document.getElementById("clinical-price").value = Number(entry.price || 0) || "";
-  setSelectValue(document.getElementById("clinical-currency"), entry.currency || "EUR");
+  setSelectValue(document.getElementById("clinical-currency"), entry.currency || "RSD");
   document.getElementById("clinical-diagnosis").value = entry.diagnosis || "";
   document.getElementById("clinical-procedure-code").value = entry.procedureCode || "";
   document.getElementById("clinical-notes").value = entry.notes || "";
@@ -1520,15 +1520,15 @@ async function initializeClinicalWorkflows(patientId) {
     window.DrRosaApi.getCodebooks ? window.DrRosaApi.getCodebooks("currency").catch(() => []) : []
   ]);
   currencyItems = currencies.length ? currencies : [
-    { value: "EUR", label: "EUR", metadata: { exchangeRate: 117, rateBase: "EUR", rateCurrency: "RSD" } },
     { value: "RSD", label: "RSD", metadata: { exchangeRate: 1, rateBase: "RSD", rateCurrency: "RSD" } },
+    { value: "EUR", label: "EUR", metadata: { exchangeRate: 117, rateBase: "EUR", rateCurrency: "RSD" } },
     { value: "USD", label: "USD", metadata: { exchangeRate: 108, rateBase: "USD", rateCurrency: "RSD" } }
   ];
   window.DrRosaCurrencyUtils?.setCurrencies(currencyItems);
   const currencySelect = document.getElementById("clinical-currency");
   const currentCurrency = currencySelect.value;
   currencySelect.innerHTML = currencyItems.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label || item.value)}</option>`).join("");
-  setSelectValue(currencySelect, currentCurrency || "EUR");
+  setSelectValue(currencySelect, currentCurrency || "RSD");
   ["clinical-price", "clinical-currency"].forEach(id => {
     document.getElementById(id).addEventListener("input", updateClinicalPricePreview);
     document.getElementById(id).addEventListener("change", updateClinicalPricePreview);
@@ -1736,7 +1736,7 @@ async function initializeAdvancedWorkflows(patientId) {
         await window.DrRosaApi.createTreatmentPlan(patientId, {
           title: document.getElementById("plan-title").value || "Plan terapije",
           status: document.getElementById("plan-status").value,
-          currency: "EUR",
+          currency: "RSD",
           items: planItemsDraft
         });
         planItemsDraft = [];
@@ -1827,7 +1827,7 @@ async function initializeAdvancedWorkflows(patientId) {
         await window.DrRosaApi.createInvoice(patientId, {
           issueDate: document.getElementById("invoice-date").value || today(),
           dueDate: document.getElementById("invoice-due-date").value,
-          currency: "EUR",
+          currency: "RSD",
           items: invoiceItemsDraft
         });
         invoiceItemsDraft = [];

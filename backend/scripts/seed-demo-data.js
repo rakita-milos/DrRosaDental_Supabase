@@ -75,7 +75,19 @@ async function seedDemoData(client) {
     patientIds.push(Number(result.rows[0].id));
   }
 
-  const procedures = ['Kontrola i ciscenje', 'Plomba', 'Endodontija', 'Krunica', 'Most', 'Implant', 'Vadjenje', 'Ortodontija', 'Izbeljivanje', 'Parodontologija'];
+  const procedures = [
+    'Pregled sa planom',
+    'Zalivanje fisura',
+    'Kompozitna plomba II klasa',
+    'Lecenje zuba',
+    'Lecenje zuba - instrumentacija kanala - molari / kom',
+    'Plomba na mlecnom zubu I klasa',
+    'Vadjenje zuba',
+    'Uklanjanje zubnog kamenca i uklanjanje mekih naslaga',
+    'Privremena krunica',
+    'Izbeljivanje zuba',
+    'Splint terapija bruksizma'
+  ];
   const statuses = ['Zakazano', 'U toku', 'Zavrseno', 'Zavrseno', 'Zavrseno', 'U toku'];
   const paymentStatuses = ['Placeno', 'Placeno', 'Placeno', 'Delimicno', 'Dugovanje'];
   const teeth = ['11', '12', '14', '16', '21', '24', '26', '31', '36', '41', '44', '46'];
@@ -83,14 +95,14 @@ async function seedDemoData(client) {
   for (let index = 0; index < 50; index += 1) {
     const patientId = patientIds[index % patientIds.length];
     const doctor = doctors[index % doctors.length];
-    const currency = index < 25 ? 'RSD' : 'EUR';
+    const currency = 'RSD';
     const shift = index < 17 ? 'Prva smena' : 'Druga smena';
     const procedure = procedures[index % procedures.length];
     const status = statuses[index % statuses.length];
     const paymentStatus = paymentStatuses[index % paymentStatuses.length];
     const day = String((index % 28) + 1).padStart(2, '0');
     const month = String(1 + (index % 5)).padStart(2, '0');
-    const amount = currency === 'RSD' ? 3500 + (index % 8) * 1200 : 35 + (index % 8) * 18;
+    const amount = 3500 + (index % 8) * 1200;
 
     const visit = await client.query(`
       INSERT INTO visit_records (patient_id, doctor_id, visit_date, procedure, status, shift, notes)
@@ -110,7 +122,7 @@ async function seedDemoData(client) {
     `, [visitId, teeth[index % teeth.length], procedure, status === 'Zavrseno' ? 'Zavrseno' : 'Planirano', `${marker}; demo tretman`]);
   }
 
-  console.log('Demo data seeded: 10 patients, 50 records, 25 RSD, 25 EUR, 17 first shift, 33 second shift.');
+  console.log('Demo data seeded: 10 patients, 50 records, RSD primary currency, 17 first shift, 33 second shift.');
 }
 
 main().catch(error => {

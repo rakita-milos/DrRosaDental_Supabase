@@ -62,7 +62,7 @@
           date: record.lastVisit,
           visitId: record.id || `${record.lastVisit}-${record.procedure}`,
           procedure: record.procedure,
-          currency: treatment.currency || record.currency || "EUR"
+          currency: treatment.currency || record.currency || "RSD"
         }))
       ))
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
@@ -78,7 +78,7 @@
           visitId: item.visitId,
           procedure: item.procedure,
           type: item.type,
-          currency: item.currency || "EUR",
+          currency: item.currency || "RSD",
           teeth: [],
           notes: [],
           gross: 0,
@@ -114,7 +114,7 @@
   }
 
   function renderEntries(entries, options = {}) {
-    const formatMoney = options.formatMoney || ((amount, currency = "EUR") => (
+    const formatMoney = options.formatMoney || ((amount, currency = "RSD") => (
       window.DrRosaCurrencyUtils
         ? window.DrRosaCurrencyUtils.formatMoney(amount, currency)
         : `${Number(amount || 0).toFixed(2)} ${currency}`

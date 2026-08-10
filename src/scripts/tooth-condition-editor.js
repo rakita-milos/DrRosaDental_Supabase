@@ -61,7 +61,7 @@
       notes: normalized.notes,
       phase: 1,
       price: 0,
-      currency: "EUR",
+      currency: "RSD",
       priceRsd: 0,
       exchangeRateToRsd: 0,
       entryType: INITIAL_ENTRY_TYPE

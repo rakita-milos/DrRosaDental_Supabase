@@ -70,7 +70,7 @@ function fold(value) {
 }
 
 function addCurrencyAmount(target, currency, amount) {
-  const key = currency || "EUR";
+  const key = currency || "RSD";
   target[key] = (target[key] || 0) + Number(amount || 0);
 }
 
@@ -231,12 +231,12 @@ function buildPatientRows(patients, records) {
     const row = patientMap[patientKey];
     row.records.push(record);
     row.visits += 1;
-    row.currencies.add(record.currency || "EUR");
+    row.currencies.add(record.currency || "RSD");
     const shift = record.shift || "Prva smena";
     row.shifts.set(shift, (row.shifts.get(shift) || 0) + 1);
     if (isDebt(record)) {
       row.hasDebt = true;
-      addCurrencyAmount(row.totalDebt, record.currency || "EUR", record.amountDue || 0);
+      addCurrencyAmount(row.totalDebt, record.currency || "RSD", record.amountDue || 0);
     }
     if (!row.lastVisit || new Date(record.lastVisit) > new Date(row.lastVisit)) {
       row.lastVisit = record.lastVisit;

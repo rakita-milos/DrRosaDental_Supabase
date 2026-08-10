@@ -395,7 +395,7 @@ test('form option and autocomplete attributes use attribute escaping', () => {
   assert.match(newEntrySource, /const escapeAttribute = window\.DrRosaSecurity\.escapeAttribute/);
   assert.match(newEntrySource, /value="\$\{escapeAttribute\(value\)\}"/);
   assert.match(newEntrySource, /data-patient-name="\$\{escapeAttribute\(name\)\}"/);
-  assert.match(newEntrySource, /data-price-currency="\$\{escapeAttribute\(priceInfo\.currency \|\| "EUR"\)\}"/);
+  assert.match(newEntrySource, /data-price-currency="\$\{escapeAttribute\(priceInfo\.currency \|\| "RSD"\)\}"/);
 });
 
 test('pages load security helpers before the API bundle', () => {

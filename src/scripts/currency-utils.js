@@ -1,14 +1,14 @@
 (function () {
   const DEFAULT_CURRENCIES = [
-    { value: "EUR", label: "EUR", metadata: { exchangeRate: 117, rateBase: "EUR", rateCurrency: "RSD" } },
     { value: "RSD", label: "RSD", metadata: { exchangeRate: 1, rateBase: "RSD", rateCurrency: "RSD" } },
+    { value: "EUR", label: "EUR", metadata: { exchangeRate: 117, rateBase: "EUR", rateCurrency: "RSD" } },
     { value: "USD", label: "USD", metadata: { exchangeRate: 108, rateBase: "USD", rateCurrency: "RSD" } }
   ];
 
   let currencies = DEFAULT_CURRENCIES;
 
   function code(value) {
-    return String(value || "EUR").toUpperCase();
+    return String(value || "RSD").toUpperCase();
   }
 
   function setCurrencies(items) {
@@ -32,7 +32,7 @@
     return 0;
   }
 
-  function convert(amount, fromCurrency = "EUR", toCurrency = "EUR") {
+  function convert(amount, fromCurrency = "RSD", toCurrency = "RSD") {
     const from = code(fromCurrency);
     const to = code(toCurrency);
     const value = Number(amount || 0);
@@ -43,11 +43,11 @@
     return value * fromRate / toRate;
   }
 
-  function formatMoney(amount, currency = "EUR") {
+  function formatMoney(amount, currency = "RSD") {
     return `${Number(amount || 0).toFixed(2)} ${code(currency)}`;
   }
 
-  function conversionLabel(amount, fromCurrency = "EUR", toCurrency = "EUR") {
+  function conversionLabel(amount, fromCurrency = "RSD", toCurrency = "RSD") {
     const from = code(fromCurrency);
     const to = code(toCurrency);
     const converted = convert(amount, from, to);

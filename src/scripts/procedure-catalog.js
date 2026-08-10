@@ -1,97 +1,130 @@
 (function () {
   let activities = {
-    "Opšta stomatologija": [
-      "Kontrola",
-      "Čišćenje",
-      "Kontrola i čišćenje",
-      "Plomba",
-      "Endodontija",
-      "Izbeljivanje",
-      "Parodontologija"
+    "Pregledi i dijagnostika": [
+      "Analiza snimka",
+      "Pregled sa planom"
     ],
-    "Hirurgija": [
-      "Vađenja zuba",
-      "Impakcija umnjaka",
-      "Impakcija očnjaka",
-      "Apikotomija",
-      "Hirurško vađenje",
-      "Kiretaža",
-      "Zatvaranje sinusa",
-      "Frenulum",
-      "Meka tkiva",
-      "Nivelacija grebena",
-      "Zaostali korenovi",
-      "Implant",
-      "Mini implanti",
-      "Operacija"
+    "Preventivna stomatologija": [
+      "Zalivanje fisura",
+      "Pesikiranje zuba"
+    ],
+    "Konzervativna stomatologija": [
+      "Kompozitna plomba I klasa",
+      "Kompozitna plomba V klasa",
+      "Kompozitna plomba II klasa",
+      "Kompozitna plomba MOD",
+      "Indirektno prekrivanje pulpe",
+      "Amalgamska plomba",
+      "Kompozitna nadogradnja zuba",
+      "Kompozitni ispun na lecenom zubu / kom"
+    ],
+    "Endodoncija": [
+      "Lecenje zuba I faza",
+      "Lecenje zuba II faza",
+      "Lecenje zuba III faza",
+      "Lecenje zuba",
+      "Lecenje zuba - Ca kanalno punjenje",
+      "Revizija",
+      "Masinska endodoncija I faza",
+      "Masinska endodoncija II faza",
+      "Masinska endodoncija III faza",
+      "Lecenje zuba - trepanacija komore i ekstirpacija pulpe / kom",
+      "Interseansna medikacija kanala / kom",
+      "Lecenje zuba - instrumentacija kanala - incizivi / kom",
+      "Lecenje zuba - instrumentacija kanala - premolari / kom",
+      "Lecenje zuba - instrumentacija kanala - molari / kom",
+      "Lecenje zuba - opturacija kanala - premolari i incizivi / kom",
+      "Lecenje zuba - opturacija kanala - molari / kom"
+    ],
+    "Decja stomatologija": [
+      "Plomba na mlecnom zubu I klasa",
+      "Plomba na mlecnom zubu II klasa",
+      "Indirektno prekrivanje pulpe na mlecnom zubu",
+      "Kompozitna plomba na mlecnom zubu",
+      "Lecenje mlecnog zuba I faza",
+      "Vadjenje mlecnog zuba"
+    ],
+    "Oralna hirurgija": [
+      "Vadjenje zuba",
+      "Komplikovano vadjenje"
+    ],
+    "Parodontologija": [
+      "Uklanjanje zubnog kamenca i uklanjanje mekih naslaga",
+      "Uklanjanje zubnog kamenca i mekih naslaga sa ispiranjem dzepova",
+      "Kiretaza parodontalnog dzepa",
+      "Lasersko oblikovanje gingive",
+      "Parodontoloska rezanj operacija / kom"
     ],
     "Protetika": [
-      "Keramička kruna",
-      "Cirkonijum kruna",
-      "Totalna proteza",
-      "Skeletirana proteza",
-      "Parcijalna proteza",
-      "Reparatura proteze",
-      "Privremene krune",
-      "Splintevi",
-      "Nadogradnja",
-      "Atečmeni",
-      "Krunica na implantu",
-      "Podlaganje proteze",
-      "Fasete",
-      "Ostalo"
+      "Metalni kocic",
+      "Livena nadogradnja",
+      "Skidanje stare krune po zubu",
+      "Privremena krunica"
     ],
-    "Ortodoncija": [
-      "Mobilna",
-      "Fiksna",
-      "Pozicioner",
-      "Monoblok",
-      "Ostalo"
+    "Estetska stomatologija": [
+      "Fasete kompozitne",
+      "Korekcija fasete",
+      "Izbeljivanje zuba"
+    ],
+    "Okluzija i splint terapija": [
+      "Sportski splint",
+      "Splint terapija bruksizma"
     ]
   };
 
   let prices = {
-    "Kontrola": 30,
-    "Čišćenje": 50,
-    "Kontrola i čišćenje": 50,
-    "Plomba": 60,
-    "Endodontija": 120,
-    "Izbeljivanje": 150,
-    "Parodontologija": 90,
-    "Vađenja zuba": 50,
-    "Hirurško vađenje": 90,
-    "Impakcija umnjaka": 180,
-    "Impakcija očnjaka": 220,
-    "Apikotomija": 180,
-    "Kiretaža": 80,
-    "Zatvaranje sinusa": 250,
-    "Frenulum": 90,
-    "Meka tkiva": 100,
-    "Nivelacija grebena": 150,
-    "Zaostali korenovi": 70,
-    "Implant": 600,
-    "Mini implanti": 250,
-    "Operacija": 200,
-    "Keramička kruna": 250,
-    "Cirkonijum kruna": 300,
-    "Totalna proteza": 450,
-    "Skeletirana proteza": 500,
-    "Parcijalna proteza": 350,
-    "Reparatura proteze": 60,
-    "Privremene krune": 40,
-    "Splintevi": 80,
-    "Nadogradnja": 90,
-    "Atečmeni": 120,
-    "Krunica na implantu": 300,
-    "Podlaganje proteze": 90,
-    "Fasete": 220,
-    "Mobilna": 600,
-    "Fiksna": 900,
-    "Pozicioner": 120,
-    "Monoblok": 180,
-    "Ostalo": 0
+    "Analiza snimka": 1000,
+    "Pregled sa planom": 2000,
+    "Zalivanje fisura": 2000,
+    "Pesikiranje zuba": 1000,
+    "Kompozitna plomba I klasa": 4000,
+    "Kompozitna plomba V klasa": 4000,
+    "Kompozitna plomba II klasa": 4500,
+    "Kompozitna plomba MOD": 5000,
+    "Indirektno prekrivanje pulpe": 1500,
+    "Amalgamska plomba": 2500,
+    "Kompozitna nadogradnja zuba": 5000,
+    "Kompozitni ispun na lecenom zubu / kom": 4000,
+    "Lecenje zuba I faza": 2000,
+    "Lecenje zuba II faza": 2000,
+    "Lecenje zuba III faza": 3000,
+    "Lecenje zuba": 3000,
+    "Lecenje zuba - Ca kanalno punjenje": 2000,
+    "Revizija": 4000,
+    "Masinska endodoncija I faza": 2000,
+    "Masinska endodoncija II faza": 4000,
+    "Masinska endodoncija III faza": 3000,
+    "Lecenje zuba - trepanacija komore i ekstirpacija pulpe / kom": 2000,
+    "Interseansna medikacija kanala / kom": 2000,
+    "Lecenje zuba - instrumentacija kanala - incizivi / kom": 4000,
+    "Lecenje zuba - instrumentacija kanala - premolari / kom": 5000,
+    "Lecenje zuba - instrumentacija kanala - molari / kom": 6000,
+    "Lecenje zuba - opturacija kanala - premolari i incizivi / kom": 3000,
+    "Lecenje zuba - opturacija kanala - molari / kom": 4000,
+    "Plomba na mlecnom zubu I klasa": 2500,
+    "Plomba na mlecnom zubu II klasa": 3000,
+    "Indirektno prekrivanje pulpe na mlecnom zubu": 1000,
+    "Kompozitna plomba na mlecnom zubu": 3000,
+    "Lecenje mlecnog zuba I faza": 2000,
+    "Vadjenje mlecnog zuba": 2500,
+    "Vadjenje zuba": 4000,
+    "Komplikovano vadjenje": 6000,
+    "Uklanjanje zubnog kamenca i uklanjanje mekih naslaga": 3500,
+    "Uklanjanje zubnog kamenca i mekih naslaga sa ispiranjem dzepova": 4000,
+    "Kiretaza parodontalnog dzepa": 1500,
+    "Lasersko oblikovanje gingive": 3600,
+    "Parodontoloska rezanj operacija / kom": 25000,
+    "Metalni kocic": 4500,
+    "Livena nadogradnja": 8000,
+    "Skidanje stare krune po zubu": 1500,
+    "Privremena krunica": 4700,
+    "Fasete kompozitne": 7000,
+    "Korekcija fasete": 4000,
+    "Izbeljivanje zuba": 18000,
+    "Sportski splint": 8000,
+    "Splint terapija bruksizma": 8000
   };
-  let priceCurrencies = Object.fromEntries(Object.keys(prices).map(procedure => [procedure, "EUR"]));
+  let priceCurrencies = Object.fromEntries(Object.keys(prices).map(procedure => [procedure, "RSD"]));
 
   function fold(value) {
     return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -114,7 +147,7 @@
   }
 
   function getPriceCurrency(procedure) {
-    return priceCurrencies[procedure] || "EUR";
+    return priceCurrencies[procedure] || "RSD";
   }
 
   function getPriceInfo(procedure) {
@@ -171,7 +204,7 @@
           if (!nextActivities[group]) nextActivities[group] = [];
           nextActivities[group].push(item.value);
           nextPrices[item.value] = Number(item.price || 0);
-          nextPriceCurrencies[item.value] = item.priceCurrency || item.price_currency || "EUR";
+          nextPriceCurrencies[item.value] = item.priceCurrency || item.price_currency || "RSD";
         });
 
       if (Object.keys(nextActivities).length > 0) {

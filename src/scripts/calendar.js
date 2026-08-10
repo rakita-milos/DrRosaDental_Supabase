@@ -378,7 +378,7 @@
     return items.map(item => `<option value="${window.DrRosaSecurity.escapeAttribute(item[value])}">${window.DrRosaSecurity.escapeHtml(item[label])}</option>`).join("");
   }
 
-  function formatMoney(amount, currency = "EUR") {
+  function formatMoney(amount, currency = "RSD") {
     return window.DrRosaCurrencyUtils
       ? window.DrRosaCurrencyUtils.formatMoney(amount, currency)
       : `${Number(amount || 0).toFixed(2)} ${currency}`;
@@ -392,7 +392,7 @@
   function paymentLine(appointment) {
     const record = recordForAppointment(appointment);
     if (!record) return "";
-    const currency = record.currency || "EUR";
+    const currency = record.currency || "RSD";
     const paid = Number(record.amountPaid || 0);
     const due = Number(record.amountDue || 0);
     return `<small class="appointment-payment">Plaćeno: ${formatMoney(paid, currency)}${due > 0 ? ` / Dug: ${formatMoney(due, currency)}` : ""}</small>`;

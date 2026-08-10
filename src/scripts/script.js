@@ -110,7 +110,7 @@ function patientDebtSummary(records, appointment) {
     : record.patient === name);
   const debts = {};
   patientRecords.filter(paymentIsDebt).forEach(record => {
-    const currency = record.currency || "EUR";
+    const currency = record.currency || "RSD";
     debts[currency] = (debts[currency] || 0) + Number(record.amountDue || record.amount_due || 0);
   });
   const entries = Object.entries(debts).filter(([, amount]) => amount > 0);

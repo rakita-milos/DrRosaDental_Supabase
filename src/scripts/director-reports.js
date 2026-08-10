@@ -9,12 +9,31 @@ let googleOAuthReconnectMode = false;
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
 const procedureCatalog = window.DrRosaProcedureCatalog;
 const MONTHS = ["Januar", "Februar", "Mart", "April", "Maj", "Jun", "Jul", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"];
-const EXCEL_SHEETS = ["PAZARI", "Hirurgija", "Protetika", "Ortodoncija", "Troškovi", "Ukupno"];
+const EXCEL_ACTIVITY_SHEETS = [
+  "Pregledi i dijagnostika",
+  "Preventivna stomatologija",
+  "Konzervativna stomatologija",
+  "Endodoncija",
+  "Decja stomatologija",
+  "Oralna hirurgija",
+  "Parodontologija",
+  "Protetika",
+  "Estetska stomatologija",
+  "Okluzija i splint terapija"
+];
+const EXCEL_SHEETS = ["PAZARI", ...EXCEL_ACTIVITY_SHEETS, "Troskovi", "Ukupno"];
 const EXCEL_CATEGORIES = {
-  Hirurgija: ["Vađenja zuba", "Impakcija umnjaka", "Impakcija očnjaka", "Apikotomija", "Hirurško vađenje", "Kiretaža", "Zatvaranje sinusa", "Frenulum", "Meka tkiva", "Nivelacija grebena", "Zaostali korenovi", "Implant", "Mini implanti", "Operacija"],
-  Protetika: ["Keramička kruna", "Cirkonijum kruna", "Totalna proteza", "Skeletirana proteza", "Parcijalna proteza", "Reparatura proteze", "Privremene krune", "Splintevi", "Nadogradnja", "Atečmeni", "Krunica na implantu", "Podlaganje proteze", "Fasete", "Ostalo"],
-  Ortodoncija: ["Mobilna", "Fiksna", "Pozicioner", "Monoblok", "Ostalo"],
-  Troškovi: ["Doprinosi", "Anastasija plata", "dr Ljilja zarada", "dr Mara zarada", "dr Dunja zarada", "dr Nikola zarada", "dr Jovana", "Nina plata", "Medical", "Dental", "Hirurgija", "Parodontologija", "Ortodoncija", "Služba"]
+  "Pregledi i dijagnostika": ["Analiza snimka", "Pregled sa planom"],
+  "Preventivna stomatologija": ["Zalivanje fisura", "Pesikiranje zuba"],
+  "Konzervativna stomatologija": ["Kompozitna plomba I klasa", "Kompozitna plomba V klasa", "Kompozitna plomba II klasa", "Kompozitna plomba MOD", "Indirektno prekrivanje pulpe", "Amalgamska plomba", "Kompozitna nadogradnja zuba", "Kompozitni ispun na lecenom zubu / kom"],
+  Endodoncija: ["Lecenje zuba I faza", "Lecenje zuba II faza", "Lecenje zuba III faza", "Lecenje zuba", "Lecenje zuba - Ca kanalno punjenje", "Revizija", "Masinska endodoncija I faza", "Masinska endodoncija II faza", "Masinska endodoncija III faza", "Lecenje zuba - trepanacija komore i ekstirpacija pulpe / kom", "Interseansna medikacija kanala / kom", "Lecenje zuba - instrumentacija kanala - incizivi / kom", "Lecenje zuba - instrumentacija kanala - premolari / kom", "Lecenje zuba - instrumentacija kanala - molari / kom", "Lecenje zuba - opturacija kanala - premolari i incizivi / kom", "Lecenje zuba - opturacija kanala - molari / kom"],
+  "Decja stomatologija": ["Plomba na mlecnom zubu I klasa", "Plomba na mlecnom zubu II klasa", "Indirektno prekrivanje pulpe na mlecnom zubu", "Kompozitna plomba na mlecnom zubu", "Lecenje mlecnog zuba I faza", "Vadjenje mlecnog zuba"],
+  "Oralna hirurgija": ["Vadjenje zuba", "Komplikovano vadjenje"],
+  Parodontologija: ["Uklanjanje zubnog kamenca i uklanjanje mekih naslaga", "Uklanjanje zubnog kamenca i mekih naslaga sa ispiranjem dzepova", "Kiretaza parodontalnog dzepa", "Lasersko oblikovanje gingive", "Parodontoloska rezanj operacija / kom"],
+  Protetika: ["Metalni kocic", "Livena nadogradnja", "Skidanje stare krune po zubu", "Privremena krunica"],
+  "Estetska stomatologija": ["Fasete kompozitne", "Korekcija fasete", "Izbeljivanje zuba"],
+  "Okluzija i splint terapija": ["Sportski splint", "Splint terapija bruksizma"],
+  Troskovi: ["Doprinosi", "Anastasija plata", "dr Ljilja zarada", "dr Mara zarada", "dr Dunja zarada", "dr Nikola zarada", "dr Jovana", "Nina plata", "Medical", "Dental", "Sluzba"]
 };
 const CODEBOOK_LABELS = {
   activity: "Delatnosti",
@@ -74,7 +93,7 @@ function isDebt(record) {
 }
 
 function addCurrencyAmount(target, currency, amount) {
-  const key = currency || "EUR";
+  const key = currency || "RSD";
   target[key] = (target[key] || 0) + Number(amount || 0);
 }
 
@@ -115,8 +134,8 @@ function renderDirectorKpis({ records = [], patients = [], doctors = [], appoint
     : Array.from(new Set(records.map(record => record.patientId).filter(Boolean).map(String)));
   const noFollowup = patientIds.filter(id => !patientIdsWithUpcoming.has(id)).length;
   const values = {
-    "director-kpi-revenue": window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(revenue, "EUR") : `${revenue.toFixed(2)} EUR`,
-    "director-kpi-debt": window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(debt, "EUR") : `${debt.toFixed(2)} EUR`,
+    "director-kpi-revenue": window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(revenue, "RSD") : `${revenue.toFixed(2)} RSD`,
+    "director-kpi-debt": window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(debt, "RSD") : `${debt.toFixed(2)} RSD`,
     "director-kpi-patients": String(patients.length || new Set(records.map(record => record.patient).filter(Boolean)).size),
     "director-kpi-doctors": String(doctors.length || new Set(records.map(record => record.doctor).filter(Boolean)).size),
     "director-kpi-no-followup": String(noFollowup),
@@ -163,7 +182,7 @@ window.showReport = showReport;
 
 function initializeReports() {
   const reports = [
-    { id: "financial-report", tone: "blue", icon: "EUR", title: "Finansijski Izveštaj", description: "Prihodi, naplata i dugovanja" },
+    { id: "financial-report", tone: "blue", icon: "RSD", title: "Finansijski Izveštaj", description: "Prihodi, naplata i dugovanja" },
     { id: "patients-report", tone: "green", icon: "PAC", title: "Pacijenti", description: "Rast, retencija i statusi pacijenata" },
     { id: "doctors-report", tone: "teal", icon: "DR", title: "Doktori", description: "Produktivnost i opterecenje tima" },
     { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosečna naplata" },
@@ -265,8 +284,8 @@ async function getReport(type) {
 async function loadFinancialReport() {
   const apiReport = await getReport("financial");
   if (apiReport && cachedRecords.length === 0) {
-    document.getElementById("total-revenue").textContent = `${Number(apiReport.totalRevenue || 0).toFixed(2)} EUR`;
-    document.getElementById("total-debt").textContent = `${Number(apiReport.totalDebt || 0).toFixed(2)} EUR`;
+    document.getElementById("total-revenue").textContent = `${Number(apiReport.totalRevenue || 0).toFixed(2)} RSD`;
+    document.getElementById("total-debt").textContent = `${Number(apiReport.totalDebt || 0).toFixed(2)} RSD`;
     document.getElementById("paid-percentage").textContent = `${apiReport.paymentPercentage || 0}%`;
   }
 
@@ -277,7 +296,7 @@ async function loadFinancialReport() {
     }
     const amount = Number(record.amountDue || 0);
     const price = recordTotal(record);
-    const currency = record.currency || "EUR";
+    const currency = record.currency || "RSD";
     patientPayments[record.patient].visits += 1;
     patientPayments[record.patient].amountTotal += price;
     addCurrencyAmount(patientPayments[record.patient].amount, currency, price);
@@ -327,7 +346,7 @@ async function loadPatientsReport() {
     patientMap[record.patient].visits += 1;
     if (isDebt(record)) {
       patientMap[record.patient].debtTotal += Number(record.amountDue || 0);
-      addCurrencyAmount(patientMap[record.patient].debt, record.currency || "EUR", record.amountDue || 0);
+      addCurrencyAmount(patientMap[record.patient].debt, record.currency || "RSD", record.amountDue || 0);
     }
     if (new Date(record.lastVisit) > new Date(patientMap[record.patient].lastVisit)) patientMap[record.patient].lastVisit = record.lastVisit;
   });
@@ -770,7 +789,7 @@ async function loadProceduresReport() {
   })).sort((a, b) => a.activity.localeCompare(b.activity) || a.procedure.localeCompare(b.procedure));
 
   document.getElementById("procedures-table").innerHTML = rows.length ? rows.map(row => `
-    <tr><td>${escapeHtml(row.procedure)}</td><td>${escapeHtml(row.activity || procedureCatalog.findActivityForProcedure(row.procedure) || "-")}</td><td>${row.count}</td><td>${Number(row.percentage || 0).toFixed(1)}%</td><td>${Number(row.avgCost || 0).toFixed(2)} EUR</td></tr>
+    <tr><td>${escapeHtml(row.procedure)}</td><td>${escapeHtml(row.activity || procedureCatalog.findActivityForProcedure(row.procedure) || "-")}</td><td>${row.count}</td><td>${Number(row.percentage || 0).toFixed(1)}%</td><td>${Number(row.avgCost || 0).toFixed(2)} RSD</td></tr>
   `).join("") : `<tr><td colspan="5" class="empty-row">Nema podataka za prikaz.</td></tr>`;
 
   currentReportExport = {
@@ -781,7 +800,7 @@ async function loadProceduresReport() {
       row.activity || procedureCatalog.findActivityForProcedure(row.procedure) || "-",
       row.count,
       `${Number(row.percentage || 0).toFixed(1)}%`,
-      `${Number(row.avgCost || 0).toFixed(2)} EUR`
+      `${Number(row.avgCost || 0).toFixed(2)} RSD`
     ]) : [["Nema podataka", "-", "-", "-", "-"]]
   };
 }
@@ -871,7 +890,7 @@ function matchesCategory(text, category) {
 
 function categoryForEntry(sheet, entry) {
   const categories = EXCEL_CATEGORIES[sheet] || [];
-  if (["Hirurgija", "Protetika", "Ortodoncija"].includes(sheet)) {
+  if (EXCEL_ACTIVITY_SHEETS.includes(sheet)) {
     const activity = entry.activity || procedureCatalog.findActivityForProcedure(entry.type);
     if (activity && activity !== sheet) return null;
   }
@@ -893,6 +912,16 @@ function formatNumber(value) {
   return Number(value || 0).toLocaleString("sr-RS", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function rateToRsd(currency) {
+  const code = String(currency || "RSD").toUpperCase();
+  if (code === "RSD") return 1;
+  if (window.DrRosaCurrencyUtils) {
+    const rate = window.DrRosaCurrencyUtils.rateToRsd(code);
+    if (rate > 0) return rate;
+  }
+  return code === "EUR" ? 117.6 : 0;
+}
+
 function cell(value, className = "") {
   return `<td class="${className}">${escapeHtml(value ?? "")}</td>`;
 }
@@ -909,7 +938,7 @@ function buildPazariRows(monthIndex, year) {
     if (!parts || parts.day < 1 || parts.day > dayCount) return;
     const row = days[parts.day - 1];
     const amount = recordTotal(record) || Number(record.amountDue || 0);
-    const currency = record.currency === "RSD" ? "RSD" : "EUR";
+    const currency = record.currency === "EUR" ? "EUR" : "RSD";
     const isSecondShift = fold(record.shift).includes("drug");
     const debt = isDebt(record) ? Number(record.amountDue || 0) : 0;
     if (debt > 0) {
@@ -930,8 +959,8 @@ function renderPazariSheet(monthIndex, year) {
   const bodyRows = rows.map(row => {
     const totalEur = row.firstEur + row.secondEur + row.debtEur;
     const totalRsd = row.firstRsd + row.secondRsd + row.debtRsd;
-    const total = totalEur + (totalRsd / 117.6);
-    return `<tr>${cell(row.day, "excel-day")}${cell(formatNumber(row.firstEur))}${cell(formatNumber(row.firstRsd))}${cell(formatNumber(row.secondEur))}${cell(formatNumber(row.secondRsd))}${cell(formatNumber(row.debtEur))}${cell(formatNumber(row.debtRsd))}${cell(formatNumber(totalEur), "excel-total")}${cell(formatNumber(totalRsd), "excel-total")}${cell(formatNumber(total), "excel-total")}</tr>`;
+    const total = totalRsd + (totalEur * rateToRsd("EUR"));
+    return `<tr>${cell(row.day, "excel-day")}${cell(formatNumber(row.firstRsd))}${cell(formatNumber(row.firstEur))}${cell(formatNumber(row.secondRsd))}${cell(formatNumber(row.secondEur))}${cell(formatNumber(row.debtRsd))}${cell(formatNumber(row.debtEur))}${cell(formatNumber(totalRsd), "excel-total")}${cell(formatNumber(totalEur), "excel-total")}${cell(formatNumber(total), "excel-total")}</tr>`;
   }).join("");
   const totals = rows.reduce((acc, row) => {
     ["firstEur", "firstRsd", "secondEur", "secondRsd", "debtEur", "debtRsd"].forEach(key => acc[key] += row[key]);
@@ -939,13 +968,13 @@ function renderPazariSheet(monthIndex, year) {
   }, { firstEur: 0, firstRsd: 0, secondEur: 0, secondRsd: 0, debtEur: 0, debtRsd: 0 });
   const totalEur = totals.firstEur + totals.secondEur + totals.debtEur;
   const totalRsd = totals.firstRsd + totals.secondRsd + totals.debtRsd;
-  const total = totalEur + (totalRsd / 117.6);
+  const total = totalRsd + (totalEur * rateToRsd("EUR"));
   return `
     <caption>PAZARI - ${MONTHS[monthIndex]} ${year}</caption>
     <thead>
-      <tr><th>Dan</th><th>I smena EUR</th><th>I smena RSD</th><th>II smena EUR</th><th>II smena RSD</th><th>Dug EUR</th><th>Dug RSD</th><th>Ukupno EUR</th><th>Ukupno RSD</th><th>Ukupno</th></tr>
+      <tr><th>Dan</th><th>I smena RSD</th><th>I smena EUR</th><th>II smena RSD</th><th>II smena EUR</th><th>Dug RSD</th><th>Dug EUR</th><th>Ukupno RSD</th><th>Ukupno EUR</th><th>Ukupno RSD</th></tr>
     </thead>
-    <tbody>${bodyRows}<tr class="excel-sum-row">${cell("Ukupno:")}${cell(formatNumber(totals.firstEur))}${cell(formatNumber(totals.firstRsd))}${cell(formatNumber(totals.secondEur))}${cell(formatNumber(totals.secondRsd))}${cell(formatNumber(totals.debtEur))}${cell(formatNumber(totals.debtRsd))}${cell(formatNumber(totalEur))}${cell(formatNumber(totalRsd))}${cell(formatNumber(total))}</tr></tbody>
+    <tbody>${bodyRows}<tr class="excel-sum-row">${cell("Ukupno:")}${cell(formatNumber(totals.firstRsd))}${cell(formatNumber(totals.firstEur))}${cell(formatNumber(totals.secondRsd))}${cell(formatNumber(totals.secondEur))}${cell(formatNumber(totals.debtRsd))}${cell(formatNumber(totals.debtEur))}${cell(formatNumber(totalRsd))}${cell(formatNumber(totalEur))}${cell(formatNumber(total))}</tr></tbody>
   `;
 }
 
@@ -997,27 +1026,29 @@ function renderCategorySheet(sheet, monthIndex, year) {
 function monthlyTotals(year) {
   return MONTHS.map((month, monthIndex) => {
     const pazarRows = buildPazariRows(monthIndex, year);
-    const pazari = pazarRows.reduce((sum, row) => sum + row.firstEur + row.secondEur + row.debtEur + ((row.firstRsd + row.secondRsd + row.debtRsd) / 117.6), 0);
-    const categories = ["Hirurgija", "Protetika", "Ortodoncija"].reduce((acc, sheet) => {
+    const pazari = pazarRows.reduce((sum, row) => sum + row.firstRsd + row.secondRsd + row.debtRsd + ((row.firstEur + row.secondEur + row.debtEur) * rateToRsd("EUR")), 0);
+    const categories = EXCEL_ACTIVITY_SHEETS.reduce((acc, sheet) => {
       acc[sheet] = aggregateCategorySheet(sheet, monthIndex, year).reduce((sum, row) => sum + Object.values(row.categories).reduce((inner, item) => inner + item.amount, 0), 0);
       return acc;
     }, {});
-    const troskovi = aggregateCategorySheet("Troškovi", monthIndex, year).reduce((sum, row) => sum + Object.values(row.categories).reduce((inner, item) => inner + item.amount, 0), 0);
-    return { month, pazari, ...categories, troskovi, total: pazari + categories.Hirurgija + categories.Protetika + categories.Ortodoncija - troskovi };
+    const troskovi = aggregateCategorySheet("Troskovi", monthIndex, year).reduce((sum, row) => sum + Object.values(row.categories).reduce((inner, item) => inner + item.amount, 0), 0);
+    const activityTotal = EXCEL_ACTIVITY_SHEETS.reduce((sum, sheet) => sum + categories[sheet], 0);
+    return { month, pazari, ...categories, troskovi, total: pazari + activityTotal - troskovi };
   });
 }
 
 function renderUkupnoSheet(year) {
   const rows = monthlyTotals(year);
-  const bodyRows = rows.map(row => `<tr>${cell(row.month)}${cell(formatNumber(row.pazari))}${cell(formatNumber(row.Hirurgija))}${cell(formatNumber(row.Protetika))}${cell(formatNumber(row.Ortodoncija))}${cell(formatNumber(row.troskovi))}${cell(formatNumber(row.total), "excel-total")}</tr>`).join("");
+  const totalKeys = ["pazari", ...EXCEL_ACTIVITY_SHEETS, "troskovi", "total"];
+  const bodyRows = rows.map(row => `<tr>${cell(row.month)}${totalKeys.map(key => cell(formatNumber(row[key]), key === "total" ? "excel-total" : "")).join("")}</tr>`).join("");
   const totals = rows.reduce((acc, row) => {
-    ["pazari", "Hirurgija", "Protetika", "Ortodoncija", "troskovi", "total"].forEach(key => acc[key] += row[key]);
+    totalKeys.forEach(key => acc[key] += row[key]);
     return acc;
-  }, { pazari: 0, Hirurgija: 0, Protetika: 0, Ortodoncija: 0, troskovi: 0, total: 0 });
+  }, Object.fromEntries(totalKeys.map(key => [key, 0])));
   return `
     <caption>Ukupno po mesecima - ${year}</caption>
-    <thead><tr>${["Mesec", "PAZARI", "Hirurgija", "Protetika", "Ortodoncija", "Troškovi", "Ukupno"].map(header => headerCell(header)).join("")}</tr></thead>
-    <tbody>${bodyRows}<tr class="excel-sum-row">${cell("Ukupno:")}${cell(formatNumber(totals.pazari))}${cell(formatNumber(totals.Hirurgija))}${cell(formatNumber(totals.Protetika))}${cell(formatNumber(totals.Ortodoncija))}${cell(formatNumber(totals.troskovi))}${cell(formatNumber(totals.total))}</tr></tbody>
+    <thead><tr>${["Mesec", "PAZARI", ...EXCEL_ACTIVITY_SHEETS, "Troskovi", "Ukupno"].map(header => headerCell(header)).join("")}</tr></thead>
+    <tbody>${bodyRows}<tr class="excel-sum-row">${cell("Ukupno:")}${totalKeys.map(key => cell(formatNumber(totals[key]), key === "total" ? "excel-total" : "")).join("")}</tr></tbody>
   `;
 }
 
@@ -1026,10 +1057,8 @@ function updateExcelSummary(monthIndex, year) {
   const month = rows[monthIndex] || rows[0];
   document.getElementById("excel-report-summary").innerHTML = `
     <article><span>PAZARI</span><strong>${formatNumber(month.pazari)}</strong></article>
-    <article><span>Hirurgija</span><strong>${formatNumber(month.Hirurgija)}</strong></article>
-    <article><span>Protetika</span><strong>${formatNumber(month.Protetika)}</strong></article>
-    <article><span>Ortodoncija</span><strong>${formatNumber(month.Ortodoncija)}</strong></article>
-    <article><span>Troškovi</span><strong>${formatNumber(month.troskovi)}</strong></article>
+    ${EXCEL_ACTIVITY_SHEETS.map(sheet => `<article><span>${escapeHtml(sheet)}</span><strong>${formatNumber(month[sheet])}</strong></article>`).join("")}
+    <article><span>Troskovi</span><strong>${formatNumber(month.troskovi)}</strong></article>
     <article><span>Ukupno</span><strong>${formatNumber(month.total)}</strong></article>
   `;
 }
@@ -1193,12 +1222,12 @@ function updateShiftFieldsVisibility() {
   }
 }
 
-function activeCurrencyOptions(selected = "EUR") {
+function activeCurrencyOptions(selected = "RSD") {
   const currencies = codebookItems
     .filter(item => item.type === "currency" && item.isActive !== false)
     .map(item => item.value)
     .filter(Boolean);
-  const values = Array.from(new Set([...currencies, selected || "EUR", "EUR"]));
+  const values = Array.from(new Set(["RSD", ...currencies, selected || "RSD", "EUR"]));
   return values.map(value => `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(value)}</option>`).join("");
 }
 
@@ -1306,9 +1335,9 @@ function todayIsoDate() {
 function currencyRatePair(value) {
   const code = String(value || "").trim().toUpperCase();
   if (code === "RSD") {
-    return { base: "RSD", currency: "EUR" };
+    return { base: "RSD", currency: "RSD" };
   }
-  return { base: code || "EUR", currency: "RSD" };
+  return { base: code || "RSD", currency: "RSD" };
 }
 
 function isCurrencyRateFresh(item) {
@@ -1317,6 +1346,16 @@ function isCurrencyRateFresh(item) {
 
 async function fetchCurrencyMetadata(currency) {
   const pair = currencyRatePair(currency);
+  if (pair.base === pair.currency) {
+    return {
+      exchangeRate: 1,
+      rateDate: todayIsoDate(),
+      rateBase: pair.base,
+      rateCurrency: pair.currency,
+      rateSource: "local",
+      autoUpdatedAt: todayIsoDate()
+    };
+  }
   const rate = await window.DrRosaApi.getExchangeRate(pair.currency, pair.base);
   return {
     exchangeRate: Number(rate.rate),
@@ -1384,7 +1423,7 @@ function resetCodebookForm() {
   elements.label.value = "";
   elements.group.value = "";
   elements.price.value = "0";
-  if (elements.priceCurrency) elements.priceCurrency.innerHTML = activeCurrencyOptions("EUR");
+  if (elements.priceCurrency) elements.priceCurrency.innerHTML = activeCurrencyOptions("RSD");
   elements.sort.value = "0";
   elements.active.checked = true;
   clearShiftFields();
@@ -1402,7 +1441,7 @@ function fillCodebookForm(item) {
   elements.label.value = item.label;
   elements.group.value = item.groupName || "";
   elements.price.value = item.price || 0;
-  if (elements.priceCurrency) elements.priceCurrency.innerHTML = activeCurrencyOptions(item.priceCurrency || "EUR");
+  if (elements.priceCurrency) elements.priceCurrency.innerHTML = activeCurrencyOptions(item.priceCurrency || "RSD");
   elements.sort.value = item.sortOrder || 0;
   elements.active.checked = item.isActive !== false;
   setShiftFields(item.metadata);
@@ -1424,7 +1463,7 @@ function readCodebookForm() {
     label,
     groupName: elements.group.value.trim() || null,
     price: Number(elements.price.value || 0),
-    priceCurrency: elements.priceCurrency?.value || "EUR",
+    priceCurrency: elements.priceCurrency?.value || "RSD",
     sortOrder: Number(elements.sort.value || 0),
     isActive: elements.active.checked,
     metadata: activeCodebookType === "shift"
@@ -1464,7 +1503,7 @@ function renderCodebooksAdmin() {
       <td>${escapeHtml(item.value)}</td>
       <td>${escapeHtml(item.label)}</td>
       ${hideDetailColumn ? "" : `<td>${escapeHtml(item.type === "shift" ? formatShiftMetadata(item) : item.type === "currency" ? formatCurrencyMetadata(item) : item.type === "payment_method" ? formatPaymentMethodMetadata(item) : item.type === "cash_report_item" ? formatCashReportItemMetadata(item) : (item.groupName || "-"))}</td>`}
-      ${showPriceColumn ? `<td>${Number(item.price || 0).toFixed(2)} ${escapeHtml(item.priceCurrency || "EUR")}</td>` : ""}
+      ${showPriceColumn ? `<td>${Number(item.price || 0).toFixed(2)} ${escapeHtml(item.priceCurrency || "RSD")}</td>` : ""}
       <td>${item.isActive === false ? "Neaktivno" : "Aktivno"}</td>
       <td>
         <button class="secondary-btn edit-codebook-btn" type="button" data-codebook-id="${item.id}">Uredi</button>
@@ -2156,7 +2195,7 @@ function formatDailyAmount(amount, currency) {
 }
 
 function formatDailyPair(amounts) {
-  return `${formatDailyAmount(amountFor(amounts, "EUR"), "EUR")} / ${formatDailyAmount(amountFor(amounts, "RSD"), "RSD")}`;
+  return `${formatDailyAmount(amountFor(amounts, "RSD"), "RSD")} / ${formatDailyAmount(amountFor(amounts, "EUR"), "EUR")}`;
 }
 
 async function populateDailyCashShiftOptions() {
@@ -2185,8 +2224,8 @@ function renderDailyCashReport(report) {
     .map(line => `
       <tr class="daily-cash-outflow-row">
         <td>${escapeHtml(line.itemLabel)}</td>
-        <td>${formatDailyAmount(amountFor(line.amounts, "EUR"), "EUR")}</td>
         <td>${formatDailyAmount(amountFor(line.amounts, "RSD"), "RSD")}</td>
+        <td>${formatDailyAmount(amountFor(line.amounts, "EUR"), "EUR")}</td>
         <td>Oduzima se od kase</td>
       </tr>
     `).join("");
@@ -2194,33 +2233,33 @@ function renderDailyCashReport(report) {
   elements.autoTable.innerHTML = `
     <tr class="daily-cash-primary-row">
       <td>Pazar</td>
-      <td>${formatDailyAmount(amountFor(report.totals.totalRevenue, "EUR"), "EUR")}</td>
       <td>${formatDailyAmount(amountFor(report.totals.totalRevenue, "RSD"), "RSD")}</td>
+      <td>${formatDailyAmount(amountFor(report.totals.totalRevenue, "EUR"), "EUR")}</td>
       <td>Ukupno kucano i kes iz novog unosa</td>
     </tr>
     <tr>
       <td>Kucano</td>
-      <td>${formatDailyAmount(remainingDailyAmount(report.totals.totalRevenue, report.totals.cashIn, "EUR"), "EUR")}</td>
       <td>${formatDailyAmount(remainingDailyAmount(report.totals.totalRevenue, report.totals.cashIn, "RSD"), "RSD")}</td>
+      <td>${formatDailyAmount(remainingDailyAmount(report.totals.totalRevenue, report.totals.cashIn, "EUR"), "EUR")}</td>
       <td>Kartice i ostale bezgotovinske uplate</td>
     </tr>
     <tr>
       <td>Kes</td>
-      <td>${formatDailyAmount(amountFor(report.totals.cashIn, "EUR"), "EUR")}</td>
       <td>${formatDailyAmount(amountFor(report.totals.cashIn, "RSD"), "RSD")}</td>
+      <td>${formatDailyAmount(amountFor(report.totals.cashIn, "EUR"), "EUR")}</td>
       <td>Fizicka gotovina u kasi</td>
     </tr>
     ${manualOutflowRows}
     <tr>
       <td>Ukupno izlazi</td>
-      <td>${formatDailyAmount(amountFor(report.totals.manualOutflow, "EUR"), "EUR")}</td>
       <td>${formatDailyAmount(amountFor(report.totals.manualOutflow, "RSD"), "RSD")}</td>
+      <td>${formatDailyAmount(amountFor(report.totals.manualOutflow, "EUR"), "EUR")}</td>
       <td>Zbir ručnih stavki iznad</td>
     </tr>
     <tr class="daily-cash-total-row">
       <td>Ostatak</td>
-      <td>${formatDailyAmount(amountFor(report.totals.remaining, "EUR"), "EUR")}</td>
       <td>${formatDailyAmount(amountFor(report.totals.remaining, "RSD"), "RSD")}</td>
+      <td>${formatDailyAmount(amountFor(report.totals.remaining, "EUR"), "EUR")}</td>
       <td>Kes minus izlazi</td>
     </tr>
   `;
@@ -2228,8 +2267,8 @@ function renderDailyCashReport(report) {
   elements.linesTable.innerHTML = report.manualLines.length ? report.manualLines.map(line => `
     <tr data-item-value="${escapeHtml(line.itemValue)}">
       <td>${escapeHtml(line.itemLabel)}</td>
-      <td><input class="daily-cash-line-amount" data-currency="EUR" type="number" min="0" step="0.01" value="${amountFor(line.amounts, "EUR") || ""}" /></td>
       <td><input class="daily-cash-line-amount" data-currency="RSD" type="number" min="0" step="0.01" value="${amountFor(line.amounts, "RSD") || ""}" /></td>
+      <td><input class="daily-cash-line-amount" data-currency="EUR" type="number" min="0" step="0.01" value="${amountFor(line.amounts, "EUR") || ""}" /></td>
     </tr>
   `).join("") : `<tr><td colspan="3" class="empty-row">Nema stavki kase. Dodajte Kurir, Materijal ili Tehnicar u šifarniku Stavke kase.</td></tr>`;
 
@@ -2237,36 +2276,36 @@ function renderDailyCashReport(report) {
     <tr>
       <td>${escapeHtml(debt.patient)}</td>
       <td>${escapeHtml(debt.procedure || "-")}</td>
-      <td>${debt.currency === "EUR" ? formatDailyAmount(debt.amount, "EUR") : "-"}</td>
       <td>${debt.currency === "RSD" ? formatDailyAmount(debt.amount, "RSD") : "-"}</td>
+      <td>${debt.currency === "EUR" ? formatDailyAmount(debt.amount, "EUR") : "-"}</td>
     </tr>
   `).join("") : `<tr><td colspan="4" class="empty-row">Nema dugovanja za izabrani dan.</td></tr>`;
 
   const exportRows = [
-    ["Pazar", amountFor(report.totals.totalRevenue, "EUR").toFixed(2), amountFor(report.totals.totalRevenue, "RSD").toFixed(2), "Ukupno kucano i kes iz novog unosa"],
-    ["Kucano", remainingDailyAmount(report.totals.totalRevenue, report.totals.cashIn, "EUR").toFixed(2), remainingDailyAmount(report.totals.totalRevenue, report.totals.cashIn, "RSD").toFixed(2), "Kartice i ostale bezgotovinske uplate"],
-    ["Kes", amountFor(report.totals.cashIn, "EUR").toFixed(2), amountFor(report.totals.cashIn, "RSD").toFixed(2), "Fizicka gotovina u kasi"],
+    ["Pazar", amountFor(report.totals.totalRevenue, "RSD").toFixed(2), amountFor(report.totals.totalRevenue, "EUR").toFixed(2), "Ukupno kucano i kes iz novog unosa"],
+    ["Kucano", remainingDailyAmount(report.totals.totalRevenue, report.totals.cashIn, "RSD").toFixed(2), remainingDailyAmount(report.totals.totalRevenue, report.totals.cashIn, "EUR").toFixed(2), "Kartice i ostale bezgotovinske uplate"],
+    ["Kes", amountFor(report.totals.cashIn, "RSD").toFixed(2), amountFor(report.totals.cashIn, "EUR").toFixed(2), "Fizicka gotovina u kasi"],
     ...report.manualLines
       .filter(line => line.lineType === "outflow")
-      .map(line => [line.itemLabel, amountFor(line.amounts, "EUR").toFixed(2), amountFor(line.amounts, "RSD").toFixed(2), "Oduzima se od kase"]),
-    ["Ukupno izlazi", amountFor(report.totals.manualOutflow, "EUR").toFixed(2), amountFor(report.totals.manualOutflow, "RSD").toFixed(2), "Zbir ručnih stavki"],
-    ["Ostatak", amountFor(report.totals.remaining, "EUR").toFixed(2), amountFor(report.totals.remaining, "RSD").toFixed(2), "Kes minus izlazi"],
+      .map(line => [line.itemLabel, amountFor(line.amounts, "RSD").toFixed(2), amountFor(line.amounts, "EUR").toFixed(2), "Oduzima se od kase"]),
+    ["Ukupno izlazi", amountFor(report.totals.manualOutflow, "RSD").toFixed(2), amountFor(report.totals.manualOutflow, "EUR").toFixed(2), "Zbir ručnih stavki"],
+    ["Ostatak", amountFor(report.totals.remaining, "RSD").toFixed(2), amountFor(report.totals.remaining, "EUR").toFixed(2), "Kes minus izlazi"],
     ["", "", "", ""],
     ["DUŽNICI", "", "", ""],
-    ["Pacijent", "Procedura", "EUR", "RSD"],
+    ["Pacijent", "Procedura", "RSD", "EUR"],
     ...(report.debts.length
       ? report.debts.map(debt => [
         debt.patient,
         debt.procedure || "-",
-        debt.currency === "EUR" ? Number(debt.amount || 0).toFixed(2) : "-",
-        debt.currency === "RSD" ? Number(debt.amount || 0).toFixed(2) : "-"
+        debt.currency === "RSD" ? Number(debt.amount || 0).toFixed(2) : "-",
+        debt.currency === "EUR" ? Number(debt.amount || 0).toFixed(2) : "-"
       ])
       : [["Nema dugovanja za izabrani dan.", "", "", ""]])
   ];
 
   currentReportExport = {
     title: `Dnevna kasa ${report.reportDate}${report.shift ? ` - ${report.shift}` : ""}`,
-    headers: ["Stavka", "EUR", "RSD", "Napomena"],
+    headers: ["Stavka", "RSD", "EUR", "Napomena"],
     rows: exportRows
   };
 }
