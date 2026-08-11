@@ -343,6 +343,19 @@ test('patient dashboard hero identifies the currently opened patient', () => {
   assert.doesNotMatch(stylesSource, /\.patient-identity-tags/);
 });
 
+test('patient dashboard timeline exposes visit payment parts behind a toggle', () => {
+  assert.match(patientDashboardSource, /function recordPaymentParts\(record\)/);
+  assert.match(patientDashboardSource, /function renderRecordPaymentDetails\(record\)/);
+  assert.match(patientDashboardSource, /<details class="patient-payment-details">/);
+  assert.match(patientDashboardSource, /data-payment-label-open>Prikazi uplate/);
+  assert.match(patientDashboardSource, /data-payment-label-close>Sakrij uplate/);
+  assert.match(patientDashboardSource, /patient-payment-table/);
+  assert.match(patientDashboardSource, /recordPaymentSummary\(record\)/);
+  assert.match(stylesSource, /\.patient-payment-details/);
+  assert.match(stylesSource, /\.patient-payment-details\[open\]/);
+  assert.match(stylesSource, /\.patient-payment-table/);
+});
+
 test('patient document edit shows existing file preview and supports optional replacement file', () => {
   assert.match(patientDashboardSource, /function renderCurrentDocumentFile\(documentRow\)/);
   assert.match(patientDashboardSource, /Postojeci fajl ostaje sacuvan ako ne odaberete novi/);

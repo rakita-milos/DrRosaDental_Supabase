@@ -125,6 +125,63 @@ function recordVisitCost(record) {
   return Math.max(0, Number(record.amountPaid || 0) + Number(record.amountDue || 0));
 }
 
+function recordPaymentParts(record) {
+  return Array.isArray(record.paymentParts)
+    ? record.paymentParts.filter(part => Number(part?.amount || 0) > 0)
+    : [];
+}
+
+function recordPaidAmount(record) {
+  const parts = recordPaymentParts(record);
+  if (!parts.length) return Number(record.amountPaid || 0);
+  return parts.reduce((sum, part) => {
+    const amount = Number(part.amount || 0);
+    if (!window.DrRosaCurrencyUtils || !part.currency || part.currency === record.currency) {
+      return sum + amount;
+    }
+    return sum + Number(window.DrRosaCurrencyUtils.convert(amount, part.currency, record.currency || "RSD") || 0);
+  }, 0);
+}
+
+function recordPaymentSummary(record) {
+  const currency = record.currency || "RSD";
+  return [
+    `Ukupno: ${formatMoney(recordVisitCost(record), currency)}`,
+    `Placeno: ${formatMoney(recordPaidAmount(record), currency)}`,
+    `Dug: ${formatMoney(record.amountDue || 0, currency)}`
+  ].join(" / ");
+}
+
+function renderRecordPaymentDetails(record) {
+  const parts = recordPaymentParts(record);
+  if (!parts.length) return "";
+  return `
+    <details class="patient-payment-details">
+      <summary><span data-payment-label-open>Prikazi uplate</span><span data-payment-label-close>Sakrij uplate</span></summary>
+      <table class="patient-payment-table">
+        <thead>
+          <tr>
+            <th>Datum</th>
+            <th>Iznos</th>
+            <th>Nacin</th>
+            <th>Napomena</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${parts.map(part => `
+            <tr>
+              <td>${escapeHtml(formatDate(part.paymentDate || part.payment_date))}</td>
+              <td>${escapeHtml(formatMoney(part.amount, part.currency || record.currency || "RSD"))}</td>
+              <td>${escapeHtml(part.paymentMethod || part.payment_method || "-")}</td>
+              <td>${escapeHtml(part.notes || "-")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </details>
+  `;
+}
+
 function formatDebtTotals(records) {
   const totals = records.reduce((acc, record) => {
     const currency = record.currency || "RSD";
@@ -306,7 +363,8 @@ function renderPatientTimeline(records, nextAppointment, patientId) {
       sortKey: record.lastVisit || "",
       title: record.procedure || "Poseta",
       meta: [record.doctor, record.status, record.paymentStatus].filter(Boolean).join(" / "),
-      amount: `${formatMoney(recordVisitCost(record), record.currency)}${Number(record.amountDue || 0) > 0 ? `, dug ${formatMoney(record.amountDue, record.currency)}` : ""}`,
+      amount: recordPaymentSummary(record),
+      details: renderRecordPaymentDetails(record),
       href: recordDetailsUrl(record),
       recordId: record.id,
       actionLabel: "Uredi",
@@ -385,6 +443,7 @@ function renderPatientTimeline(records, nextAppointment, patientId) {
         <strong><span class="patient-timeline-badge ${escapeHtml(item.type || "activity")}">${escapeHtml(item.typeLabel || "Aktivnost")}</span>${escapeHtml(item.title)}</strong>
         <span>${escapeHtml(item.meta || "-")}</span>
         <small>${escapeHtml(item.amount || "")}</small>
+        ${item.details || ""}
       </div>
       <div class="patient-timeline-actions">
         ${item.group ? `<button class="secondary-btn timeline-group-btn" type="button" data-patient-group="${escapeHtml(item.group)}">Otvori</button>` : `<a class="secondary-btn" href="${escapeHtml(item.href)}">${escapeHtml(item.actionLabel || "Otvori")}</a>`}

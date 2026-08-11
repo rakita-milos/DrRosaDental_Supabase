@@ -3371,6 +3371,52 @@ main {
   font-weight: 750;
 }
 
+.patient-payment-details {
+  margin-top: 6px;
+}
+
+.patient-payment-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #1b5d95;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.patient-payment-details [data-payment-label-close],
+.patient-payment-details[open] [data-payment-label-open] {
+  display: none;
+}
+
+.patient-payment-details[open] [data-payment-label-close] {
+  display: inline;
+}
+
+.patient-payment-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.patient-payment-table th,
+.patient-payment-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid #dbe7f3;
+  text-align: left;
+  vertical-align: top;
+}
+
+.patient-payment-table th {
+  color: #1b3c75;
+  font-weight: 900;
+}
+
+.patient-payment-table td {
+  color: #334155;
+  font-weight: 750;
+}
+
 .patient-timeline-badge {
   display: inline-flex;
   align-items: center;
