@@ -1,3 +1,5 @@
+SET search_path TO app, public;
+
 ALTER TABLE doctors
   ADD COLUMN IF NOT EXISTS google_color_id TEXT;
 

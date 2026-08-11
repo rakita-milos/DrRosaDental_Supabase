@@ -1,3 +1,5 @@
+SET search_path TO app, public;
+
 ALTER TABLE appointments
   ADD COLUMN IF NOT EXISTS google_title TEXT;
 
