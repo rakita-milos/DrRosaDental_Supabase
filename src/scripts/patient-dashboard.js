@@ -126,9 +126,19 @@ function recordVisitCost(record) {
 }
 
 function recordPaymentParts(record) {
-  return Array.isArray(record.paymentParts)
+  const parts = Array.isArray(record.paymentParts)
     ? record.paymentParts.filter(part => Number(part?.amount || 0) > 0)
     : [];
+  if (parts.length) return parts;
+  const amountPaid = Number(record.amountPaid || 0);
+  if (amountPaid <= 0) return [];
+  return [{
+    amount: amountPaid,
+    currency: record.currency || "RSD",
+    paymentMethod: "",
+    paymentDate: record.lastVisit || "",
+    notes: "Zbirna uplata iz posete"
+  }];
 }
 
 function recordPaidAmount(record) {
@@ -180,6 +190,22 @@ function renderRecordPaymentDetails(record) {
       </table>
     </details>
   `;
+}
+
+function renderVisitPayments(records) {
+  const body = document.getElementById("visit-payments-body");
+  if (!body) return;
+  const rows = records.flatMap(record => recordPaymentParts(record).map(part => ({ record, part })));
+  body.innerHTML = rows.length ? rows.map(({ record, part }) => `
+    <tr>
+      <td>${escapeHtml(formatDate(record.lastVisit))}</td>
+      <td>${escapeHtml(record.procedure || "Poseta")}</td>
+      <td>${escapeHtml(formatDate(part.paymentDate || part.payment_date || record.lastVisit))}</td>
+      <td>${escapeHtml(formatMoney(part.amount, part.currency || record.currency || "RSD"))}</td>
+      <td>${escapeHtml(part.paymentMethod || part.payment_method || "-")}</td>
+      <td>${escapeHtml(part.notes || "-")}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="6">Nema evidentiranih uplata za posete.</td></tr>`;
 }
 
 function formatDebtTotals(records) {
@@ -329,6 +355,7 @@ function renderPatientOverview(patient, records, appointments, profile = {}) {
   overviewNextAppointment = next;
   overviewPatientId = patient?.id || null;
   overviewAppointments = appointments;
+  renderVisitPayments(records);
 
   document.getElementById("patient-summary-title").textContent = patientFullName(patient) || "Pacijent";
   document.getElementById("patient-summary-description").textContent = "Detalji i istorija pacijenta, tretmani, naplate, dokumenti i interni komentari.";

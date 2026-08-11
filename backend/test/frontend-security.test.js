@@ -346,10 +346,13 @@ test('patient dashboard hero identifies the currently opened patient', () => {
 test('patient dashboard timeline exposes visit payment parts behind a toggle', () => {
   assert.match(patientDashboardSource, /function recordPaymentParts\(record\)/);
   assert.match(patientDashboardSource, /function renderRecordPaymentDetails\(record\)/);
+  assert.match(patientDashboardSource, /function renderVisitPayments\(records\)/);
   assert.match(patientDashboardSource, /<details class="patient-payment-details">/);
   assert.match(patientDashboardSource, /data-payment-label-open>Prikazi uplate/);
   assert.match(patientDashboardSource, /data-payment-label-close>Sakrij uplate/);
   assert.match(patientDashboardSource, /patient-payment-table/);
+  assert.match(patientDashboardPageSource, /id="visit-payments-body"/);
+  assert.match(patientDashboardSource, /Zbirna uplata iz posete/);
   assert.match(patientDashboardSource, /recordPaymentSummary\(record\)/);
   assert.match(stylesSource, /\.patient-payment-details/);
   assert.match(stylesSource, /\.patient-payment-details\[open\]/);
