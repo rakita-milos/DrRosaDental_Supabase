@@ -25,7 +25,7 @@ normalized_rates AS (
          WHEN value = 'EUR' THEN 117
          WHEN value = 'USD' THEN 108
          ELSE NULL
-       END
+       END AS rate
   FROM currency_source
 )
 INSERT INTO currency_rates_to_rsd (currency, rate)
