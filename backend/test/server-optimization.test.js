@@ -73,12 +73,17 @@ test('system routes are registered from a dedicated route module', () => {
 
 test('records endpoint hydrates treatments and payments in batches', () => {
   const recordsRoute = serverSource.match(/app\.get\('\/api\/records'[\s\S]*?\n\}\);/)?.[0] || '';
+  const hydrateFunction = serverSource.match(/async function hydrateVisitRecords\(records\)[\s\S]*?return hydrated;\n\}/)?.[0] || '';
+  assert.match(serverSource, /async function hydrateVisitRecords\(records\)/);
+  assert.match(serverSource, /app\.get\('\/api\/records\/:id'/);
+  assert.match(recordsRepoSource, /recordByIdForList\(id\)/);
   assert.match(recordsRepoSource, /treatmentsForRecords\(visitRecordIds\)/);
   assert.match(recordsRepoSource, /paymentPartsForRecords\(visitRecordIds\)/);
   assert.match(recordsRepoSource, /WHERE visit_record_id = ANY\(\?::int\[\]\)/);
-  assert.match(recordsRoute, /Promise\.all\(\[/);
-  assert.match(recordsRoute, /treatmentsByRecord/);
-  assert.match(recordsRoute, /paymentsByRecord/);
+  assert.match(recordsRoute, /hydrateVisitRecords\(records\)/);
+  assert.match(hydrateFunction, /Promise\.all\(\[/);
+  assert.match(hydrateFunction, /treatmentsByRecord/);
+  assert.match(hydrateFunction, /paymentsByRecord/);
   assert.doesNotMatch(recordsRoute, /await recordsPaymentsRepo\.treatmentsForRecord/);
   assert.doesNotMatch(recordsRoute, /await recordsPaymentsRepo\.paymentPartsForRecord/);
 });

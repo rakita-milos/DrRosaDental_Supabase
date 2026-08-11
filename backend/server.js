@@ -3089,68 +3089,93 @@ app.post('/api/documents/:id/imaging/analyze', authenticateToken, requirePermiss
 
 // ============ VISIT RECORDS ENDPOINTS ============
 
+async function hydrateVisitRecords(records) {
+  const recordIds = records.map(record => Number(record.id)).filter(Boolean);
+  const [allTreatmentRows, allPaymentRows] = await Promise.all([
+    recordsPaymentsRepo.treatmentsForRecords(recordIds),
+    recordsPaymentsRepo.paymentPartsForRecords(recordIds)
+  ]);
+  const treatmentsByRecord = new Map();
+  const paymentsByRecord = new Map();
+  allTreatmentRows.forEach(treatment => {
+    const key = Number(treatment.visit_record_id);
+    if (!treatmentsByRecord.has(key)) treatmentsByRecord.set(key, []);
+    treatmentsByRecord.get(key).push(treatment);
+  });
+  allPaymentRows.forEach(part => {
+    const key = Number(part.visit_record_id);
+    if (!paymentsByRecord.has(key)) paymentsByRecord.set(key, []);
+    paymentsByRecord.get(key).push(part);
+  });
+  const hydrated = [];
+  for (const record of records) {
+    const treatments = {};
+    const generalTreatments = [];
+    let treatmentTotal = 0;
+    const treatmentRows = treatmentsByRecord.get(Number(record.id)) || [];
+    treatmentRows.forEach(treatment => {
+      treatmentTotal += Math.max(0, Number(treatment.price || 0) - Number(treatment.discount || 0));
+      const item = {
+        type: treatment.treatment_type,
+        status: treatment.status,
+        note: treatment.notes,
+        price: Number(treatment.price || 0),
+        currency: treatment.currency || record.currency || 'RSD',
+        discount: Number(treatment.discount || 0),
+        discountType: treatment.discount_type || 'amount',
+        discountValue: Number(treatment.discount_value ?? treatment.discount ?? 0)
+      };
+      if (treatment.tooth_number === GENERAL_TREATMENT_TOOTH_NUMBER) {
+        generalTreatments.push(item);
+        return;
+      }
+      if (!treatments[treatment.tooth_number]) treatments[treatment.tooth_number] = [];
+      treatments[treatment.tooth_number].push(item);
+    });
+    const inferredPaid = Math.max(0, treatmentTotal - Number(record.amount_due || 0));
+    const paymentRows = paymentsByRecord.get(Number(record.id)) || [];
+    const paymentParts = paymentRows.map(part => ({
+      id: part.id,
+      amount: Number(part.amount || 0),
+      currency: part.currency || 'RSD',
+      exchangeRateToRsd: Number(part.exchange_rate_to_rsd || 0),
+      amountRsd: Number(part.amount_rsd || 0),
+      paymentMethod: part.payment_method || '',
+      paymentDate: part.payment_date || '',
+      notes: part.notes || ''
+    }));
+    const amountPaid = Number(record.amount_paid || inferredPaid || 0);
+    hydrated.push({
+      ...record,
+      amount_paid: amountPaid,
+      total_amount: Number(record.amount_due || 0) + amountPaid,
+      paymentParts,
+      generalTreatments,
+      treatments
+    });
+  }
+  return hydrated;
+}
+
 app.get('/api/records', authenticateToken, requirePermission('records:read'), async (req, res) => {
   try {
     const records = await recordsPaymentsRepo.listRecords(paginationFromQuery(req.query, { maxLimit: 300 }));
-    const recordIds = records.map(record => Number(record.id)).filter(Boolean);
-    const [allTreatmentRows, allPaymentRows] = await Promise.all([
-      recordsPaymentsRepo.treatmentsForRecords(recordIds),
-      recordsPaymentsRepo.paymentPartsForRecords(recordIds)
-    ]);
-    const treatmentsByRecord = new Map();
-    const paymentsByRecord = new Map();
-    allTreatmentRows.forEach(treatment => {
-      const key = Number(treatment.visit_record_id);
-      if (!treatmentsByRecord.has(key)) treatmentsByRecord.set(key, []);
-      treatmentsByRecord.get(key).push(treatment);
-    });
-    allPaymentRows.forEach(part => {
-      const key = Number(part.visit_record_id);
-      if (!paymentsByRecord.has(key)) paymentsByRecord.set(key, []);
-      paymentsByRecord.get(key).push(part);
-    });
-    const hydrated = [];
-    for (const record of records) {
-      const treatments = {};
-      const generalTreatments = [];
-      let treatmentTotal = 0;
-      const treatmentRows = treatmentsByRecord.get(Number(record.id)) || [];
-      treatmentRows.forEach(treatment => {
-        treatmentTotal += Math.max(0, Number(treatment.price || 0) - Number(treatment.discount || 0));
-        const item = {
-          type: treatment.treatment_type,
-          status: treatment.status,
-          note: treatment.notes,
-          price: Number(treatment.price || 0),
-          currency: treatment.currency || record.currency || 'RSD',
-          discount: Number(treatment.discount || 0),
-          discountType: treatment.discount_type || 'amount',
-          discountValue: Number(treatment.discount_value ?? treatment.discount ?? 0)
-        };
-        if (treatment.tooth_number === GENERAL_TREATMENT_TOOTH_NUMBER) {
-          generalTreatments.push(item);
-          return;
-        }
-        if (!treatments[treatment.tooth_number]) treatments[treatment.tooth_number] = [];
-        treatments[treatment.tooth_number].push(item);
-      });
-      const inferredPaid = Math.max(0, treatmentTotal - Number(record.amount_due || 0));
-      const paymentRows = paymentsByRecord.get(Number(record.id)) || [];
-      const paymentParts = paymentRows.map(part => ({
-        id: part.id,
-        amount: Number(part.amount || 0),
-        currency: part.currency || 'RSD',
-        exchangeRateToRsd: Number(part.exchange_rate_to_rsd || 0),
-        amountRsd: Number(part.amount_rsd || 0),
-        paymentMethod: part.payment_method || '',
-        paymentDate: part.payment_date || '',
-        notes: part.notes || ''
-      }));
-      hydrated.push({ ...record, amount_paid: Number(record.amount_paid || inferredPaid || 0), paymentParts, generalTreatments, treatments });
-    }
-    res.json(hydrated);
+    res.json(await hydrateVisitRecords(records));
   } catch (error) {
     console.error('Get records error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/records/:id', authenticateToken, requirePermission('records:read'), async (req, res) => {
+  try {
+    const recordId = positiveInteger(req.params.id);
+    const record = recordId ? await recordsPaymentsRepo.recordByIdForList(recordId) : null;
+    if (!record) return res.status(404).json({ error: 'Record not found' });
+    const [hydrated] = await hydrateVisitRecords([record]);
+    res.json(hydrated);
+  } catch (error) {
+    console.error('Get record error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

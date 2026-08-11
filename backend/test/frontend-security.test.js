@@ -251,6 +251,14 @@ test('new entry syncs payment rows before adding another payment', () => {
   assert.match(newEntrySource, /updatePaymentCalculation\(\{ render: false \}\)/);
 });
 
+test('new entry edit mode fetches the exact record before rendering payments', () => {
+  assert.match(apiSource, /async function getRecord\(recordId\)/);
+  assert.match(apiSource, /request\(`\/records\/\$\{recordId\}`\)/);
+  assert.match(newEntrySource, /await window\.DrRosaApi\.getRecord\(recordParam\)/);
+  assert.match(newEntrySource, /Poseta nije pronadjena/);
+  assert.match(newEntrySource, /Number\(record\.totalAmount \|\| record\.total_amount \|\| 0\)/);
+});
+
 test('new entry hides redundant payment fields from the visible form', () => {
   assert.match(newEntryPageSource, /class="entry-technical-payment-fields" hidden/);
   assert.match(newEntryPageSource, /id="status" name="status" type="hidden"/);

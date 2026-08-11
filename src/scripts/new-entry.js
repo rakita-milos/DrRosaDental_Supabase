@@ -492,7 +492,10 @@ function cloneGeneralTreatments(treatments, recordCurrency = "RSD") {
 }
 
 function openRecordInForm(record) {
-  if (!record) return;
+  if (!record) {
+    showAlert("Poseta nije pronadjena. Vratite se na evidenciju i otvorite je ponovo.", "error", { persist: true, scroll: true });
+    return;
+  }
   inputs.patient.value = record.patient || "";
   inputs.lastVisit.value = record.lastVisit || "";
   inputs.procedureActivity.value = record.procedureActivity || procedureCatalog.findActivityForProcedure(record.procedure);
@@ -508,7 +511,7 @@ function openRecordInForm(record) {
   inputs.note.value = record.note === "-" ? "" : (record.note || "");
   teethTreatments = cloneTreatments(record.treatments, record.currency || paymentCurrency());
   generalTreatments = cloneGeneralTreatments(record.generalTreatments, record.currency || paymentCurrency());
-  const inferredTotal = Number(record.amountDue || 0) + Number(record.amountPaid || 0);
+  const inferredTotal = Number(record.totalAmount || record.total_amount || 0) || Number(record.amountDue || 0) + Number(record.amountPaid || 0);
   inputs.totalAmount.value = inferredTotal > 0 ? inferredTotal.toFixed(2) : "";
   totalAmountTouched = inferredTotal > 0;
   updateTeethSummary();
@@ -1718,7 +1721,10 @@ form.addEventListener("submit", async (event) => {
     populateActivitySelect(treatmentActivity);
     populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
     if (recordParam) {
-      openRecordInForm(allRecords.find(record => String(record.id) === String(recordParam)));
+      const selectedRecord = window.DrRosaApi.getRecord
+        ? await window.DrRosaApi.getRecord(recordParam)
+        : allRecords.find(record => String(record.id) === String(recordParam));
+      openRecordInForm(selectedRecord);
     }
   } catch (error) {
     console.error("Form setup error:", error);

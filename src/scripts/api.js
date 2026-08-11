@@ -109,6 +109,7 @@
       paymentStatus: row.payment_status || row.paymentStatus || "Plaćeno",
       amountDue: Number(row.amount_due ?? row.amountDue ?? 0),
       amountPaid: Number(row.amount_paid ?? row.amountPaid ?? 0),
+      totalAmount: Number(row.total_amount ?? row.totalAmount ?? 0),
       currency: row.currency || row.paymentCurrency || "RSD",
       paymentParts: row.paymentParts || row.payment_parts || [],
       shift: row.shift || "Prva smena",
@@ -671,6 +672,10 @@
     return records.map(normalizeRecord);
   }
 
+  async function getRecord(recordId) {
+    return normalizeRecord(await request(`/records/${recordId}`));
+  }
+
   async function createRecord(record) {
     return request("/records", {
       method: "POST",
@@ -937,6 +942,7 @@
     deleteAppointment,
     createVisitFromAppointment,
     getRecords,
+    getRecord,
     createRecord,
     updateRecord,
     deleteRecord,
