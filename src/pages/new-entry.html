@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Novi unos | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css?v=entry-payment-history-20260812" />
+  <link rel="stylesheet" href="../styles/styles.css?v=entry-debt-payment-20260812" />
 </head>
 <body>
   <div class="app-shell">
@@ -275,13 +275,42 @@
                   <div class="table-wrap compact-history-table">
                     <table>
                       <thead>
-                        <tr><th>Datum</th><th>Uplata</th><th>Valuta</th><th>Kurs</th><th>U RSD</th><th>Nacin</th><th>Ukupno za posetu</th><th>Dug</th></tr>
+                        <tr><th>Datum</th><th>Uplata</th><th>Valuta</th><th>Kurs</th><th>U RSD</th><th>Nacin</th><th>Ukupno za posetu</th><th>Dug</th><th>Akcija</th></tr>
                       </thead>
                       <tbody id="previous-payments-body">
-                        <tr><td colspan="8">Odaberite pacijenta za prikaz prethodnih uplata.</td></tr>
+                        <tr><td colspan="9">Odaberite pacijenta za prikaz prethodnih uplata.</td></tr>
                       </tbody>
                     </table>
                   </div>
+                  <form id="previous-debt-payment-form" class="previous-debt-payment-form" hidden>
+                    <input type="hidden" id="previous-debt-record-id" />
+                    <div>
+                      <span class="payment-builder-title">Dodaj uplatu za dug</span>
+                      <small id="previous-debt-payment-context">Odaberite posetu sa dugom.</small>
+                    </div>
+                    <div class="input-grid">
+                      <label>
+                        Iznos
+                        <input id="previous-debt-payment-amount" type="number" min="0.01" step="0.01" required />
+                      </label>
+                      <label>
+                        Valuta
+                        <select id="previous-debt-payment-currency"></select>
+                      </label>
+                      <label>
+                        Nacin
+                        <select id="previous-debt-payment-method"></select>
+                      </label>
+                      <label>
+                        Datum
+                        <input id="previous-debt-payment-date" type="date" required />
+                      </label>
+                    </div>
+                    <div class="form-actions compact-actions">
+                      <button type="submit" class="primary-btn">Sacuvaj uplatu</button>
+                      <button type="button" class="secondary-btn" id="cancel-previous-debt-payment">Otkaži</button>
+                    </div>
+                  </form>
                   <div class="previous-payments-actions">
                     <button type="button" class="secondary-btn" id="previous-payments-prev">Prethodna</button>
                     <span id="previous-payments-page">Strana 1</span>
@@ -358,12 +387,12 @@
   </div>
 
   <script src="../scripts/security-utils.js"></script>
-  <script src="../scripts/api.js?v=entry-payment-history-20260812"></script>
+  <script src="../scripts/api.js?v=entry-debt-payment-20260812"></script>
   <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/procedure-catalog.js"></script>
   <script src="../scripts/tooth-condition-editor.js"></script>
   <script src="../scripts/treatment-history.js"></script>
-  <script src="../scripts/new-entry.js?v=entry-payment-history-20260812"></script>
+  <script src="../scripts/new-entry.js?v=entry-debt-payment-20260812"></script>
 </body>
 </html>

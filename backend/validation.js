@@ -100,6 +100,10 @@ const paymentPartSchema = Joi.object({
   notes: Joi.string().max(1000).optional().allow('', null)
 });
 
+const paymentPartAppendSchema = paymentPartSchema.keys({
+  amount: Joi.number().greater(0).required()
+});
+
 const recordCreateSchema = Joi.object({
   patient_id: Joi.number().integer().positive().required(),
   doctor_id: Joi.number().integer().positive().required(),
@@ -347,6 +351,7 @@ module.exports = {
   patientUpdateSchema,
   patientDocumentSchema,
   recordCreateSchema,
+  paymentPartAppendSchema,
   publicBookingSchema,
   appointmentWriteSchema,
   appointmentStatusSchema,

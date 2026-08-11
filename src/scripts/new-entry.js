@@ -69,6 +69,14 @@ const inputs = {
   previousPaymentsPrev: document.getElementById("previous-payments-prev"),
   previousPaymentsNext: document.getElementById("previous-payments-next"),
   previousPaymentsPage: document.getElementById("previous-payments-page"),
+  previousDebtPaymentForm: document.getElementById("previous-debt-payment-form"),
+  previousDebtRecordId: document.getElementById("previous-debt-record-id"),
+  previousDebtPaymentContext: document.getElementById("previous-debt-payment-context"),
+  previousDebtPaymentAmount: document.getElementById("previous-debt-payment-amount"),
+  previousDebtPaymentCurrency: document.getElementById("previous-debt-payment-currency"),
+  previousDebtPaymentMethod: document.getElementById("previous-debt-payment-method"),
+  previousDebtPaymentDate: document.getElementById("previous-debt-payment-date"),
+  cancelPreviousDebtPayment: document.getElementById("cancel-previous-debt-payment"),
   shift: document.getElementById("shift"),
   note: document.getElementById("note")
 };
@@ -90,6 +98,7 @@ let patientPaymentHistory = {
   loading: false,
   expanded: false
 };
+let selectedDebtPaymentRecord = null;
 let paymentMethodItems = [
   { value: "Gotovina", label: "Gotovina" },
   { value: "Kartica", label: "Kartica" },
@@ -596,7 +605,7 @@ function resetPatientPaymentHistory(patientId = selectedPatient()?.id || null) {
 
 function setPreviousPaymentsEmpty(message) {
   if (!inputs.previousPaymentsBody) return;
-  inputs.previousPaymentsBody.innerHTML = `<tr><td colspan="8">${escapeHtml(message)}</td></tr>`;
+  inputs.previousPaymentsBody.innerHTML = `<tr><td colspan="9">${escapeHtml(message)}</td></tr>`;
 }
 
 function renderPreviousPaymentsControls() {
@@ -624,6 +633,7 @@ function renderPreviousPaymentsPage(data) {
       const currency = String(part.currency || item.currency || "RSD").toUpperCase();
       const amount = Number(part.amount || 0);
       const rate = historyExchangeRate(part);
+      const hasDebt = Number(item.debt || 0) > 0.009;
       rows.push(`
         <tr class="${index === 0 ? "payment-history-visit-row" : "payment-history-part-row"}">
           <td>${index === 0 ? escapeHtml(formatDate(item.visitDate)) : ""}</td>
@@ -634,12 +644,54 @@ function renderPreviousPaymentsPage(data) {
           <td>${escapeHtml(part.paymentMethod || part.payment_method || "-")}</td>
           <td>${index === 0 ? escapeHtml(formatMoney(item.totalAmount || 0, item.currency || "RSD")) : ""}</td>
           <td>${index === 0 ? escapeHtml(formatMoney(item.debt || 0, item.currency || "RSD")) : ""}</td>
+          <td>${index === 0 && hasDebt ? `<button type="button" class="secondary-btn previous-debt-payment-btn" data-record-id="${escapeAttribute(item.recordId)}">Dodaj uplatu</button>` : ""}</td>
         </tr>
       `);
     });
   });
   inputs.previousPaymentsBody.innerHTML = rows.join("");
+  inputs.previousPaymentsBody.querySelectorAll(".previous-debt-payment-btn").forEach(button => {
+    button.addEventListener("click", () => {
+      const record = items.find(item => String(item.recordId) === String(button.dataset.recordId));
+      if (record) openPreviousDebtPaymentForm(record);
+    });
+  });
   renderPreviousPaymentsControls();
+}
+
+function renderDebtPaymentFormOptions(record) {
+  const currencySelect = inputs.previousDebtPaymentCurrency;
+  const methodSelect = inputs.previousDebtPaymentMethod;
+  if (currencySelect) {
+    const currencies = availableCurrencyCodes();
+    const selected = record?.currency || "RSD";
+    currencySelect.innerHTML = currencies.map(currency => `<option value="${escapeAttribute(currency)}"${currency === selected ? " selected" : ""}>${escapeHtml(currency)}</option>`).join("");
+  }
+  if (methodSelect) {
+    const methods = paymentMethodItems.length ? paymentMethodItems : [{ value: "Gotovina", label: "Gotovina" }];
+    methodSelect.innerHTML = methods.map(method => `<option value="${escapeAttribute(method.value)}">${escapeHtml(method.label || method.value)}</option>`).join("");
+  }
+}
+
+function openPreviousDebtPaymentForm(record) {
+  selectedDebtPaymentRecord = record;
+  renderDebtPaymentFormOptions(record);
+  if (inputs.previousDebtRecordId) inputs.previousDebtRecordId.value = record.recordId || "";
+  if (inputs.previousDebtPaymentAmount) inputs.previousDebtPaymentAmount.value = Number(record.debt || 0).toFixed(2);
+  if (inputs.previousDebtPaymentDate) inputs.previousDebtPaymentDate.value = record.visitDate || todayInputDate();
+  if (inputs.previousDebtPaymentContext) {
+    inputs.previousDebtPaymentContext.textContent = `Poseta ${formatDate(record.visitDate)} - dug ${formatMoney(record.debt || 0, record.currency || "RSD")}`;
+  }
+  if (inputs.previousDebtPaymentForm) {
+    inputs.previousDebtPaymentForm.hidden = false;
+    inputs.previousDebtPaymentAmount?.focus();
+  }
+}
+
+function closePreviousDebtPaymentForm() {
+  selectedDebtPaymentRecord = null;
+  if (inputs.previousDebtPaymentForm) inputs.previousDebtPaymentForm.hidden = true;
+  inputs.previousDebtPaymentForm?.reset();
 }
 
 async function loadPreviousPaymentsPage(page = patientPaymentHistory.page, { prefetch = false } = {}) {
@@ -1491,6 +1543,45 @@ inputs.previousPaymentsPrev?.addEventListener("click", () => {
 inputs.previousPaymentsNext?.addEventListener("click", () => {
   if (!patientPaymentHistory.hasMoreByPage.get(patientPaymentHistory.page)) return;
   loadPreviousPaymentsPage(patientPaymentHistory.page + 1);
+});
+
+inputs.cancelPreviousDebtPayment?.addEventListener("click", closePreviousDebtPaymentForm);
+
+inputs.previousDebtPaymentForm?.addEventListener("submit", async event => {
+  event.preventDefault();
+  const recordId = inputs.previousDebtRecordId?.value || selectedDebtPaymentRecord?.recordId;
+  if (!recordId || !window.DrRosaApi.addRecordPaymentPart) return;
+  const amount = Number(inputs.previousDebtPaymentAmount?.value || 0);
+  if (amount <= 0) {
+    showAlert("Unesite iznos uplate veći od 0.", "error", { persist: true, scroll: true });
+    return;
+  }
+  const submitButton = inputs.previousDebtPaymentForm.querySelector("button[type='submit']");
+  const oldText = submitButton?.textContent;
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = "Čuvanje...";
+  }
+  try {
+    await window.DrRosaApi.addRecordPaymentPart(recordId, {
+      amount,
+      currency: inputs.previousDebtPaymentCurrency?.value || selectedDebtPaymentRecord?.currency || "RSD",
+      paymentMethod: inputs.previousDebtPaymentMethod?.value || "Gotovina",
+      paymentDate: inputs.previousDebtPaymentDate?.value || selectedDebtPaymentRecord?.visitDate || todayInputDate()
+    });
+    closePreviousDebtPaymentForm();
+    patientPaymentHistory.cache.clear();
+    patientPaymentHistory.hasMoreByPage.clear();
+    await loadPreviousPaymentsPage(patientPaymentHistory.page);
+    showAlert("Uplata je dodata na prethodnu posetu.", "success");
+  } catch (error) {
+    showAlert(error.message || "Uplata nije sačuvana.", "error", { persist: true, scroll: true });
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = oldText || "Sacuvaj uplatu";
+    }
+  }
 });
 
 inputs.procedureActivity.addEventListener("change", () => {

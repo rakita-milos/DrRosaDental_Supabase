@@ -101,6 +101,21 @@ test('patient payment history endpoint is paginated and grouped by visit date', 
   assert.match(serverSource, /payments: paymentParts\.map\(part => paymentHistoryPart\(part, record\)\)/);
 });
 
+test('record debt payment endpoint appends one payment part without replacing history', () => {
+  const appendPaymentRoute = serverSource.match(/app\.post\('\/api\/records\/:id\/payment-parts'[\s\S]*?\n\}\);/)?.[0] || '';
+  assert.match(serverSource, /paymentPartAppendSchema/);
+  assert.match(serverSource, /app\.post\('\/api\/records\/:id\/payment-parts'/);
+  assert.match(recordsRepoSource, /appendPaymentPart\(\{ payment, visitRecordId, patientId, paymentPart, paymentSummary, currency \}\)/);
+  assert.match(recordsRepoSource, /paymentPartInsertSql\(\), paymentPartParams/);
+  assert.doesNotMatch(recordsRepoSource.match(/appendPaymentPart[\s\S]*?deleteRecord/)?.[0] || '', /DELETE FROM payment_parts/);
+  assert.match(appendPaymentRoute, /currentDebt <= 0/);
+  assert.match(appendPaymentRoute, /Poseta nema dug za dodatnu uplatu/);
+  assert.match(appendPaymentRoute, /existingParts/);
+  assert.match(appendPaymentRoute, /const allParts = \[\.\.\.existingParts, paymentPart\]/);
+  assert.match(appendPaymentRoute, /recordsPaymentsRepo\.appendPaymentPart/);
+  assert.doesNotMatch(appendPaymentRoute, /recordsPaymentsRepo\.upsertPayment/);
+});
+
 test('patient summaries endpoint avoids hydrating full visit records for all-records page', () => {
   const summariesRoute = serverSource.match(/app\.get\('\/api\/patient-summaries'[\s\S]*?\n\}\);/)?.[0] || '';
   assert.match(serverSource, /app\.get\('\/api\/patient-summaries'/);

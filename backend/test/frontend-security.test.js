@@ -237,7 +237,7 @@ test('new entry summary is compact and placed inside the full-width form', () =>
   assert.match(newEntryPageSource, /id="preview-teeth-count"/);
   assert.match(newEntryPageSource, /id="preview-total-amount"/);
   assert.match(newEntryPageSource, /id="preview-note-badge" hidden/);
-  assert.match(newEntryPageSource, /entry-payment-history-20260812/);
+  assert.match(newEntryPageSource, /entry-debt-payment-20260812/);
   assert.match(newEntryPageSource, /class="entry-summary-identity"/);
   assert.match(newEntryPageSource, /class="entry-summary-money"/);
   assert.match(newEntryPageSource, /class="entry-summary-payment-status"/);
@@ -250,7 +250,7 @@ test('new entry summary is compact and placed inside the full-width form', () =>
 });
 
 test('new entry payment rows use one-line desktop layout without per-payment notes', () => {
-  assert.match(newEntryPageSource, /entry-payment-history-20260812/);
+  assert.match(newEntryPageSource, /entry-debt-payment-20260812/);
   assert.match(newEntrySource, /class="payment-part-number">#\$\{index \+ 1\}/);
   assert.match(newEntrySource, /class="danger-btn payment-part-remove"[\s\S]*>×<\/button>/);
   assert.doesNotMatch(newEntrySource, /payment-part-note/);
@@ -273,7 +273,7 @@ test('new entry syncs payment rows before adding another payment', () => {
 test('new entry shows paginated previous patient payments separately from current payment rows', () => {
   assert.match(newEntryPageSource, /id="previous-payments-panel"/);
   assert.match(newEntryPageSource, /Prethodne uplate pacijenta/);
-  assert.match(newEntryPageSource, /<th>Datum<\/th><th>Uplata<\/th><th>Valuta<\/th><th>Kurs<\/th><th>U RSD<\/th><th>Nacin<\/th><th>Ukupno za posetu<\/th><th>Dug<\/th>/);
+  assert.match(newEntryPageSource, /<th>Datum<\/th><th>Uplata<\/th><th>Valuta<\/th><th>Kurs<\/th><th>U RSD<\/th><th>Nacin<\/th><th>Ukupno za posetu<\/th><th>Dug<\/th><th>Akcija<\/th>/);
   assert.match(apiSource, /async function getPatientPaymentHistory\(patientId, params = \{\}\)/);
   assert.match(apiSource, /request\(`\/patients\/\$\{patientId\}\/payment-history/);
   assert.match(newEntrySource, /let patientPaymentHistory = \{/);
@@ -281,6 +281,19 @@ test('new entry shows paginated previous patient payments separately from curren
   assert.match(newEntrySource, /loadPreviousPaymentsPage\(page \+ 1, \{ prefetch: true \}\)/);
   assert.match(newEntrySource, /refreshPreviousPaymentsForPatient\(\{ force: true \}\)/);
   assert.match(newEntrySource, /patientPaymentHistory\.limit: 5|limit: 5/);
+  assert.match(newEntrySource, /paymentParts: paymentParts\.map\(normalizedPaymentPart\)\.filter/);
+});
+
+test('new entry adds debt payments only from indebted previous visit rows', () => {
+  assert.match(newEntryPageSource, /id="previous-debt-payment-form" class="previous-debt-payment-form" hidden/);
+  assert.match(newEntryPageSource, /id="previous-debt-record-id"/);
+  assert.match(newEntrySource, /const hasDebt = Number\(item\.debt \|\| 0\) > 0\.009/);
+  assert.match(newEntrySource, /index === 0 && hasDebt \? `<button type="button" class="secondary-btn previous-debt-payment-btn"/);
+  assert.match(newEntrySource, /function openPreviousDebtPaymentForm\(record\)/);
+  assert.match(newEntrySource, /window\.DrRosaApi\.addRecordPaymentPart\(recordId/);
+  assert.match(apiSource, /async function addRecordPaymentPart\(recordId, paymentPart\)/);
+  assert.match(apiSource, /request\(`\/records\/\$\{recordId\}\/payment-parts`/);
+  assert.match(newEntrySource, /patientPaymentHistory\.cache\.clear\(\)/);
   assert.match(newEntrySource, /paymentParts: paymentParts\.map\(normalizedPaymentPart\)\.filter/);
 });
 

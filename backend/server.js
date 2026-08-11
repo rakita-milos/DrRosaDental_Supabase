@@ -43,6 +43,7 @@ const {
   patientUpdateSchema,
   patientDocumentSchema,
   recordCreateSchema,
+  paymentPartAppendSchema,
   publicBookingSchema,
   appointmentWriteSchema,
   appointmentStatusSchema,
@@ -3394,6 +3395,56 @@ app.put('/api/records/:id', authenticateToken, requirePermission('records:write'
   } catch (error) {
     console.error('Update record error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/records/:id/payment-parts', authenticateToken, requirePermission('records:write'), validateBody(paymentPartAppendSchema), async (req, res) => {
+  try {
+    const recordId = positiveInteger(req.params.id);
+    const current = await recordsPaymentsRepo.findRecordById(recordId);
+    if (!current) return res.status(404).json({ error: 'Record not found' });
+
+    const payment = await recordsPaymentsRepo.findPaymentByVisitRecordId(recordId);
+    const currentDebt = money(payment?.amount || 0);
+    if (currentDebt <= 0) return res.status(400).json({ error: 'Poseta nema dug za dodatnu uplatu.' });
+
+    const currency = normalizeCurrency(payment?.currency || req.body.currency || 'RSD');
+    const existingParts = (await recordsPaymentsRepo.paymentPartsForRecord(recordId)).map(part => ({
+      amount: Number(part.amount || 0),
+      currency: part.currency || currency,
+      exchangeRateToRsd: Number(part.exchange_rate_to_rsd || 0),
+      amountRsd: Number(part.amount_rsd || 0),
+      paymentMethod: part.payment_method || '',
+      paymentDate: part.payment_date || '',
+      notes: part.notes || ''
+    }));
+    const paymentPart = await normalizePaymentPart({
+      ...req.body,
+      paymentDate: req.body.paymentDate || req.body.payment_date || current.visit_date || todayIsoDate()
+    });
+    const allParts = [...existingParts, paymentPart];
+    const totalAmount = roundMoney(currentDebt + money(payment?.amount_paid || 0));
+    const summary = await calculatePaymentSummary({
+      amount: totalAmount,
+      currency,
+      paymentParts: allParts,
+      paymentStatus: payment?.payment_status
+    });
+    await recordsPaymentsRepo.appendPaymentPart({
+      payment,
+      visitRecordId: recordId,
+      patientId: payment?.patient_id || current.patient_id,
+      paymentPart,
+      paymentSummary: summary,
+      currency
+    });
+
+    const record = await recordsPaymentsRepo.recordByIdForList(recordId);
+    const [hydrated] = await hydrateVisitRecords([record]);
+    res.status(201).json(serializePaymentHistoryRecord(hydrated));
+  } catch (error) {
+    console.error('Append record payment part error:', error);
+    res.status(500).json({ error: 'Uplata nije sacuvana.' });
   }
 });
 

@@ -348,6 +348,26 @@ function createPostgresRecordsRepository(pool) {
       await replacePaymentPartsPostgres(pool, { paymentId: payment.id, visitRecordId, patientId, paymentParts });
     },
 
+    appendPaymentPart({ payment, visitRecordId, patientId, paymentPart, paymentSummary, currency }) {
+      return withTransaction(pool, async client => {
+        let paymentId = payment?.id;
+        if (!paymentId) {
+          paymentId = await insertReturningId(client, `
+            INSERT INTO payments (visit_record_id, patient_id, amount, amount_paid, currency, payment_status)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `, [visitRecordId, patientId, paymentSummary.amountDue, paymentSummary.amountPaid, currency, paymentSummary.paymentStatus]);
+        } else {
+          await execute(client, `
+            UPDATE payments
+            SET amount = ?, amount_paid = ?, currency = ?, payment_status = ?
+            WHERE id = ?
+          `, [paymentSummary.amountDue, paymentSummary.amountPaid, currency, paymentSummary.paymentStatus, paymentId]);
+        }
+        await execute(client, paymentPartInsertSql(), paymentPartParams({ paymentId, visitRecordId, patientId, part: paymentPart }));
+        return Number(paymentId);
+      });
+    },
+
     deleteRecord(id) {
       return execute(pool, 'DELETE FROM visit_records WHERE id = ?', [id]);
     }

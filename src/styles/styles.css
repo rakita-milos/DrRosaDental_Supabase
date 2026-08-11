@@ -4418,7 +4418,7 @@ td:nth-child(5) {
 }
 
 .compact-history-table table {
-  min-width: 760px;
+  min-width: 880px;
 }
 
 .payment-history-visit-row td {
@@ -4428,6 +4428,31 @@ td:nth-child(5) {
 
 .payment-history-part-row td:first-child {
   border-left: 3px solid #b9d6f2;
+}
+
+.previous-debt-payment-form {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #cfe0f2;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.previous-debt-payment-form[hidden] {
+  display: none;
+}
+
+.previous-debt-payment-form small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.compact-actions {
+  justify-content: flex-start;
+  margin-top: 0;
 }
 
 .drrosa-picker {

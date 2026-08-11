@@ -686,6 +686,13 @@
     return request(`/patients/${patientId}/payment-history${query ? `?${query}` : ""}`);
   }
 
+  async function addRecordPaymentPart(recordId, paymentPart) {
+    return request(`/records/${recordId}/payment-parts`, {
+      method: "POST",
+      body: JSON.stringify(paymentPart)
+    });
+  }
+
   async function createRecord(record) {
     return request("/records", {
       method: "POST",
@@ -955,6 +962,7 @@
     getRecords,
     getRecord,
     getPatientPaymentHistory,
+    addRecordPaymentPart,
     createRecord,
     updateRecord,
     deleteRecord,
