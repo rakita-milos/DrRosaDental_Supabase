@@ -4368,6 +4368,46 @@ td:nth-child(5) {
   font-weight: 600;
 }
 
+.previous-payments-panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 6px;
+  border-top: 1px solid #dbe7f3;
+}
+
+.previous-payments-header,
+.previous-payments-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.previous-payments-header small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.previous-payments-actions span {
+  color: #334155;
+  font-weight: 800;
+}
+
+.compact-history-table table {
+  min-width: 760px;
+}
+
+.payment-history-visit-row td {
+  background: #f8fbff;
+  font-weight: 800;
+}
+
+.payment-history-part-row td:first-child {
+  border-left: 3px solid #b9d6f2;
+}
+
 .drrosa-picker {
   position: relative;
   display: grid;

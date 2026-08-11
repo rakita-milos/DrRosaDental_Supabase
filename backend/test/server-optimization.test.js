@@ -88,6 +88,19 @@ test('records endpoint hydrates treatments and payments in batches', () => {
   assert.doesNotMatch(recordsRoute, /await recordsPaymentsRepo\.paymentPartsForRecord/);
 });
 
+test('patient payment history endpoint is paginated and grouped by visit date', () => {
+  const paymentHistoryRoute = serverSource.match(/app\.get\('\/api\/patients\/:id\/payment-history'[\s\S]*?\n\}\);/)?.[0] || '';
+  assert.match(serverSource, /app\.get\('\/api\/patients\/:id\/payment-history'/);
+  assert.match(recordsRepoSource, /patientPaymentHistoryRecords\(patientId, \{ limit, offset \}\)/);
+  assert.match(recordsRepoSource, /WHERE vr\.patient_id = \?/);
+  assert.match(recordsRepoSource, /ORDER BY vr\.visit_date DESC, vr\.id DESC/);
+  assert.match(paymentHistoryRoute, /limit: limit \+ 1/);
+  assert.match(paymentHistoryRoute, /const hasMore = records\.length > limit/);
+  assert.match(paymentHistoryRoute, /hydrateVisitRecords\(records\.slice\(0, limit\)\)/);
+  assert.match(paymentHistoryRoute, /serializePaymentHistoryRecord/);
+  assert.match(serverSource, /payments: paymentParts\.map\(part => paymentHistoryPart\(part, record\)\)/);
+});
+
 test('patients and records list endpoints support bounded pagination search parameters', () => {
   assert.match(serverSource, /function paginationFromQuery\(query/);
   assert.match(serverSource, /Math\.min\(requestedLimit, maxLimit\)/);

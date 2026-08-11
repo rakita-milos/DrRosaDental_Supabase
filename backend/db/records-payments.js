@@ -85,6 +85,39 @@ function recordByIdSql() {
   `;
 }
 
+function patientPaymentHistorySql({ limit, offset }) {
+  const params = [limit, offset];
+  return {
+    sql: `
+      SELECT
+        vr.id,
+        vr.patient_id,
+        p.first_name,
+        p.last_name,
+        p.first_name || ' ' || p.last_name as patient_name,
+        vr.doctor_id,
+        d.name as doctor_name,
+        vr.visit_date,
+        vr.procedure,
+        vr.status,
+        vr.shift,
+        COALESCE(pay.amount, 0) as amount_due,
+        COALESCE(pay.amount_paid, 0) as amount_paid,
+        COALESCE(pay.currency, 'RSD') as currency,
+        pay.payment_status,
+        vr.notes
+      FROM visit_records vr
+      JOIN patients p ON vr.patient_id = p.id
+      JOIN doctors d ON vr.doctor_id = d.id
+      LEFT JOIN payments pay ON vr.id = pay.visit_record_id
+      WHERE vr.patient_id = ?
+      ORDER BY vr.visit_date DESC, vr.id DESC
+      LIMIT ? OFFSET ?
+    `,
+    params
+  };
+}
+
 function createPostgresRecordsRepository(pool) {
   return {
     listRecords(options = {}) {
@@ -94,6 +127,11 @@ function createPostgresRecordsRepository(pool) {
 
     recordByIdForList(id) {
       return queryOne(pool, recordByIdSql(), [id]);
+    },
+
+    patientPaymentHistoryRecords(patientId, { limit, offset }) {
+      const { sql, params } = patientPaymentHistorySql({ limit, offset });
+      return queryMany(pool, sql, [patientId, ...params]);
     },
 
     treatmentsForRecord(visitRecordId) {

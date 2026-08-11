@@ -3157,6 +3157,64 @@ async function hydrateVisitRecords(records) {
   return hydrated;
 }
 
+function paymentHistoryPart(part, record) {
+  const currency = part.currency || record.currency || 'RSD';
+  const amount = Number(part.amount || 0);
+  const exchangeRateToRsd = Number(part.exchangeRateToRsd || part.exchange_rate_to_rsd || (currency === 'RSD' ? 1 : 0));
+  const amountRsd = Number(part.amountRsd || part.amount_rsd || 0) || (currency === 'RSD' ? amount : 0);
+  return {
+    id: part.id || null,
+    amount,
+    currency,
+    exchangeRateToRsd,
+    amountRsd,
+    paymentMethod: part.paymentMethod || part.payment_method || '',
+    paymentDate: record.visit_date || record.lastVisit || part.paymentDate || part.payment_date || ''
+  };
+}
+
+function serializePaymentHistoryRecord(record) {
+  const parts = Array.isArray(record.paymentParts)
+    ? record.paymentParts.filter(part => Number(part?.amount || 0) > 0)
+    : [];
+  const paymentParts = parts.length
+    ? parts
+    : Number(record.amount_paid || 0) > 0
+      ? [{ amount: Number(record.amount_paid || 0), currency: record.currency || 'RSD', paymentMethod: '', paymentDate: record.visit_date }]
+      : [];
+  return {
+    recordId: Number(record.id),
+    visitDate: record.visit_date,
+    currency: record.currency || 'RSD',
+    totalAmount: Number(record.total_amount || 0),
+    debt: Number(record.amount_due || 0),
+    payments: paymentParts.map(part => paymentHistoryPart(part, record))
+  };
+}
+
+app.get('/api/patients/:id/payment-history', authenticateToken, requirePermission('records:read'), async (req, res) => {
+  try {
+    const patientId = positiveInteger(req.params.id);
+    const page = Math.max(1, positiveInteger(req.query.page) || 1);
+    const limit = Math.max(1, Math.min(20, positiveInteger(req.query.limit) || 5));
+    if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
+
+    const offset = (page - 1) * limit;
+    const records = await recordsPaymentsRepo.patientPaymentHistoryRecords(patientId, { limit: limit + 1, offset });
+    const hasMore = records.length > limit;
+    const hydrated = await hydrateVisitRecords(records.slice(0, limit));
+    res.json({
+      items: hydrated.map(serializePaymentHistoryRecord),
+      page,
+      limit,
+      hasMore
+    });
+  } catch (error) {
+    console.error('Get patient payment history error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/records', authenticateToken, requirePermission('records:read'), async (req, res) => {
   try {
     const records = await recordsPaymentsRepo.listRecords(paginationFromQuery(req.query, { maxLimit: 300 }));

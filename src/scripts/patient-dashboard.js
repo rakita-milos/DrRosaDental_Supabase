@@ -141,6 +141,21 @@ function recordPaymentParts(record) {
   }];
 }
 
+function paymentExchangeRate(part) {
+  const currency = String(part.currency || "RSD").toUpperCase();
+  const rate = Number(part.exchangeRateToRsd || part.exchange_rate_to_rsd || 0);
+  if (currency === "RSD") return 1;
+  return rate > 0 ? rate : 0;
+}
+
+function paymentAmountRsd(part) {
+  const amountRsd = Number(part.amountRsd || part.amount_rsd || 0);
+  if (amountRsd > 0) return amountRsd;
+  const amount = Number(part.amount || 0);
+  const rate = paymentExchangeRate(part);
+  return rate > 0 ? amount * rate : 0;
+}
+
 function recordPaidAmount(record) {
   const parts = recordPaymentParts(record);
   if (!parts.length) return Number(record.amountPaid || 0);
@@ -195,17 +210,139 @@ function renderRecordPaymentDetails(record) {
 function renderVisitPayments(records) {
   const body = document.getElementById("visit-payments-body");
   if (!body) return;
-  const rows = records.flatMap(record => recordPaymentParts(record).map(part => ({ record, part })));
-  body.innerHTML = rows.length ? rows.map(({ record, part }) => `
-    <tr>
-      <td>${escapeHtml(formatDate(record.lastVisit))}</td>
-      <td>${escapeHtml(record.procedure || "Poseta")}</td>
-      <td>${escapeHtml(formatDate(part.paymentDate || part.payment_date || record.lastVisit))}</td>
-      <td>${escapeHtml(formatMoney(part.amount, part.currency || record.currency || "RSD"))}</td>
-      <td>${escapeHtml(part.paymentMethod || part.payment_method || "-")}</td>
-      <td>${escapeHtml(part.notes || "-")}</td>
-    </tr>
-  `).join("") : `<tr><td colspan="6">Nema evidentiranih uplata za posete.</td></tr>`;
+  const rows = [];
+  records.forEach(record => {
+    const parts = recordPaymentParts(record);
+    if (!parts.length) return;
+    parts.forEach((part, index) => {
+      const currency = String(part.currency || record.currency || "RSD").toUpperCase();
+      const rate = paymentExchangeRate(part);
+      rows.push(`
+        <tr class="${index === 0 ? "payment-history-visit-row" : "payment-history-part-row"}">
+          <td>${index === 0 ? escapeHtml(formatDate(record.lastVisit)) : ""}</td>
+          <td>${escapeHtml(formatMoney(part.amount, currency))}</td>
+          <td>${escapeHtml(currency)}</td>
+          <td>${rate > 0 ? escapeHtml(rate.toFixed(2)) : "-"}</td>
+          <td>${escapeHtml(formatMoney(paymentAmountRsd(part), "RSD"))}</td>
+          <td>${escapeHtml(part.paymentMethod || part.payment_method || "-")}</td>
+          <td>${index === 0 ? escapeHtml(formatMoney(recordVisitCost(record), record.currency || "RSD")) : ""}</td>
+          <td>${index === 0 ? escapeHtml(formatMoney(record.amountDue || 0, record.currency || "RSD")) : ""}</td>
+        </tr>
+      `);
+    });
+  });
+  body.innerHTML = rows.length ? rows.join("") : `<tr><td colspan="8">Nema evidentiranih uplata za posete.</td></tr>`;
+}
+
+function renderVisitPaymentHistoryItems(items) {
+  const body = document.getElementById("visit-payments-body");
+  if (!body) return;
+  const rows = [];
+  (items || []).forEach(item => {
+    const payments = Array.isArray(item.payments) ? item.payments.filter(part => Number(part?.amount || 0) > 0) : [];
+    payments.forEach((part, index) => {
+      const currency = String(part.currency || item.currency || "RSD").toUpperCase();
+      const rate = paymentExchangeRate(part);
+      rows.push(`
+        <tr class="${index === 0 ? "payment-history-visit-row" : "payment-history-part-row"}">
+          <td>${index === 0 ? escapeHtml(formatDate(item.visitDate)) : ""}</td>
+          <td>${escapeHtml(formatMoney(part.amount, currency))}</td>
+          <td>${escapeHtml(currency)}</td>
+          <td>${rate > 0 ? escapeHtml(rate.toFixed(2)) : "-"}</td>
+          <td>${escapeHtml(formatMoney(paymentAmountRsd(part), "RSD"))}</td>
+          <td>${escapeHtml(part.paymentMethod || part.payment_method || "-")}</td>
+          <td>${index === 0 ? escapeHtml(formatMoney(item.totalAmount || 0, item.currency || "RSD")) : ""}</td>
+          <td>${index === 0 ? escapeHtml(formatMoney(item.debt || 0, item.currency || "RSD")) : ""}</td>
+        </tr>
+      `);
+    });
+  });
+  body.innerHTML = rows.length ? rows.join("") : `<tr><td colspan="8">Nema evidentiranih uplata za posete.</td></tr>`;
+}
+
+function setVisitPaymentsLoading(message) {
+  const body = document.getElementById("visit-payments-body");
+  if (body) body.innerHTML = `<tr><td colspan="8">${escapeHtml(message)}</td></tr>`;
+}
+
+function renderVisitPaymentControls() {
+  const pageLabel = document.getElementById("visit-payments-page");
+  const prevButton = document.getElementById("visit-payments-prev");
+  const nextButton = document.getElementById("visit-payments-next");
+  if (pageLabel) pageLabel.textContent = `Strana ${visitPaymentHistory.page}`;
+  if (prevButton) prevButton.disabled = visitPaymentHistory.page <= 1 || visitPaymentHistory.loading;
+  if (nextButton) nextButton.disabled = visitPaymentHistory.loading || !visitPaymentHistory.hasMoreByPage.get(visitPaymentHistory.page);
+}
+
+function resetVisitPaymentHistory(patientId) {
+  visitPaymentHistory = {
+    patientId: patientId ? String(patientId) : null,
+    page: 1,
+    limit: 5,
+    cache: new Map(),
+    hasMoreByPage: new Map(),
+    loading: false
+  };
+}
+
+async function loadVisitPaymentHistory(patientId, page = visitPaymentHistory.page, { prefetch = false } = {}) {
+  if (!patientId || !window.DrRosaApi.getPatientPaymentHistory) return null;
+  const patientKey = String(patientId);
+  if (visitPaymentHistory.patientId !== patientKey) resetVisitPaymentHistory(patientKey);
+  if (visitPaymentHistory.cache.has(page)) {
+    const cached = visitPaymentHistory.cache.get(page);
+    if (!prefetch) {
+      visitPaymentHistory.page = page;
+      renderVisitPaymentHistoryItems(cached.items);
+      renderVisitPaymentControls();
+      loadVisitPaymentHistory(patientId, page + 1, { prefetch: true });
+    }
+    return cached;
+  }
+  if (!prefetch) {
+    visitPaymentHistory.loading = true;
+    setVisitPaymentsLoading("Ucitavanje uplata...");
+    renderVisitPaymentControls();
+  }
+  try {
+    const data = await window.DrRosaApi.getPatientPaymentHistory(patientId, { page, limit: visitPaymentHistory.limit });
+    if (visitPaymentHistory.patientId !== patientKey) return null;
+    visitPaymentHistory.cache.set(page, data);
+    visitPaymentHistory.hasMoreByPage.set(page, Boolean(data.hasMore));
+    if (!prefetch) {
+      visitPaymentHistory.page = page;
+      renderVisitPaymentHistoryItems(data.items);
+      if (data.hasMore) loadVisitPaymentHistory(patientId, page + 1, { prefetch: true });
+    }
+    return data;
+  } catch (error) {
+    if (!prefetch) setVisitPaymentsLoading(error.message || "Uplate nisu ucitane.");
+    return null;
+  } finally {
+    if (!prefetch) {
+      visitPaymentHistory.loading = false;
+      renderVisitPaymentControls();
+    }
+  }
+}
+
+function initializeVisitPaymentPagination(patientId) {
+  const prevButton = document.getElementById("visit-payments-prev");
+  const nextButton = document.getElementById("visit-payments-next");
+  if (prevButton && prevButton.dataset.ready !== "1") {
+    prevButton.dataset.ready = "1";
+    prevButton.addEventListener("click", () => {
+      if (visitPaymentHistory.page <= 1) return;
+      loadVisitPaymentHistory(patientId, visitPaymentHistory.page - 1);
+    });
+  }
+  if (nextButton && nextButton.dataset.ready !== "1") {
+    nextButton.dataset.ready = "1";
+    nextButton.addEventListener("click", () => {
+      if (!visitPaymentHistory.hasMoreByPage.get(visitPaymentHistory.page)) return;
+      loadVisitPaymentHistory(patientId, visitPaymentHistory.page + 1);
+    });
+  }
 }
 
 function formatDebtTotals(records) {
@@ -355,7 +492,14 @@ function renderPatientOverview(patient, records, appointments, profile = {}) {
   overviewNextAppointment = next;
   overviewPatientId = patient?.id || null;
   overviewAppointments = appointments;
-  renderVisitPayments(records);
+  initializeVisitPaymentPagination(patient?.id);
+  if (patient?.id && window.DrRosaApi.getPatientPaymentHistory) {
+    resetVisitPaymentHistory(patient.id);
+    loadVisitPaymentHistory(patient.id, 1);
+  } else {
+    renderVisitPayments(records);
+    renderVisitPaymentControls();
+  }
 
   document.getElementById("patient-summary-title").textContent = patientFullName(patient) || "Pacijent";
   document.getElementById("patient-summary-description").textContent = "Detalji i istorija pacijenta, tretmani, naplate, dokumenti i interni komentari.";
@@ -631,6 +775,14 @@ let overviewRecords = [];
 let overviewNextAppointment = null;
 let overviewPatientId = null;
 let overviewAppointments = [];
+let visitPaymentHistory = {
+  patientId: null,
+  page: 1,
+  limit: 5,
+  cache: new Map(),
+  hasMoreByPage: new Map(),
+  loading: false
+};
 let appointmentSchedulerPatient = null;
 let appointmentSchedulerOnCreated = null;
 let currencyItems = [];

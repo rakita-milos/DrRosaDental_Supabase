@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Karton pacijenta | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css?v=patient-payments-20260811" />
+  <link rel="stylesheet" href="../styles/styles.css?v=payment-history-table-20260812" />
 </head>
 <body>
   <div class="app-shell">
@@ -518,9 +518,14 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Datum posete</th><th>Postupak</th><th>Datum uplate</th><th>Iznos</th><th>Nacin</th><th>Napomena</th></tr></thead>
+              <thead><tr><th>Datum</th><th>Uplata</th><th>Valuta</th><th>Kurs</th><th>U RSD</th><th>Nacin</th><th>Ukupno za posetu</th><th>Dug</th></tr></thead>
               <tbody id="visit-payments-body"></tbody>
             </table>
+          </div>
+          <div class="previous-payments-actions">
+            <button type="button" class="secondary-btn" id="visit-payments-prev">Prethodna</button>
+            <span id="visit-payments-page">Strana 1</span>
+            <button type="button" class="secondary-btn" id="visit-payments-next">Sledeca</button>
           </div>
           <form id="invoice-form" class="admin-codebook-form">
             <div class="input-grid">
@@ -688,6 +693,6 @@
   <script src="../scripts/tooth-condition-editor.js"></script>
   <script src="../scripts/treatment-history.js"></script>
   <script src="../scripts/appointment-modal.js?v=patient-scheduler-20260804"></script>
-  <script src="../scripts/patient-dashboard.js?v=patient-payments-20260811"></script>
+  <script src="../scripts/patient-dashboard.js?v=payment-history-table-20260812"></script>
 </body>
 </html>
