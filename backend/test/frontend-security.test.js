@@ -218,7 +218,7 @@ test('new entry summary is compact and placed inside the full-width form', () =>
   assert.match(newEntryPageSource, /id="preview-teeth-count"/);
   assert.match(newEntryPageSource, /id="preview-total-amount"/);
   assert.match(newEntryPageSource, /id="preview-note-badge" hidden/);
-  assert.match(newEntryPageSource, /entry-payment-sync-20260804/);
+  assert.match(newEntryPageSource, /entry-exact-record-20260811/);
   assert.match(newEntryPageSource, /class="entry-summary-identity"/);
   assert.match(newEntryPageSource, /class="entry-summary-money"/);
   assert.match(newEntryPageSource, /class="entry-summary-payment-status"/);
@@ -231,7 +231,7 @@ test('new entry summary is compact and placed inside the full-width form', () =>
 });
 
 test('new entry payment rows use one-line desktop layout without per-payment notes', () => {
-  assert.match(newEntryPageSource, /entry-payment-sync-20260804/);
+  assert.match(newEntryPageSource, /entry-exact-record-20260811/);
   assert.match(newEntrySource, /class="payment-part-number">#\$\{index \+ 1\}/);
   assert.match(newEntrySource, /class="danger-btn payment-part-remove"[\s\S]*>×<\/button>/);
   assert.doesNotMatch(newEntrySource, /payment-part-note/);
