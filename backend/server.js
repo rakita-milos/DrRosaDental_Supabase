@@ -3192,6 +3192,48 @@ function serializePaymentHistoryRecord(record) {
   };
 }
 
+function parseProcedureList(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed.map(item => cleanText(item, { max: 255 })).filter(Boolean) : [];
+  } catch (_error) {
+    return String(value).split('|').map(item => cleanText(item, { max: 255 })).filter(Boolean);
+  }
+}
+
+function serializePatientSummary(row) {
+  return {
+    patientId: Number(row.patient_id),
+    patient: row.patient_name || `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+    lastVisit: row.last_visit || '',
+    visits: Number(row.visits || 0),
+    hasDebt: Boolean(row.has_debt),
+    totalDebt: row.total_debt || {},
+    currencies: Array.isArray(row.currencies) ? row.currencies.filter(Boolean) : [],
+    shifts: Array.isArray(row.shifts) ? row.shifts.filter(Boolean) : []
+  };
+}
+
+app.get('/api/patient-summaries', authenticateToken, requirePermission('records:read'), async (req, res) => {
+  try {
+    const summaries = await recordsPaymentsRepo.patientSummaries({
+      patientId: positiveInteger(req.query.patientId || req.query.patient_id),
+      doctor: cleanText(req.query.doctor, { max: 160 }),
+      status: cleanText(req.query.status, { max: 80 }),
+      date: cleanText(req.query.date, { max: 20 }),
+      period: ['day', 'week', 'month'].includes(req.query.period) ? req.query.period : '',
+      payment: cleanText(req.query.payment, { max: 80 }),
+      procedure: cleanText(req.query.procedure, { max: 255 }),
+      procedures: parseProcedureList(req.query.procedures)
+    });
+    res.json(summaries.map(serializePatientSummary));
+  } catch (error) {
+    console.error('Get patient summaries error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/patients/:id/payment-history', authenticateToken, requirePermission('records:read'), async (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);

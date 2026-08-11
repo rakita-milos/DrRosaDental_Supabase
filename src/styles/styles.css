@@ -1567,13 +1567,35 @@ body.modal-open {
 .records-table td {
   vertical-align: middle;
   padding: 12px 10px;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.records-table th {
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.records-table td {
+  overflow-wrap: break-word;
+}
+
+.records-table th:nth-child(4),
+.records-table td:nth-child(4) {
+  text-align: center;
+  width: 72px;
+}
+
+.records-table th:nth-child(6),
+.records-table td:nth-child(6) {
+  text-align: right;
+  width: 112px;
 }
 
 .records-table th:last-child,
 .records-table td:last-child {
-  width: 244px;
-  min-width: 244px;
+  width: 214px;
+  min-width: 214px;
 }
 
 .record-action-group {

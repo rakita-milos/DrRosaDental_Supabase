@@ -39,8 +39,8 @@ const exportExcelBtn = document.getElementById("export-excel-btn");
 const exportPdfBtn = document.getElementById("export-pdf-btn");
 const procedureCatalog = window.DrRosaProcedureCatalog;
 
-let allRecords = [];
-let allPatients = [];
+let allPatientRows = [];
+let allPatientOptions = [];
 let allAppointments = [];
 let allDoctors = [];
 let currentExportRows = [];
@@ -114,8 +114,8 @@ function populateActivityFilter() {
 
 function populatePatientFilter() {
   if (!searchInput) return;
-  const patients = allPatients
-    .map(patient => ({ id: patient.id, name: patientFullName(patient) }))
+  const patients = allPatientOptions
+    .map(patient => ({ id: patient.patientId, name: patient.patient }))
     .filter(patient => patient.id && patient.name)
     .sort((a, b) => a.name.localeCompare(b.name));
   searchInput.innerHTML = option("", "Svi pacijenti") + patients.map(patient => option(String(patient.id), patient.name)).join("");
@@ -144,6 +144,43 @@ function populateProcedureFilter() {
   const procedures = activity ? procedureCatalog.getProcedures(activity) : [];
   procedureFilter.innerHTML = option("", activity ? "Svi postupci" : "Prvo odaberi delatnost") + procedures.map(procedure => option(procedure)).join("");
   procedureFilter.disabled = !activity;
+}
+
+function summaryFilterParams() {
+  const params = {};
+  if (searchInput?.value) params.patientId = searchInput.value;
+  if (statusFilter?.value) params.status = statusFilter.value;
+  if (doctorFilter?.value) params.doctor = doctorFilter.value;
+  if (dateFilter?.value) params.date = dateFilter.value;
+  if (periodFilter?.value) params.period = periodFilter.value;
+  if (paymentFilter?.value) params.payment = paymentFilter.value;
+  if (procedureFilter?.value) {
+    params.procedure = procedureFilter.value;
+  } else if (activityFilter?.value && procedureCatalog) {
+    const procedures = procedureCatalog.getProcedures(activityFilter.value);
+    if (procedures.length) params.procedures = JSON.stringify(procedures);
+  }
+  return params;
+}
+
+function normalizePatientSummary(row) {
+  return {
+    patientId: row.patientId || row.patient_id,
+    patient: row.patient || row.patient_name || "",
+    lastVisit: row.lastVisit || row.last_visit || "",
+    visits: Number(row.visits || 0),
+    hasDebt: Boolean(row.hasDebt || row.has_debt),
+    totalDebt: row.totalDebt || row.total_debt || {},
+    currencies: Array.isArray(row.currencies) ? row.currencies : [],
+    shifts: Array.isArray(row.shifts) ? row.shifts : []
+  };
+}
+
+async function loadPatientSummaries(params = {}) {
+  const rows = window.DrRosaApi.getPatientSummaries
+    ? await window.DrRosaApi.getPatientSummaries(params)
+    : [];
+  return rows.map(normalizePatientSummary);
 }
 
 async function populateCodebookFilters() {
@@ -285,18 +322,14 @@ function renderRecords(patientRows) {
     patient.patient,
     formatDate(patient.lastVisit),
     formatDate(nextAppointmentForPatient(patient)?.startsAt || nextAppointmentForPatient(patient)?.starts_at),
-    patient.lastProcedure || "-",
     patient.visits,
-    "-",
     paymentStatusForPatient(patient),
-    Array.from(patient.currencies).join(" / ") || "-",
-    Array.from(patient.shifts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "-",
     formatCurrencyAmounts(patient.totalDebt),
     "Otvori"
   ]);
 
   if (patientRows.length === 0) {
-    body.innerHTML = `<tr><td colspan="8" class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</td></tr>`;
     if (cardsBody) cardsBody.innerHTML = `<p class="empty-row">Nema pacijenata koji odgovaraju pretrazivanju.</p>`;
     return;
   }
@@ -310,7 +343,6 @@ function renderRecords(patientRows) {
       window.DrRosaSecurity.cell(patient.patient),
       window.DrRosaSecurity.cell(formatDate(patient.lastVisit)),
       window.DrRosaSecurity.cell(formatDate(nextAppointment?.startsAt || nextAppointment?.starts_at)),
-      window.DrRosaSecurity.cell(patient.lastProcedure || "-"),
       window.DrRosaSecurity.cell(patient.visits),
       window.DrRosaSecurity.cell(paymentStatus, paymentClass),
       window.DrRosaSecurity.cell(formatCurrencyAmounts(patient.totalDebt))
@@ -353,7 +385,6 @@ function renderRecords(patientRows) {
         <dl class="record-mobile-card-grid">
           <div><dt>Poslednja poseta</dt><dd>${window.DrRosaSecurity.escapeHtml(formatDate(patient.lastVisit))}</dd></div>
           <div><dt>Sledeci termin</dt><dd>${window.DrRosaSecurity.escapeHtml(nextAppointmentDate)}</dd></div>
-          <div><dt>Procedura</dt><dd>${window.DrRosaSecurity.escapeHtml(patient.lastProcedure || "-")}</dd></div>
           <div><dt>Poseta</dt><dd>${window.DrRosaSecurity.escapeHtml(patient.visits)}</dd></div>
           <div><dt>Dugovanje</dt><dd>${window.DrRosaSecurity.escapeHtml(debtAmount)}</dd></div>
         </dl>
@@ -384,44 +415,36 @@ function patientHasRecordMatching(patient, matcher) {
 }
 
 function filterPatients(patientRows) {
-  const patient = searchInput.value.trim();
-  const status = statusFilter?.value || "";
-  const doctor = doctorFilter?.value || "";
-  const date = dateFilter?.value || "";
-  const period = periodFilter?.value || "";
-  const activity = activityFilter?.value || "";
-  const procedure = procedureFilter?.value || "";
-  const payment = paymentFilter?.value || "";
   const appointment = appointmentFilter?.value || "";
 
   return patientRows.filter(row => {
     const nextAppointment = nextAppointmentForPatient(row);
-    const matchesPatient = !patient || String(row.patientId) === patient || row.patient === patient;
-    const matchesStatus = !status || patientHasRecordMatching(row, record => fold(record.status) === fold(status));
-    const matchesDoctor = !doctor || patientHasRecordMatching(row, record => fold(record.doctor) === fold(doctor) || fold(record.doctor).includes(fold(doctor)));
-    const matchesDate = !date || patientHasRecordMatching(row, record => record.lastVisit === date);
-    const matchesActivity = !activity || patientHasRecordMatching(row, record => procedureCatalog.matchesActivity(record, activity));
-    const matchesProcedureValue = !procedure || patientHasRecordMatching(row, record => matchesProcedure(record, procedure));
-    const matchesPayment = !payment || (payment === "debtors"
-      ? row.hasDebt
-      : patientHasRecordMatching(row, record => fold(record.paymentStatus) === fold(payment)));
     const matchesAppointment = !appointment
       || (appointment === "has_upcoming" && Boolean(nextAppointment))
       || (appointment === "no_upcoming" && !nextAppointment);
-    const matchesPeriodValue = !period || patientHasRecordMatching(row, record => matchesPeriod(record.lastVisit, period));
-    return matchesPatient && matchesStatus && matchesDoctor && matchesDate && matchesActivity && matchesProcedureValue && matchesPayment && matchesAppointment && matchesPeriodValue;
+    return matchesAppointment;
   });
 }
 
 function refresh() {
-  const filtered = filterPatients(buildPatientRows(allPatients, allRecords));
+  const filtered = filterPatients(allPatientRows);
   renderSummary(filtered);
   renderRecords(filtered);
 }
 
+async function refreshFromApi() {
+  try {
+    allPatientRows = await loadPatientSummaries(summaryFilterParams());
+  } catch (error) {
+    console.error("Patient summary load error:", error);
+    allPatientRows = [];
+  }
+  refresh();
+}
+
 function exportFiltered(format) {
   const title = "Filtrirana evidencija pacijenata";
-  const headers = ["Pacijent", "Poslednja poseta", "Sledeci termin", "Poslednja procedura", "Ukupno poseta", "Status", "Placanje", "Valuta", "Smena", "Dugovanje", "Detalji"];
+  const headers = ["Pacijent", "Poslednja poseta", "Sledeci termin", "Poseta", "Placanje", "Dugovanje", "Detalji"];
   if (format === "excel") {
     window.DrRosaExport.exportExcel(title, headers, currentExportRows);
     return;
@@ -429,13 +452,15 @@ function exportFiltered(format) {
   window.DrRosaExport.exportPdf(title, headers, currentExportRows);
 }
 
-[searchInput, statusFilter, doctorFilter, dateFilter, periodFilter, procedureFilter, paymentFilter, appointmentFilter]
+[searchInput, statusFilter, doctorFilter, dateFilter, periodFilter, procedureFilter, paymentFilter]
   .filter(Boolean)
-  .forEach(input => input.addEventListener("change", refresh));
+  .forEach(input => input.addEventListener("change", refreshFromApi));
+
+appointmentFilter?.addEventListener("change", refresh);
 
 activityFilter?.addEventListener("change", () => {
   populateProcedureFilter();
-  refresh();
+  refreshFromApi();
 });
 
 exportExcelBtn?.addEventListener("click", () => exportFiltered("excel"));
@@ -446,16 +471,16 @@ exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
   await procedureCatalog.loadFromApi?.();
   await populateCodebookFilters();
   try {
-    [allPatients, allRecords, allAppointments, allDoctors] = await Promise.all([
-      window.DrRosaApi.getPatients(),
-      window.DrRosaApi.getRecords(),
+    [allPatientRows, allAppointments, allDoctors] = await Promise.all([
+      loadPatientSummaries(),
       window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : [],
       window.DrRosaApi.getDoctors ? window.DrRosaApi.getDoctors().catch(() => []) : []
     ]);
+    allPatientOptions = allPatientRows;
   } catch (error) {
     console.error("Records load error:", error);
-    allPatients = [];
-    allRecords = [];
+    allPatientRows = [];
+    allPatientOptions = [];
     allAppointments = [];
     allDoctors = [];
   }

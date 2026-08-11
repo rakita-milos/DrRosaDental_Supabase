@@ -676,6 +676,11 @@
     return normalizeRecord(await request(`/records/${recordId}`));
   }
 
+  async function getPatientSummaries(params = {}) {
+    const query = queryString(params);
+    return request(`/patient-summaries${query ? `?${query}` : ""}`);
+  }
+
   async function getPatientPaymentHistory(patientId, params = {}) {
     const query = queryString(params);
     return request(`/patients/${patientId}/payment-history${query ? `?${query}` : ""}`);
@@ -946,6 +951,7 @@
     updateAppointmentStatus,
     deleteAppointment,
     createVisitFromAppointment,
+    getPatientSummaries,
     getRecords,
     getRecord,
     getPatientPaymentHistory,

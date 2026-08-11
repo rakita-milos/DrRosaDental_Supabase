@@ -48,16 +48,34 @@ test('calendar select rendering escapes option text and attributes', () => {
 });
 
 test('all records page lists every patient, including patients without visits', () => {
-  assert.match(allRecordsSource, /let allPatients = \[\]/);
-  assert.match(allRecordsSource, /function buildPatientRows\(patients, records\)/);
-  assert.match(allRecordsSource, /patients\.forEach\(patient =>/);
+  assert.match(allRecordsSource, /let allPatientRows = \[\]/);
+  assert.match(allRecordsSource, /let allPatientOptions = \[\]/);
+  assert.match(apiSource, /async function getPatientSummaries\(params = \{\}\)/);
+  assert.match(apiSource, /request\(`\/patient-summaries/);
+  assert.match(allRecordsSource, /loadPatientSummaries\(summaryFilterParams\(\)\)/);
+  assert.match(allRecordsSource, /allPatientOptions = allPatientRows/);
   assert.match(allRecordsSource, /visits: 0/);
   assert.match(allRecordsSource, /function filterPatients\(patientRows\)/);
-  assert.match(allRecordsSource, /window\.DrRosaApi\.getPatients\(\),\s*window\.DrRosaApi\.getRecords\(\)/);
+  assert.doesNotMatch(allRecordsSource, /window\.DrRosaApi\.getRecords\(\)/);
   assert.match(allRecordsSource, /Nema poseta/);
   assert.match(allRecordsSource, /Bez posete/);
-  assert.match(allRecordsSource, /populatePatientFilter\(\)[\s\S]*allPatients/);
+  assert.match(allRecordsSource, /populatePatientFilter\(\)[\s\S]*allPatientOptions/);
   assert.match(allRecordsSource, /currentExportRows = patientRows\.map/);
+});
+
+test('all records summary table omits last procedure and uses compact columns', () => {
+  const tableStart = allRecordsPageSource.indexOf('<table class="records-table">');
+  const tableMarkup = allRecordsPageSource.slice(tableStart, tableStart + 900);
+  assert.match(tableMarkup, /<th>Pacijent<\/th>/);
+  assert.match(tableMarkup, /<th>Poslednja poseta<\/th>/);
+  assert.match(tableMarkup, /<th>Sledeci termin<\/th>/);
+  assert.match(tableMarkup, /<th>Poseta<\/th>/);
+  assert.doesNotMatch(tableMarkup, /Poslednja procedura/);
+  assert.doesNotMatch(allRecordsSource, /window\.DrRosaSecurity\.cell\(patient\.lastProcedure/);
+  assert.doesNotMatch(allRecordsSource, /<dt>Procedura<\/dt>/);
+  assert.match(allRecordsSource, /colspan="7"/);
+  assert.match(stylesSource, /\.records-table th[\s\S]*white-space: nowrap/);
+  assert.match(stylesSource, /\.records-table th:last-child,[\s\S]*min-width: 214px/);
 });
 
 test('all records doctor filter is populated from the doctors reference list', () => {
@@ -90,6 +108,7 @@ test('shared API supports query parameters for large clinical lists', () => {
   assert.match(apiSource, /request\(`\/patients\$\{query \? `\?\$\{query\}` : ""\}`\)/);
   assert.match(apiSource, /async function getRecords\(params = \{\}\)/);
   assert.match(apiSource, /request\(`\/records\$\{query \? `\?\$\{query\}` : ""\}`\)/);
+  assert.match(apiSource, /async function getPatientSummaries\(params = \{\}\)/);
 });
 
 test('calendar week view groups slots and agenda by chair', () => {

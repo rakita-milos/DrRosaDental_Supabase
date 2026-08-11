@@ -101,6 +101,20 @@ test('patient payment history endpoint is paginated and grouped by visit date', 
   assert.match(serverSource, /payments: paymentParts\.map\(part => paymentHistoryPart\(part, record\)\)/);
 });
 
+test('patient summaries endpoint avoids hydrating full visit records for all-records page', () => {
+  const summariesRoute = serverSource.match(/app\.get\('\/api\/patient-summaries'[\s\S]*?\n\}\);/)?.[0] || '';
+  assert.match(serverSource, /app\.get\('\/api\/patient-summaries'/);
+  assert.match(recordsRepoSource, /function patientSummariesSql\(options = \{\}\)/);
+  assert.match(recordsRepoSource, /WITH matching_records AS/);
+  assert.match(recordsRepoSource, /COUNT\(mr\.id\)::int AS visits/);
+  assert.match(recordsRepoSource, /MAX\(mr\.visit_date\) AS last_visit/);
+  assert.match(recordsRepoSource, /jsonb_object_agg\(dt\.currency, dt\.total_debt\)/);
+  assert.doesNotMatch(recordsRepoSource.match(/function patientSummariesSql[\s\S]*?function createPostgresRecordsRepository/)?.[0] || '', /treatment_type|payment_parts|vr\.procedure,\s*$/m);
+  assert.match(summariesRoute, /recordsPaymentsRepo\.patientSummaries/);
+  assert.match(summariesRoute, /serializePatientSummary/);
+  assert.doesNotMatch(summariesRoute, /hydrateVisitRecords/);
+});
+
 test('patients and records list endpoints support bounded pagination search parameters', () => {
   assert.match(serverSource, /function paginationFromQuery\(query/);
   assert.match(serverSource, /Math\.min\(requestedLimit, maxLimit\)/);

@@ -118,6 +118,118 @@ function patientPaymentHistorySql({ limit, offset }) {
   };
 }
 
+function patientSummaryFilters(options = {}) {
+  const conditions = [];
+  const params = [];
+  const patientConditions = [];
+  const patientParams = [];
+  const patientId = Number(options.patientId || 0);
+  const doctor = String(options.doctor || '').trim();
+  const status = String(options.status || '').trim();
+  const date = String(options.date || '').trim();
+  const period = String(options.period || '').trim();
+  const payment = String(options.payment || '').trim();
+  const procedure = String(options.procedure || '').trim();
+  const procedures = Array.isArray(options.procedures) ? options.procedures.map(item => String(item || '').trim()).filter(Boolean) : [];
+
+  if (patientId > 0) {
+    patientConditions.push('p.id = ?');
+    patientParams.push(patientId);
+  }
+  if (doctor) {
+    conditions.push('d.name ILIKE ?');
+    params.push(`%${doctor}%`);
+  }
+  if (status) {
+    conditions.push('vr.status = ?');
+    params.push(status);
+  }
+  if (date) {
+    conditions.push('vr.visit_date = ?');
+    params.push(date);
+  }
+  if (period === 'day') {
+    conditions.push('vr.visit_date = CURRENT_DATE');
+  } else if (period === 'week') {
+    conditions.push("vr.visit_date >= CURRENT_DATE - INTERVAL '7 days'");
+  } else if (period === 'month') {
+    conditions.push("date_trunc('month', vr.visit_date::date) = date_trunc('month', CURRENT_DATE)");
+  }
+  if (payment === 'debtors') {
+    conditions.push("(COALESCE(pay.amount, 0) > 0 OR lower(COALESCE(pay.payment_status, '')) IN ('dugovanje', 'delimično', 'delimicno'))");
+  } else if (payment) {
+    conditions.push('pay.payment_status = ?');
+    params.push(payment);
+  }
+  if (procedure) {
+    conditions.push('vr.procedure ILIKE ?');
+    params.push(`%${procedure}%`);
+  } else if (procedures.length) {
+    conditions.push('vr.procedure = ANY(?::text[])');
+    params.push(procedures);
+  }
+
+  return {
+    sql: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
+    params,
+    hasRecordFilters: conditions.length > 0,
+    patientSql: patientConditions.length ? patientConditions.join(' AND ') : '',
+    patientParams
+  };
+}
+
+function patientSummariesSql(options = {}) {
+  const filters = patientSummaryFilters(options);
+  return {
+    sql: `
+      WITH matching_records AS (
+        SELECT
+          vr.id,
+          vr.patient_id,
+          vr.visit_date,
+          vr.shift,
+          COALESCE(pay.amount, 0) AS amount_due,
+          COALESCE(pay.currency, 'RSD') AS currency,
+          COALESCE(pay.payment_status, '') AS payment_status
+        FROM visit_records vr
+        JOIN doctors d ON vr.doctor_id = d.id
+        LEFT JOIN payments pay ON vr.id = pay.visit_record_id
+        ${filters.sql}
+      ),
+      debt_totals AS (
+        SELECT patient_id, currency, SUM(amount_due) AS total_debt
+        FROM matching_records
+        WHERE amount_due > 0
+        GROUP BY patient_id, currency
+      )
+      SELECT
+        p.id AS patient_id,
+        p.first_name,
+        p.last_name,
+        p.first_name || ' ' || p.last_name AS patient_name,
+        COUNT(mr.id)::int AS visits,
+        MAX(mr.visit_date) AS last_visit,
+        COALESCE(BOOL_OR(mr.amount_due > 0 OR lower(mr.payment_status) IN ('dugovanje', 'delimično', 'delimicno')), false) AS has_debt,
+        COALESCE((
+          SELECT jsonb_object_agg(dt.currency, dt.total_debt)
+          FROM debt_totals dt
+          WHERE dt.patient_id = p.id
+        ), '{}'::jsonb) AS total_debt,
+        COALESCE(array_agg(DISTINCT mr.currency) FILTER (WHERE mr.id IS NOT NULL), ARRAY[]::text[]) AS currencies,
+        COALESCE(array_agg(DISTINCT mr.shift) FILTER (WHERE mr.id IS NOT NULL AND mr.shift IS NOT NULL), ARRAY[]::text[]) AS shifts
+      FROM patients p
+      LEFT JOIN matching_records mr ON mr.patient_id = p.id
+      ${filters.patientSql || filters.hasRecordFilters ? `WHERE ${[
+        filters.patientSql,
+        filters.hasRecordFilters ? 'mr.id IS NOT NULL' : ''
+      ].filter(Boolean).join(' AND ')}` : ''}
+      GROUP BY p.id, p.first_name, p.last_name
+      ORDER BY patient_name
+    `,
+    params: [...filters.params, ...filters.patientParams]
+  };
+}
+
 function createPostgresRecordsRepository(pool) {
   return {
     listRecords(options = {}) {
@@ -132,6 +244,11 @@ function createPostgresRecordsRepository(pool) {
     patientPaymentHistoryRecords(patientId, { limit, offset }) {
       const { sql, params } = patientPaymentHistorySql({ limit, offset });
       return queryMany(pool, sql, [patientId, ...params]);
+    },
+
+    patientSummaries(options = {}) {
+      const { sql, params } = patientSummariesSql(options);
+      return queryMany(pool, sql, params);
     },
 
     treatmentsForRecord(visitRecordId) {
