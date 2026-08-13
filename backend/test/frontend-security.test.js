@@ -20,6 +20,8 @@ const patientDashboardSource = readFileSync(path.join(__dirname, '..', '..', 'sr
 const patientDashboardPageSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'pages', 'patient-dashboard.html'), 'utf8');
 const appointmentModalSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'appointment-modal.js'), 'utf8');
 const publicBookingSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'public-booking.js'), 'utf8');
+const directorPanelPageSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'pages', 'director-panel.html'), 'utf8');
+const directorReportsSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'director-reports.js'), 'utf8');
 const stylesSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'styles', 'styles.css'), 'utf8');
 const pagesDir = path.join(__dirname, '..', '..', 'src', 'pages');
 
@@ -481,6 +483,18 @@ test('form option and autocomplete attributes use attribute escaping', () => {
   assert.match(newEntrySource, /value="\$\{escapeAttribute\(value\)\}"/);
   assert.match(newEntrySource, /data-patient-name="\$\{escapeAttribute\(name\)\}"/);
   assert.match(newEntrySource, /data-price-currency="\$\{escapeAttribute\(priceInfo\.currency \|\| "RSD"\)\}"/);
+  assert.match(directorReportsSource, /const escapeAttribute = window\.DrRosaSecurity\.escapeAttribute/);
+  assert.match(directorReportsSource, /value="\$\{escapeAttribute\(item\.value\)\}"/);
+});
+
+test('director procedure activity field is a linked dropdown', () => {
+  assert.match(directorPanelPageSource, /<select id="codebook-group"><\/select>/);
+  assert.doesNotMatch(directorPanelPageSource, /id="codebook-group" type="text"/);
+  assert.match(directorReportsSource, /Odaberi delatnost/);
+  assert.match(directorReportsSource, /elements\.group\.required = activeCodebookType === "procedure"/);
+  assert.match(serverSource, /async function validateCodebookGroupName\(type, groupName\)/);
+  assert.match(serverSource, /directorAdmin\.activeActivityByValue\(groupName\)/);
+  assert.match(serverSource, /Delatnost nije pronađena u šifarniku\./);
 });
 
 test('pages load security helpers before the API bundle', () => {

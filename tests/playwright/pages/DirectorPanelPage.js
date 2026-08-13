@@ -164,8 +164,9 @@ class DirectorPanelPage {
   async createProcedure({ name, activity, price = "75" }) {
     await this.openCodebookType("procedure");
     await expect(this.page.locator("#codebook-detail-header")).toHaveText("Delatnost");
+    await expect(this.page.locator("#codebook-group")).toHaveJSProperty("tagName", "SELECT");
     await this.page.locator("#codebook-label").fill(name);
-    await this.page.locator("#codebook-group").fill(activity);
+    await this.page.locator("#codebook-group").selectOption(activity);
     await this.page.locator("#codebook-price").fill(String(price));
     await this.page.getByRole("button", { name: "Sačuvaj šifru" }).click();
     await expect(this.page.locator("#codebook-table")).toContainText(name);

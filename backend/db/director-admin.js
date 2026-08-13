@@ -27,6 +27,16 @@ function createPostgresDirectorAdminRepository(pool) {
       `, [name, name]);
     },
 
+    activeActivityByValue(value) {
+      return queryOne(pool, `
+        SELECT * FROM codebook_items
+        WHERE type = 'activity'
+          AND is_active = true
+          AND value = ?
+        LIMIT 1
+      `, [value]);
+    },
+
     activeCurrencyMetadata(currency) {
       return queryOne(pool, "SELECT metadata FROM codebook_items WHERE type = 'currency' AND value = ? AND is_active = true LIMIT 1", [currency]);
     },

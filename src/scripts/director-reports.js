@@ -7,6 +7,7 @@ let doctorGoogleColors = [];
 let currentDailyCashReport = null;
 let googleOAuthReconnectMode = false;
 const escapeHtml = window.DrRosaSecurity.escapeHtml;
+const escapeAttribute = window.DrRosaSecurity.escapeAttribute;
 const procedureCatalog = window.DrRosaProcedureCatalog;
 const MONTHS = ["Januar", "Februar", "Mart", "April", "Maj", "Jun", "Jul", "Avgust", "Septembar", "Oktobar", "Novembar", "Decembar"];
 const EXCEL_ACTIVITY_SHEETS = [
@@ -1130,7 +1131,6 @@ function codebookFormElements() {
     message: document.getElementById("codebook-message"),
     table: document.getElementById("codebook-table"),
     reset: document.getElementById("codebook-reset"),
-    groups: document.getElementById("codebook-groups"),
     grid: document.getElementById("codebook-grid"),
     title: document.getElementById("codebook-editor-title"),
     shiftFields: document.getElementById("shift-fields"),
@@ -1200,6 +1200,7 @@ function updateShiftFieldsVisibility() {
   elements.paymentMethodFields?.classList.toggle("active", activeCodebookType === "payment_method");
   elements.cashReportItemFields?.classList.toggle("active", activeCodebookType === "cash_report_item");
   elements.groupField?.classList.toggle("hidden", hideGroupField);
+  if (elements.group) elements.group.required = activeCodebookType === "procedure";
   elements.priceField?.classList.toggle("hidden", hidePriceField);
   elements.priceCurrencyField?.classList.toggle("hidden", hidePriceField);
   elements.valueField?.classList.toggle("hidden", activeCodebookType !== "currency");
@@ -1446,13 +1447,18 @@ function fillCodebookForm(item) {
   elements.active.checked = item.isActive !== false;
   setShiftFields(item.metadata);
   updateShiftFieldsVisibility();
-  showCodebookMessage("Izmena postojece sifre.");
+  if (item.type === "procedure" && item.groupName && elements.group.value !== item.groupName) {
+    showCodebookMessage("Postupak ima staru ili neaktivnu delatnost. Odaberite validnu delatnost pre čuvanja.", true);
+  } else {
+    showCodebookMessage("Izmena postojece sifre.");
+  }
 }
 
 function readCodebookForm() {
   const elements = codebookFormElements();
   const label = elements.label.value.trim();
   const existingValue = elements.value.value.trim();
+  const groupName = elements.group.value.trim();
   return {
     type: elements.type.value,
     value: elements.id.value
@@ -1461,7 +1467,7 @@ function readCodebookForm() {
         ? existingValue.toUpperCase()
         : slugifyCodebookValue(label),
     label,
-    groupName: elements.group.value.trim() || null,
+    groupName: groupName || null,
     price: Number(elements.price.value || 0),
     priceCurrency: elements.priceCurrency?.value || "RSD",
     sortOrder: Number(elements.sort.value || 0),
@@ -1480,11 +1486,17 @@ function readCodebookForm() {
 
 function renderCodebookGroups() {
   const elements = codebookFormElements();
-  if (!elements.groups) return;
-  const values = codebookItems
+  if (!elements.group) return;
+  const activities = codebookItems
     .filter(item => item.type === "activity" && item.isActive !== false)
-    .map(item => item.value);
-  elements.groups.innerHTML = values.map(value => `<option value="${escapeHtml(value)}"></option>`).join("");
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || (a.label || a.value).localeCompare(b.label || b.value));
+  const currentValue = elements.group.value;
+  elements.group.innerHTML = `<option value="">Odaberi delatnost</option>${activities
+    .map(item => `<option value="${escapeAttribute(item.value)}">${escapeHtml(item.label || item.value)}</option>`)
+    .join("")}`;
+  if (currentValue && activities.some(item => item.value === currentValue)) {
+    elements.group.value = currentValue;
+  }
 }
 
 function renderCodebooksAdmin() {
@@ -1558,6 +1570,11 @@ function initializeCodebookAdmin() {
     let payload = readCodebookForm();
     if (!payload.value || !payload.label) {
       showCodebookMessage("Unesite šifru i naziv.", true);
+      return;
+    }
+    if (payload.type === "procedure" && !payload.groupName) {
+      showCodebookMessage("Odaberite delatnost za postupak.", true);
+      elements.group.focus();
       return;
     }
 

@@ -5305,6 +5305,18 @@ function normalizeCodebookType(value) {
   return CODEBOOK_TYPES.has(type) ? type : null;
 }
 
+async function validateCodebookGroupName(type, groupName) {
+  if (type !== 'procedure') return null;
+  if (!groupName) {
+    return { error: 'Odaberite delatnost za postupak.' };
+  }
+  const activity = await directorAdmin.activeActivityByValue(groupName);
+  if (!activity) {
+    return { error: 'Delatnost nije pronađena u šifarniku.' };
+  }
+  return groupName;
+}
+
 function serializeCodebookItem(row) {
   let metadata = {};
   try {
@@ -5519,12 +5531,14 @@ app.post('/api/director/codebooks', authenticateToken, requireDirector, validate
     const sortOrder = Number.isInteger(Number(req.body.sortOrder)) ? Number(req.body.sortOrder) : 0;
 
     if (!type || !value || !label) return res.status(400).json({ error: 'Type, value and label are required' });
+    const validatedGroupName = await validateCodebookGroupName(type, groupName);
+    if (validatedGroupName?.error) return res.status(400).json({ error: validatedGroupName.error });
 
     const row = await directorAdmin.createCodebookItem({
       type,
       value,
       label,
-      groupName,
+      groupName: validatedGroupName,
       metadataJson: JSON.stringify(metadata),
       price,
       priceCurrency,
@@ -5561,12 +5575,14 @@ app.put('/api/director/codebooks/:id', authenticateToken, requireDirector, valid
     const sortOrder = Number.isInteger(Number(data.sortOrder ?? data.sort_order)) ? Number(data.sortOrder ?? data.sort_order) : 0;
 
     if (!type || !value || !label) return res.status(400).json({ error: 'Type, value and label are required' });
+    const validatedGroupName = await validateCodebookGroupName(type, groupName);
+    if (validatedGroupName?.error) return res.status(400).json({ error: validatedGroupName.error });
 
     const row = await directorAdmin.updateCodebookItem(id, {
       type,
       value,
       label,
-      groupName,
+      groupName: validatedGroupName,
       metadataJson: JSON.stringify(metadata),
       price,
       priceCurrency,
