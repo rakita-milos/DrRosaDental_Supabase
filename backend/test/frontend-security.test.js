@@ -231,7 +231,10 @@ test('new entry step navigation keeps clicked section active during smooth scrol
 test('new entry procedure fallback stays hidden until requested', () => {
   assert.match(newEntryPageSource, /id="toggle-procedure-fallback"[\s\S]*aria-expanded="false"[\s\S]*aria-controls="procedure-fallback-block"/);
   assert.match(newEntryPageSource, /id="procedure-fallback-block" hidden/);
+  assert.match(newEntryPageSource, /id="procedure-fallback-block" hidden[\s\S]*id="clear-general-treatment-draft" hidden[\s\S]*Poništi izbor/);
   assert.match(newEntrySource, /function hasProcedureFallbackValue\(\)/);
+  assert.match(newEntrySource, /function updateGeneralTreatmentDraftActions\(\)/);
+  assert.match(newEntrySource, /inputs\.clearGeneralTreatmentDraft\.hidden = !hasProcedureFallbackValue\(\)/);
   assert.match(newEntrySource, /function setProcedureFallbackVisible\(isVisible\)/);
   assert.match(newEntrySource, /block\.hidden = !isVisible/);
   assert.match(newEntrySource, /button\.setAttribute\("aria-expanded", isVisible \? "true" : "false"\)/);

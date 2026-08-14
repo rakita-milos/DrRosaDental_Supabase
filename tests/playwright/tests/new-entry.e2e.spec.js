@@ -130,8 +130,79 @@ test("new entry: tooth map treatment can be added and saved", async ({ page, req
   await page.locator("#shift").selectOption({ index: 0 }, { force: true });
   await page.locator("#note").fill(note);
 
-  await page.locator("#new-entry-form button[type='submit']").click();
+  await page.locator("#new-entry-form").evaluate(form => {
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+  });
   await expectRecordWithNote(request, baseURL, fullName, note);
+});
+
+test("new entry: general procedure draft can be cleared before saving tooth-map work", async ({ page, request, baseURL }) => {
+  const stamp = Date.now();
+  const fullName = await createTestPatient(request, baseURL, stamp, "ClearGeneralDraft");
+  const note = `${TEST_PREFIX} clear general draft ${stamp}`;
+  let postedRecord;
+
+  await gotoNewEntry(page, fullName);
+  await expect(page.locator("#clear-general-treatment-draft")).toBeHidden();
+  await openGeneralProcedures(page);
+  await expect(page.locator("#clear-general-treatment-draft")).toBeHidden();
+
+  await page.locator("#procedure-activity").selectOption({ index: 1 }, { force: true });
+  await expect(page.locator("#procedure")).toBeEnabled();
+  await page.locator("#procedure").selectOption({ index: 1 }, { force: true });
+  const draftProcedure = await page.locator("#procedure").inputValue();
+  await expect(page.locator("#clear-general-treatment-draft")).toBeVisible();
+  await expect(page.locator("#preview-procedure")).toContainText(draftProcedure);
+
+  await page.locator("#toggle-procedure-fallback").click();
+  await expect(page.locator("#procedure-fallback-block")).toBeHidden();
+  await expect(page.locator("#clear-general-treatment-draft")).toBeHidden();
+  await openGeneralProcedures(page);
+  await expect(page.locator("#clear-general-treatment-draft")).toBeVisible();
+
+  await page.locator("#clear-general-treatment-draft").click();
+  await expect(page.locator("#clear-general-treatment-draft")).toBeHidden();
+  await expect(page.locator("#procedure-activity")).toHaveValue("");
+  await expect(page.locator("#procedure")).toHaveValue("");
+  await expect(page.locator("#procedure")).toBeDisabled();
+  await expect(page.locator("#preview-procedure")).toHaveText("Rad nije dodat");
+
+  await page.locator(".tooth-node[data-tooth='11']").click();
+  await page.locator("#treatment-activity").selectOption({ index: 1 }, { force: true });
+  await expect(page.locator("#treatment-type")).toBeEnabled();
+  const toothOptionCount = await page.locator("#treatment-type option").count();
+  await page.locator("#treatment-type").selectOption({ index: toothOptionCount > 2 ? 2 : 1 }, { force: true });
+  const toothProcedure = await page.locator("#treatment-type").inputValue();
+  await page.locator("#save-treatment").click();
+  await expect(page.locator("#teeth-summary")).toContainText(/Zub 11/);
+
+  await page.locator('[data-drrosa-for="last-visit"]').fill("06.07.2026");
+  await page.locator("#doctor").selectOption({ index: 0 }, { force: true });
+  await page.locator("#shift").selectOption({ index: 0 }, { force: true });
+  await page.locator("#note").fill(note);
+
+  await page.route("**/api/records", async route => {
+    if (route.request().method() === "POST") {
+      postedRecord = route.request().postDataJSON();
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ id: 1001, message: "Record created successfully" })
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.locator("#new-entry-form").evaluate(form => {
+    form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+  });
+  await expect.poll(() => postedRecord).toBeTruthy();
+  expect(postedRecord.generalTreatments).toHaveLength(0);
+  expect(postedRecord.treatments["11"]).toHaveLength(1);
+  expect(postedRecord.procedure).toContain("zub 11");
+  expect(postedRecord.procedure).toContain(toothProcedure);
+  expect(postedRecord.procedure).not.toContain(draftProcedure);
 });
 
 test("new entry: multiple procedures can be added to multiple selected teeth", async ({ page, request, baseURL }) => {

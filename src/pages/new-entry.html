@@ -218,7 +218,10 @@
             <div class="entry-form-block procedure-fallback full-width" id="procedure-fallback-block" hidden>
               <div class="entry-form-block-header">
                 <span>Opšti postupci bez mape zuba</span>
-                <button type="button" class="secondary-btn" id="add-general-treatment">Dodaj opšti postupak</button>
+                <div class="general-treatment-actions">
+                  <button type="button" class="secondary-btn" id="clear-general-treatment-draft" hidden>Poništi izbor</button>
+                  <button type="button" class="secondary-btn" id="add-general-treatment">Dodaj opšti postupak</button>
+                </div>
               </div>
               <div class="input-grid">
                 <label>
@@ -393,6 +396,6 @@
   <script src="../scripts/procedure-catalog.js"></script>
   <script src="../scripts/tooth-condition-editor.js"></script>
   <script src="../scripts/treatment-history.js"></script>
-  <script src="../scripts/new-entry.js?v=entry-debt-payment-20260812"></script>
+  <script src="../scripts/new-entry.js?v=general-draft-clear-20260813"></script>
 </body>
 </html>

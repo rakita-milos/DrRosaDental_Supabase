@@ -47,6 +47,7 @@ const inputs = {
   lastVisit: document.getElementById("last-visit"),
   procedureActivity: document.getElementById("procedure-activity"),
   procedure: document.getElementById("procedure"),
+  clearGeneralTreatmentDraft: document.getElementById("clear-general-treatment-draft"),
   addGeneralTreatment: document.getElementById("add-general-treatment"),
   generalTreatmentList: document.getElementById("general-treatment-list"),
   doctor: document.getElementById("doctor"),
@@ -282,6 +283,11 @@ function selectedPatient() {
 
 function hasProcedureFallbackValue() {
   return Boolean(inputs.procedureActivity?.value || inputs.procedure?.value);
+}
+
+function updateGeneralTreatmentDraftActions() {
+  if (!inputs.clearGeneralTreatmentDraft) return;
+  inputs.clearGeneralTreatmentDraft.hidden = !hasProcedureFallbackValue();
 }
 
 function setProcedureFallbackVisible(isVisible) {
@@ -1183,6 +1189,7 @@ function clearGeneralTreatmentInputs() {
   populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
   inputs.procedure.dispatchEvent(new Event("drrosa-select-value"));
   inputs.procedureActivity.dispatchEvent(new Event("drrosa-select-value"));
+  updateGeneralTreatmentDraftActions();
 }
 
 function ensureDraftGeneralTreatmentAdded() {
@@ -1586,6 +1593,7 @@ inputs.previousDebtPaymentForm?.addEventListener("submit", async event => {
 
 inputs.procedureActivity.addEventListener("change", () => {
   populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
+  updateGeneralTreatmentDraftActions();
   syncTotalAmountFromSelection({ force: !totalAmountTouched });
   updatePaymentCalculation();
   updatePreview();
@@ -1595,6 +1603,14 @@ inputs.procedure.addEventListener("change", () => {
   if (!inputs.procedureActivity.value) {
     inputs.procedureActivity.value = procedureCatalog.findActivityForProcedure(inputs.procedure.value);
   }
+  updateGeneralTreatmentDraftActions();
+  syncTotalAmountFromSelection({ force: !totalAmountTouched });
+  updatePaymentCalculation();
+  updatePreview();
+});
+
+inputs.clearGeneralTreatmentDraft?.addEventListener("click", () => {
+  clearGeneralTreatmentInputs();
   syncTotalAmountFromSelection({ force: !totalAmountTouched });
   updatePaymentCalculation();
   updatePreview();
@@ -1984,6 +2000,7 @@ form.addEventListener("submit", async (event) => {
     populateDoctors();
     populateActivitySelect(inputs.procedureActivity);
     populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
+    updateGeneralTreatmentDraftActions();
     populateActivitySelect(treatmentActivity);
     populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
     refreshPreviousPaymentsForPatient({ force: true });
