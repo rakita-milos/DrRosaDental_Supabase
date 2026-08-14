@@ -5247,6 +5247,20 @@ td:nth-child(5) {
   font: inherit;
 }
 
+.patient-extra-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 18px;
+}
+
+.patient-extra-fields {
+  margin-top: 18px;
+}
+
+.patient-extra-fields[hidden] {
+  display: none;
+}
+
 .full-width {
   grid-column: 1 / -1;
 }
@@ -6978,6 +6992,7 @@ td:nth-child(5) {
   .form-actions .primary-btn,
   .form-actions .secondary-btn,
   .form-actions .danger-btn,
+  .patient-extra-actions .secondary-btn,
   .patient-empty-action .secondary-btn {
     width: 100%;
   }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Novi pacijent - Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css?v=responsive-20260727" />
+  <link rel="stylesheet" href="../styles/styles.css?v=patient-quick-entry-20260814" />
 </head>
 <body>
   <div class="app-shell">
@@ -39,7 +39,7 @@
         </div>
 
         <form id="patient-form" class="form-card">
-          <div class="form-grid">
+          <div class="form-grid patient-basic-fields">
             <div class="form-group">
               <label for="first-name">Ime</label>
               <input id="first-name" type="text" required />
@@ -68,32 +68,39 @@
               <label for="phone">Telefon</label>
               <input id="phone" type="tel" />
             </div>
-            <div class="form-group">
-              <label for="email">Email</label>
-              <input id="email" type="email" />
-            </div>
-            <div class="form-group">
-              <label for="emergency-contact">Kontakt u hitnim slučajevima</label>
-              <input id="emergency-contact" type="text" />
-            </div>
-            <div class="form-group full-width">
-              <label for="allergies">Alergije</label>
-              <textarea id="allergies" rows="3"></textarea>
-            </div>
-            <div class="form-group full-width">
-              <label for="medical-history">Medicinska istorija</label>
-              <textarea id="medical-history" rows="3"></textarea>
-            </div>
-            <div class="form-group full-width">
-              <label for="current-medications">Trenutni lekovi</label>
-              <textarea id="current-medications" rows="3"></textarea>
-            </div>
-            <div class="form-group full-width">
-              <label for="previous-treatments">Prethodni stomatološki tretmani</label>
-              <textarea id="previous-treatments" rows="3"></textarea>
-            </div>
           </div>
-          <section id="initial-condition-editor" class="initial-condition-section"></section>
+          <div class="patient-extra-actions">
+            <button id="toggle-patient-extra-fields" class="secondary-btn" type="button" aria-expanded="false" aria-controls="patient-extra-fields">Prikaži ostala polja</button>
+          </div>
+          <div id="patient-extra-fields" class="patient-extra-fields" hidden>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="email">Email</label>
+                <input id="email" type="email" />
+              </div>
+              <div class="form-group">
+                <label for="emergency-contact">Kontakt u hitnim slučajevima</label>
+                <input id="emergency-contact" type="text" />
+              </div>
+              <div class="form-group full-width">
+                <label for="allergies">Alergije</label>
+                <textarea id="allergies" rows="3"></textarea>
+              </div>
+              <div class="form-group full-width">
+                <label for="medical-history">Medicinska istorija</label>
+                <textarea id="medical-history" rows="3"></textarea>
+              </div>
+              <div class="form-group full-width">
+                <label for="current-medications">Trenutni lekovi</label>
+                <textarea id="current-medications" rows="3"></textarea>
+              </div>
+              <div class="form-group full-width">
+                <label for="previous-treatments">Prethodni stomatološki tretmani</label>
+                <textarea id="previous-treatments" rows="3"></textarea>
+              </div>
+            </div>
+            <section id="initial-condition-editor" class="initial-condition-section"></section>
+          </div>
           <p id="patient-form-message" class="form-alert" role="status"></p>
           <div class="form-actions">
             <button type="submit" class="primary-btn">Sačuvaj pacijenta</button>
@@ -107,6 +114,6 @@
   <script src="../scripts/api.js"></script>
   <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/tooth-condition-editor.js"></script>
-  <script src="../scripts/new-patient.js"></script>
+  <script src="../scripts/new-patient.js?v=patient-quick-entry-20260814"></script>
 </body>
 </html>

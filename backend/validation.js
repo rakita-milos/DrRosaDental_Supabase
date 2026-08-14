@@ -40,8 +40,8 @@ const changePasswordSchema = Joi.object({
 const patientCreateSchema = Joi.object({
   first_name: Joi.string().max(80).required(),
   last_name: Joi.string().max(80).required(),
-  date_of_birth: Joi.string().max(20).allow('', null),
-  gender: Joi.string().max(30).allow('', null),
+  date_of_birth: Joi.string().max(20).required(),
+  gender: Joi.string().max(30).required(),
   email: Joi.string().email().allow('', null),
   phone: Joi.string().max(50).allow('', null),
   address: Joi.string().max(255).allow('', null),

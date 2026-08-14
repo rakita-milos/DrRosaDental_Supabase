@@ -285,6 +285,18 @@ test('new entry syncs payment rows before adding another payment', () => {
   assert.match(newEntrySource, /updatePaymentCalculation\(\{ render: false \}\)/);
 });
 
+test('new entry suggests remaining payment amount and converts row currency changes', () => {
+  assert.match(newEntryPageSource, /new-entry\.js\?v=payment-remaining-autofill-20260815/);
+  assert.match(newEntrySource, /function paymentPartAmountInVisitCurrency\(part\)/);
+  assert.match(newEntrySource, /function remainingPaymentAmount\(\{ excludeIndex = null \} = \{\}\)/);
+  assert.match(newEntrySource, /function suggestedPaymentPart\(\{ currency = paymentCurrency\(\) \} = \{\}\)/);
+  assert.match(newEntrySource, /paymentParts\.push\(suggestedPaymentPart\(\{ currency: paymentCurrency\(\) \}\)\)/);
+  assert.match(newEntrySource, /data-previous-currency="\$\{escapeHtml\(normalized\.currency\)\}"/);
+  assert.match(newEntrySource, /currencySelect\?\.addEventListener\("change", \(\) => \{/);
+  assert.match(newEntrySource, /currencyUtils[\s\S]*\.convert\(amount, previousCurrency, nextCurrency\)/);
+  assert.match(newEntrySource, /amountInput\.value = converted > 0 \? converted\.toFixed\(2\) : ""/);
+});
+
 test('new entry shows paginated previous patient payments separately from current payment rows', () => {
   assert.match(newEntryPageSource, /id="previous-payments-panel"/);
   assert.match(newEntryPageSource, /Prethodne uplate pacijenta/);
@@ -368,12 +380,24 @@ test('patient dashboard quick internal comments bind early and refresh the first
 });
 
 test('patient dashboard clinical forms keep locked submit wrappers intact', () => {
-  const clinicalChartIndex = patientDashboardSource.indexOf('clinical-chart-form").addEventListener("submit"');
   const clinicalNoteIndex = patientDashboardSource.indexOf('clinical-note-form").addEventListener("submit"');
-  assert.ok(clinicalChartIndex > -1);
   assert.ok(clinicalNoteIndex > -1);
-  assert.match(patientDashboardSource.slice(clinicalChartIndex, clinicalChartIndex + 260), /await runLockedFormSubmit\(event, async \(\) => \{/);
   assert.match(patientDashboardSource.slice(clinicalNoteIndex, clinicalNoteIndex + 260), /await runLockedFormSubmit\(event, async \(\) => \{/);
+});
+
+test('patient dashboard teeth and finance tabs keep only daily-use panels', () => {
+  assert.match(patientDashboardPageSource, /id="initial-condition-card" data-patient-panel-group="teeth"/);
+  assert.match(patientDashboardPageSource, /id="patient-initial-condition-editor"/);
+  assert.doesNotMatch(patientDashboardPageSource, /id="clinical-chart-card"/);
+  assert.doesNotMatch(patientDashboardPageSource, /id="clinical-chart-form"/);
+  assert.doesNotMatch(patientDashboardPageSource, /id="perio-card"/);
+  assert.doesNotMatch(patientDashboardPageSource, /id="perio-form"/);
+  assert.doesNotMatch(patientDashboardPageSource, /id="plans-card"/);
+  assert.doesNotMatch(patientDashboardPageSource, /id="treatment-plan-form"/);
+  assert.match(patientDashboardPageSource, /id="invoices-card" data-patient-panel-group="finance"/);
+  assert.doesNotMatch(patientDashboardSource, /clinical-chart-form"\)\.addEventListener/);
+  assert.doesNotMatch(patientDashboardSource, /perio-form"\)\.addEventListener/);
+  assert.doesNotMatch(patientDashboardSource, /treatment-plan-form"\)\.addEventListener/);
 });
 
 test('patient dashboard uses one primary scheduling action and no duplicate document CTA', () => {
@@ -521,6 +545,23 @@ test('pages load security helpers before the API bundle', () => {
   }
 });
 
+test('new patient page keeps quick entry fields visible and hides optional details by default', () => {
+  assert.match(newPatientPageSource, /class="form-grid patient-basic-fields"/);
+  assert.match(newPatientPageSource, /id="first-name" type="text" required/);
+  assert.match(newPatientPageSource, /id="last-name" type="text" required/);
+  assert.match(newPatientPageSource, /id="birth-date" type="date" required/);
+  assert.match(newPatientPageSource, /id="gender" required/);
+  assert.match(newPatientPageSource, /id="address" type="text"/);
+  assert.match(newPatientPageSource, /id="phone" type="tel"/);
+  assert.match(newPatientPageSource, /id="toggle-patient-extra-fields"/);
+  assert.match(newPatientPageSource, /aria-controls="patient-extra-fields"/);
+  assert.match(newPatientPageSource, /id="patient-extra-fields" class="patient-extra-fields" hidden/);
+  assert.match(newPatientPageSource, /id="initial-condition-editor" class="initial-condition-section"/);
+  assert.match(newPatientSource, /function setExtraFieldsOpen\(open\)/);
+  assert.match(newPatientSource, /hasAdditionalPatientDetails\(patient, chartEntries\)/);
+  assert.match(newPatientSource, /setExtraFieldsOpen\(false\)/);
+});
+
 test('online booking is not exposed from protected application navigation while disabled', () => {
   const protectedPages = [
     'index.html',
@@ -563,11 +604,8 @@ test('frontend create forms guard against duplicate submissions', () => {
 
   assert.match(patientDashboardSource, /async function runLockedFormSubmit\(event, callback/);
   [
-    "clinical-chart-form",
     "clinical-note-form",
     "patient-consent-form",
-    "treatment-plan-form",
-    "perio-form",
     "invoice-form",
     "insurance-form",
     "medical-profile-form",

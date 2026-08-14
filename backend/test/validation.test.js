@@ -45,12 +45,27 @@ test('change password schema requires strong passwords', () => {
   assert(error instanceof Error);
 });
 
-test('patient create schema validates minimal payload', () => {
+test('patient create schema validates required patient identity fields', () => {
   const { error } = patientCreateSchema.validate({
     first_name: 'Ana',
-    last_name: 'Kovac'
+    last_name: 'Kovac',
+    date_of_birth: '1990-05-12',
+    gender: 'Ženski'
   });
   assert.equal(error, undefined);
+});
+
+test('patient create schema rejects missing birth date and gender', () => {
+  const { error } = patientCreateSchema.validate(
+    {
+      first_name: 'Ana',
+      last_name: 'Kovac'
+    },
+    { abortEarly: false }
+  );
+  assert(error instanceof Error);
+  assert.match(error.message, /date_of_birth/);
+  assert.match(error.message, /gender/);
 });
 
 test('patient document schema validates file upload payload', () => {

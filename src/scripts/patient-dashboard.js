@@ -47,14 +47,6 @@ function formatMoney(amount, currency = "RSD") {
     : `${Number(amount || 0).toFixed(2)} ${currency}`;
 }
 
-function setSelectValue(select, value) {
-  if (!select || !value) return;
-  if (!Array.from(select.options).some(item => item.value === value)) {
-    select.appendChild(new Option(value, value));
-  }
-  select.value = value;
-}
-
 async function runLockedFormSubmit(event, callback, loadingText = "Čuvanje...") {
   event.preventDefault();
   const form = event.currentTarget;
@@ -567,18 +559,6 @@ function renderPatientTimeline(records, nextAppointment, patientId) {
     typeLabel: "Beleška"
   }));
 
-  const planItems = loadedTreatmentPlans.slice(0, 4).map(plan => ({
-    date: formatDate(plan.createdAt || plan.updatedAt),
-    sortKey: plan.createdAt || plan.updatedAt || "",
-    title: plan.title || "Plan terapije",
-    meta: `Plan / ${labelFromMap(statusLabels, plan.status)}`,
-    amount: formatMoney(plan.total, plan.currency),
-    href: "#plans-card",
-    group: "finance",
-    type: "plan",
-    typeLabel: "Plan"
-  }));
-
   const invoiceItems = loadedInvoices.slice(0, 4).map(invoice => ({
     date: formatDate(invoice.issueDate || invoice.createdAt),
     sortKey: invoice.issueDate || invoice.createdAt || "",
@@ -604,7 +584,7 @@ function renderPatientTimeline(records, nextAppointment, patientId) {
       typeLabel: "Termin"
     });
   }
-  items.push(...visitItems, ...documentItems, ...noteItems, ...planItems, ...invoiceItems);
+  items.push(...visitItems, ...documentItems, ...noteItems, ...invoiceItems);
 
   items.sort((a, b) => String(b.sortKey || "").localeCompare(String(a.sortKey || "")));
   activityTimeline.innerHTML = items.length ? items.slice(0, 12).map(item => `
@@ -760,16 +740,12 @@ const clinicalSection = document.getElementById("patient-clinical-section");
 const medicalForm = document.getElementById("medical-profile-form");
 const documentForm = document.getElementById("document-form");
 const documentsBody = document.getElementById("patient-documents-body");
-let planItemsDraft = [];
-let perioMeasurementsDraft = [];
 let invoiceItemsDraft = [];
 let loadedDocuments = [];
-let loadedClinicalChartEntries = [];
 let initialConditionEditor;
 let loadedInternalComments = [];
 let loadedClinicalNotes = [];
 let loadedPatientConsents = [];
-let loadedTreatmentPlans = [];
 let loadedInvoices = [];
 let overviewRecords = [];
 let overviewNextAppointment = null;
@@ -785,7 +761,6 @@ let visitPaymentHistory = {
 };
 let appointmentSchedulerPatient = null;
 let appointmentSchedulerOnCreated = null;
-let currencyItems = [];
 let imagingObjectUrl = "";
 const imagingState = {
   documentId: null,
@@ -854,12 +829,6 @@ const imagingModalityLabels = {
   photo: "Fotografija"
 };
 
-const fallbackRsdRates = {
-  EUR: 117,
-  USD: 108,
-  RSD: 1
-};
-
 const fieldLabels = {
   fileBase64: "Fajl",
   visitRecordId: "Poseta",
@@ -891,40 +860,6 @@ function userFacingError(error, fallback) {
   return Object.entries(fieldLabels).reduce((message, [field, label]) => {
     return message.replaceAll(`"${field}"`, `"${label}"`).replaceAll(field, label);
   }, raw);
-}
-
-function rateToRsd(currency) {
-  if (window.DrRosaCurrencyUtils) return window.DrRosaCurrencyUtils.rateToRsd(currency);
-  const code = String(currency || "RSD").toUpperCase();
-  if (code === "RSD") return 1;
-  const item = currencyItems.find(entry => String(entry.value || "").toUpperCase() === code);
-  const metadata = item?.metadata || {};
-  const rate = Number(metadata.exchangeRate || 0);
-  const base = String(metadata.rateBase || code).toUpperCase();
-  const target = String(metadata.rateCurrency || "RSD").toUpperCase();
-  if (rate > 0 && base === code && target === "RSD") return rate;
-  if (rate > 0 && base === "RSD" && target === code) return 1 / rate;
-  return fallbackRsdRates[code] || 0;
-}
-
-function clinicalPriceState() {
-  const price = Number(document.getElementById("clinical-price")?.value || 0);
-  const currency = document.getElementById("clinical-currency")?.value || "RSD";
-  const exchangeRateToRsd = rateToRsd(currency);
-  const priceRsd = currency === "RSD" ? price : price * exchangeRateToRsd;
-  return { price, currency, exchangeRateToRsd, priceRsd };
-}
-
-function updateClinicalPricePreview() {
-  const preview = document.getElementById("clinical-price-preview");
-  if (!preview) return;
-  const { currency, exchangeRateToRsd, priceRsd } = clinicalPriceState();
-  const rateText = currency === "RSD"
-    ? "Valuta je RSD, preračun nije potreban."
-    : exchangeRateToRsd > 0
-      ? `Kurs: 1 ${currency} = ${exchangeRateToRsd.toFixed(4)} RSD`
-      : `Nema kursa za ${currency}. Unesite kurs u šifarniku valuta.`;
-  preview.innerHTML = `<strong>RSD iznos:</strong> ${formatMoney(priceRsd, "RSD")} <span class="muted">(${rateText})</span>`;
 }
 
 function renderEmpty(message) {
@@ -1454,67 +1389,6 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function renderPlanItemsDraft() {
-  const preview = document.getElementById("plan-items-preview");
-  preview.innerHTML = planItemsDraft.length
-    ? planItemsDraft.map((item, index) => `<p><strong>Faza ${item.phase}</strong> ${escapeHtml(item.toothNumber || "-")} - ${escapeHtml(item.procedureName)} (${formatMoney(item.unitPrice)}) <button class="danger-btn remove-plan-item" type="button" data-index="${index}">x</button></p>`).join("")
-    : "<p>Nema stavki u planu.</p>";
-}
-
-function renderPlans(plans) {
-  loadedTreatmentPlans = plans;
-  refreshPatientTimeline();
-  document.getElementById("treatment-plans-body").innerHTML = plans.length ? plans.map(plan => `
-    <tr>
-      <td>${escapeHtml(plan.title)}<br><small>${plan.items.length} stavki</small></td>
-      <td>${escapeHtml(labelFromMap(statusLabels, plan.status))}</td>
-      <td>${formatMoney(plan.total, plan.currency)}</td>
-      <td>
-        <button class="secondary-btn edit-plan-btn" type="button" data-plan-id="${plan.id}">Uredi</button>
-        <button class="primary-btn accept-plan-btn" type="button" data-plan-id="${plan.id}">Potpis</button>
-      </td>
-    </tr>
-  `).join("") : `<tr><td colspan="4" class="empty-row">Nema planova terapije.</td></tr>`;
-}
-
-function renderPerioDraft() {
-  const preview = document.getElementById("perio-measurements-preview");
-  preview.innerHTML = perioMeasurementsDraft.length
-    ? perioMeasurementsDraft.map((item, index) => `<p>Zub ${escapeHtml(item.toothNumber)} ${escapeHtml(item.site)}: dzep ${item.pocketDepth}mm, recesija ${item.recession}mm, mob ${item.mobility}, fur ${item.furcation}${item.bleeding ? ", krvarenje" : ""} <button class="danger-btn remove-perio-item" type="button" data-index="${index}">x</button></p>`).join("")
-    : "<p>Nema dodatih merenja.</p>";
-}
-
-function renderPerioCharts(charts) {
-  document.getElementById("perio-charts-body").innerHTML = charts.length ? charts.map(chart => {
-    const deep = chart.measurements.filter(item => item.pocketDepth >= 5).length;
-    const bleeding = chart.measurements.filter(item => item.bleeding).length;
-    return `<tr><td>${formatDate(chart.chartDate)}</td><td>${chart.measurements.length}</td><td>${deep} dubokih dzepova / ${bleeding} krvarenja</td></tr>`;
-  }).join("") : `<tr><td colspan="3" class="empty-row">Nema parodontalnih chartova.</td></tr>`;
-}
-
-function readPerioMeasurementForm() {
-  const toothNumber = document.getElementById("perio-tooth").value.trim();
-  if (!toothNumber) return null;
-  return {
-    toothNumber,
-    site: document.getElementById("perio-site").value,
-    pocketDepth: Number(document.getElementById("perio-pocket").value || 0),
-    recession: Number(document.getElementById("perio-recession").value || 0),
-    mobility: Number(document.getElementById("perio-mobility").value || 0),
-    furcation: Number(document.getElementById("perio-furcation").value || 0),
-    bleeding: document.getElementById("perio-bleeding").checked
-  };
-}
-
-function clearPerioMeasurementForm() {
-  document.getElementById("perio-tooth").value = "";
-  document.getElementById("perio-pocket").value = "";
-  document.getElementById("perio-recession").value = "";
-  document.getElementById("perio-mobility").value = "";
-  document.getElementById("perio-furcation").value = "";
-  document.getElementById("perio-bleeding").checked = false;
-}
-
 function renderInvoiceDraft() {
   const preview = document.getElementById("invoice-items-preview");
   preview.innerHTML = invoiceItemsDraft.length
@@ -1576,71 +1450,6 @@ function renderInsuranceClaims(claims) {
       </td>
     </tr>
   `).join("") : `<tr><td colspan="5" class="empty-row">Nema zahteva za osiguranje.</td></tr>`;
-}
-
-function renderClinicalChart(entries) {
-  loadedClinicalChartEntries = entries.filter(entry => entry.entryType !== "initial_condition");
-  document.getElementById("clinical-chart-body").innerHTML = loadedClinicalChartEntries.length ? loadedClinicalChartEntries.map(entry => `
-    <tr>
-      <td>${escapeHtml(entry.toothNumber)}<br><small>${escapeHtml((entry.surfaces || []).join(", ") || "-")}</small></td>
-      <td>${escapeHtml([entry.cdtCode, entry.adaCode].filter(Boolean).join(" / ") || "-")}</td>
-      <td>${escapeHtml(labelFromMap(statusLabels, entry.status))}<br><small>Faza ${escapeHtml(entry.phase)}</small>${Number(entry.price || 0) > 0 ? `<br><small>${formatMoney(entry.price, entry.currency)} / ${formatMoney(entry.priceRsd, "RSD")}</small>` : ""}</td>
-      <td>${escapeHtml(entry.diagnosis || entry.notes || "-")}</td>
-      <td>
-        <button class="secondary-btn edit-clinical-chart-btn" type="button" data-entry-id="${entry.id}">Uredi</button>
-        <button class="danger-btn delete-clinical-chart-btn" type="button" data-entry-id="${entry.id}">Obriši</button>
-      </td>
-    </tr>
-  `).join("") : `<tr><td colspan="5" class="empty-row">Nema unosa zubnog statusa.</td></tr>`;
-}
-
-function clinicalChartPayloadFromForm() {
-  const { price, currency, exchangeRateToRsd, priceRsd } = clinicalPriceState();
-  return {
-    toothNumber: document.getElementById("clinical-tooth").value,
-    surfaces: document.getElementById("clinical-surfaces").value.split(",").map(item => item.trim()).filter(Boolean),
-    cdtCode: document.getElementById("clinical-cdt").value,
-    adaCode: document.getElementById("clinical-ada").value,
-    status: document.getElementById("clinical-status").value,
-    phase: Number(document.getElementById("clinical-phase").value || 1),
-    price,
-    currency,
-    priceRsd,
-    exchangeRateToRsd,
-    diagnosis: document.getElementById("clinical-diagnosis").value,
-    procedureCode: document.getElementById("clinical-procedure-code").value,
-    notes: document.getElementById("clinical-notes").value
-  };
-}
-
-function resetClinicalChartForm() {
-  const form = document.getElementById("clinical-chart-form");
-  form.reset();
-  document.getElementById("clinical-chart-entry-id").value = "";
-  document.getElementById("clinical-phase").value = "1";
-  document.getElementById("clinical-currency").value = "RSD";
-  document.getElementById("cancel-clinical-chart-edit-btn").hidden = true;
-  form.querySelector('button[type="submit"]').textContent = "Sačuvaj zubni status";
-  updateClinicalPricePreview();
-}
-
-function fillClinicalChartForm(entry) {
-  document.getElementById("clinical-chart-entry-id").value = entry.id;
-  document.getElementById("clinical-tooth").value = entry.toothNumber || "";
-  document.getElementById("clinical-surfaces").value = (entry.surfaces || []).join(", ");
-  document.getElementById("clinical-cdt").value = entry.cdtCode || "";
-  document.getElementById("clinical-ada").value = entry.adaCode || "";
-  document.getElementById("clinical-status").value = entry.status || "planned";
-  document.getElementById("clinical-phase").value = entry.phase || 1;
-  document.getElementById("clinical-price").value = Number(entry.price || 0) || "";
-  setSelectValue(document.getElementById("clinical-currency"), entry.currency || "RSD");
-  document.getElementById("clinical-diagnosis").value = entry.diagnosis || "";
-  document.getElementById("clinical-procedure-code").value = entry.procedureCode || "";
-  document.getElementById("clinical-notes").value = entry.notes || "";
-  document.getElementById("cancel-clinical-chart-edit-btn").hidden = false;
-  document.getElementById("clinical-chart-form").querySelector('button[type="submit"]').textContent = "Sačuvaj izmenu";
-  updateClinicalPricePreview();
-  document.getElementById("clinical-chart-form").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderClinicalNoteTemplates(templates) {
@@ -1744,7 +1553,6 @@ async function initializeClinicalWorkflows(patientId) {
   async function refreshClinicalChart() {
     const entries = await window.DrRosaApi.getClinicalChart(patientId);
     initialConditionEditor?.setEntries(window.DrRosaToothCondition.initialConditionsFromEntries(entries));
-    renderClinicalChart(entries);
   }
   async function refreshClinicalNotes() {
     renderClinicalNotes(await window.DrRosaApi.getClinicalNotes(patientId));
@@ -1753,25 +1561,7 @@ async function initializeClinicalWorkflows(patientId) {
     renderPatientConsents(await window.DrRosaApi.getPatientConsents(patientId));
   }
 
-  const [templates, currencies] = await Promise.all([
-    window.DrRosaApi.getClinicalNoteTemplates(),
-    window.DrRosaApi.getCodebooks ? window.DrRosaApi.getCodebooks("currency").catch(() => []) : []
-  ]);
-  currencyItems = currencies.length ? currencies : [
-    { value: "RSD", label: "RSD", metadata: { exchangeRate: 1, rateBase: "RSD", rateCurrency: "RSD" } },
-    { value: "EUR", label: "EUR", metadata: { exchangeRate: 117, rateBase: "EUR", rateCurrency: "RSD" } },
-    { value: "USD", label: "USD", metadata: { exchangeRate: 108, rateBase: "USD", rateCurrency: "RSD" } }
-  ];
-  window.DrRosaCurrencyUtils?.setCurrencies(currencyItems);
-  const currencySelect = document.getElementById("clinical-currency");
-  const currentCurrency = currencySelect.value;
-  currencySelect.innerHTML = currencyItems.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label || item.value)}</option>`).join("");
-  setSelectValue(currencySelect, currentCurrency || "RSD");
-  ["clinical-price", "clinical-currency"].forEach(id => {
-    document.getElementById(id).addEventListener("input", updateClinicalPricePreview);
-    document.getElementById(id).addEventListener("change", updateClinicalPricePreview);
-  });
-  updateClinicalPricePreview();
+  const templates = await window.DrRosaApi.getClinicalNoteTemplates();
   renderClinicalNoteTemplates(templates);
 
   document.getElementById("clinical-note-template").addEventListener("change", event => {
@@ -1779,44 +1569,6 @@ async function initializeClinicalWorkflows(patientId) {
     if (!selected?.value) return;
     document.getElementById("clinical-note-title").value = selected.dataset.title || "";
     document.getElementById("clinical-note-body").value = selected.dataset.body || "";
-  });
-
-  document.getElementById("clinical-chart-form").addEventListener("submit", async event => {
-    await runLockedFormSubmit(event, async () => {
-      try {
-        const entryId = document.getElementById("clinical-chart-entry-id").value;
-        const payload = clinicalChartPayloadFromForm();
-        if (entryId) {
-          await window.DrRosaApi.updateClinicalChartEntry(entryId, payload);
-        } else {
-          await window.DrRosaApi.createClinicalChartEntry(patientId, payload);
-        }
-        resetClinicalChartForm();
-        setMessage("clinical-chart-message", entryId ? "Zubni status je izmenjen." : "Zubni status je sacuvan.");
-        await refreshClinicalChart();
-      } catch (error) {
-        setMessage("clinical-chart-message", error.message || "Zubni status nije sacuvan.", true);
-      }
-    });
-  });
-  document.getElementById("cancel-clinical-chart-edit-btn").addEventListener("click", () => {
-    resetClinicalChartForm();
-    setMessage("clinical-chart-message", "");
-  });
-
-  document.getElementById("clinical-chart-body").addEventListener("click", async event => {
-    const editButton = event.target.closest(".edit-clinical-chart-btn");
-    const deleteButton = event.target.closest(".delete-clinical-chart-btn");
-    if (editButton) {
-      const entry = loadedClinicalChartEntries.find(item => String(item.id) === String(editButton.dataset.entryId));
-      if (entry) fillClinicalChartForm(entry);
-      return;
-    }
-    if (!deleteButton) return;
-    await window.DrRosaApi.deleteClinicalChartEntry(deleteButton.dataset.entryId);
-    setMessage("clinical-chart-message", "Unos zubnog statusa je obrisan.");
-    resetClinicalChartForm();
-    await refreshClinicalChart();
   });
 
   document.getElementById("clinical-note-form").addEventListener("submit", async event => {
@@ -1922,15 +1674,8 @@ async function initializeClinicalWorkflows(patientId) {
 }
 
 async function initializeAdvancedWorkflows(patientId) {
-  document.getElementById("perio-date").value = today();
   document.getElementById("invoice-date").value = today();
 
-  async function refreshPlans() {
-    renderPlans(await window.DrRosaApi.getTreatmentPlans(patientId));
-  }
-  async function refreshPerio() {
-    renderPerioCharts(await window.DrRosaApi.getPerioCharts(patientId));
-  }
   async function refreshInvoices() {
     renderInvoices(await window.DrRosaApi.getInvoices(patientId));
     renderLedger(await window.DrRosaApi.getPatientLedger(patientId));
@@ -1939,103 +1684,8 @@ async function initializeAdvancedWorkflows(patientId) {
     renderInsuranceClaims(await window.DrRosaApi.getInsuranceClaims(patientId));
   }
 
-  renderPlanItemsDraft();
-  renderPerioDraft();
   renderInvoiceDraft();
-  await Promise.all([refreshPlans(), refreshPerio(), refreshInvoices(), refreshClaims()]);
-
-  document.getElementById("add-plan-item-btn").addEventListener("click", () => {
-    const procedureName = document.getElementById("plan-item-procedure").value.trim();
-    if (!procedureName) return setMessage("treatment-plan-message", "Unesite proceduru.", true);
-    planItemsDraft.push({
-      phase: Number(document.getElementById("plan-item-phase").value || 1),
-      toothNumber: document.getElementById("plan-item-tooth").value,
-      procedureName,
-      description: document.getElementById("plan-item-description").value,
-      quantity: 1,
-      unitPrice: Number(document.getElementById("plan-item-price").value || 0),
-      discount: 0
-    });
-    renderPlanItemsDraft();
-  });
-  document.getElementById("plan-items-preview").addEventListener("click", event => {
-    const button = event.target.closest(".remove-plan-item");
-    if (!button) return;
-    planItemsDraft.splice(Number(button.dataset.index), 1);
-    renderPlanItemsDraft();
-  });
-  document.getElementById("treatment-plan-form").addEventListener("submit", async event => {
-    await runLockedFormSubmit(event, async () => {
-      if (planItemsDraft.length === 0) {
-        setMessage("treatment-plan-message", "Dodajte bar jednu stavku plana.", true);
-        return;
-      }
-      try {
-        await window.DrRosaApi.createTreatmentPlan(patientId, {
-          title: document.getElementById("plan-title").value || "Plan terapije",
-          status: document.getElementById("plan-status").value,
-          currency: "RSD",
-          items: planItemsDraft
-        });
-        planItemsDraft = [];
-        event.target.reset();
-        renderPlanItemsDraft();
-        await refreshPlans();
-        setMessage("treatment-plan-message", "Plan terapije je sačuvan.");
-      } catch (error) {
-        setMessage("treatment-plan-message", error.message || "Plan nije sačuvan.", true);
-      }
-    });
-  });
-  document.getElementById("treatment-plans-body").addEventListener("click", async event => {
-    const accept = event.target.closest(".accept-plan-btn");
-    if (!accept) return;
-    const signatureName = prompt("Ime i prezime za potpis plana:");
-    if (!signatureName) return;
-    await window.DrRosaApi.acceptTreatmentPlan(accept.dataset.planId, { signatureName, signatureData: signatureName });
-    await refreshPlans();
-  });
-
-  document.getElementById("add-perio-measurement-btn").addEventListener("click", () => {
-    const measurement = readPerioMeasurementForm();
-    if (!measurement) return setMessage("perio-message", "Unesite zub.", true);
-    perioMeasurementsDraft.push(measurement);
-    clearPerioMeasurementForm();
-    renderPerioDraft();
-    setMessage("perio-message", "Merenje je dodato na listu.");
-  });
-  document.getElementById("perio-measurements-preview").addEventListener("click", event => {
-    const button = event.target.closest(".remove-perio-item");
-    if (!button) return;
-    perioMeasurementsDraft.splice(Number(button.dataset.index), 1);
-    renderPerioDraft();
-  });
-  document.getElementById("perio-form").addEventListener("submit", async event => {
-    await runLockedFormSubmit(event, async () => {
-      const currentMeasurement = readPerioMeasurementForm();
-      if (currentMeasurement) {
-        perioMeasurementsDraft.push(currentMeasurement);
-      }
-      if (perioMeasurementsDraft.length === 0) {
-        setMessage("perio-message", "Dodajte bar jedno merenje.", true);
-        return;
-      }
-      try {
-        await window.DrRosaApi.createPerioChart(patientId, {
-          chartDate: document.getElementById("perio-date").value || today(),
-          measurements: perioMeasurementsDraft
-        });
-        perioMeasurementsDraft = [];
-        event.target.reset();
-        document.getElementById("perio-date").value = today();
-        renderPerioDraft();
-        await refreshPerio();
-        setMessage("perio-message", "Parodontalni nalaz je sačuvan.");
-      } catch (error) {
-        setMessage("perio-message", error.message || "Parodontalni nalaz nije sačuvan.", true);
-      }
-    });
-  });
+  await Promise.all([refreshInvoices(), refreshClaims()]);
 
   document.getElementById("add-invoice-item-btn").addEventListener("click", () => {
     const item = readInvoiceItemForm();

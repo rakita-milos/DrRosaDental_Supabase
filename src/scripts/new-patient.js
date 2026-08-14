@@ -26,6 +26,8 @@ async function requireAccess() {
 const form = document.getElementById("patient-form");
 const cancelBtn = document.getElementById("cancel-btn");
 const formMessage = document.getElementById("patient-form-message");
+const extraFieldsToggle = document.getElementById("toggle-patient-extra-fields");
+const extraFieldsPanel = document.getElementById("patient-extra-fields");
 const patientId = new URLSearchParams(window.location.search).get("patient");
 let initialConditionEditor;
 
@@ -42,6 +44,29 @@ function patientFullName(patient) {
 function setValue(id, value) {
   const element = document.getElementById(id);
   if (element) element.value = value || "";
+}
+
+function setExtraFieldsOpen(open) {
+  if (!extraFieldsToggle || !extraFieldsPanel) return;
+  extraFieldsPanel.hidden = !open;
+  extraFieldsToggle.setAttribute("aria-expanded", String(open));
+  extraFieldsToggle.textContent = open ? "Sakrij ostala polja" : "Prikaži ostala polja";
+}
+
+function hasAdditionalPatientDetails(patient, chartEntries = []) {
+  return Boolean(
+    patient.email ||
+    patient.emergencyContact ||
+    patient.emergency_contact ||
+    patient.allergies ||
+    patient.medicalHistory ||
+    patient.medical_history ||
+    patient.currentMedications ||
+    patient.current_medications ||
+    patient.previousTreatments ||
+    patient.previous_treatments ||
+    chartEntries.length
+  );
 }
 
 async function loadPatientForEdit() {
@@ -63,6 +88,7 @@ async function loadPatientForEdit() {
     setValue("medical-history", patient.medicalHistory || patient.medical_history);
     const chartEntries = await window.DrRosaApi.getClinicalChart(patientId);
     initialConditionEditor?.setEntries(window.DrRosaToothCondition.initialConditionsFromEntries(chartEntries));
+    setExtraFieldsOpen(hasAdditionalPatientDetails(patient, chartEntries));
   } catch (error) {
     alert(error.message || "Pacijent nije učitan.");
   }
@@ -121,6 +147,7 @@ form.addEventListener("submit", async (event) => {
     setFormMessage("Pacijent je sačuvan.", "success");
     form.reset();
     initialConditionEditor?.clear();
+    setExtraFieldsOpen(false);
   } catch (error) {
     alert(error.message || "Pacijent nije sačuvan. Proverite vezu sa serverom.");
   } finally {
@@ -131,6 +158,10 @@ form.addEventListener("submit", async (event) => {
       submitButton.textContent = submitText;
     }
   }
+});
+
+extraFieldsToggle?.addEventListener("click", () => {
+  setExtraFieldsOpen(extraFieldsPanel?.hidden);
 });
 
 cancelBtn.addEventListener("click", () => {
@@ -157,5 +188,6 @@ cancelBtn.addEventListener("click", () => {
         : null
     });
   }
+  setExtraFieldsOpen(false);
   await loadPatientForEdit();
 })();

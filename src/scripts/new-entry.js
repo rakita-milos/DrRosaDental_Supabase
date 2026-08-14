@@ -787,15 +787,43 @@ function paymentPartLabel(part) {
   return `${formatMoney(normalized.amount, normalized.currency)}${normalized.paymentMethod ? ` (${normalized.paymentMethod})` : ""}`;
 }
 
+function paymentPartAmountInVisitCurrency(part) {
+  const normalized = normalizedPaymentPart(part);
+  return currencyUtils
+    ? currencyUtils.convert(normalized.amount, normalized.currency, paymentCurrency())
+    : normalized.amount;
+}
+
+function remainingPaymentAmount({ excludeIndex = null } = {}) {
+  const total = currentVisitTotal();
+  const paid = paymentParts.reduce((sum, part, index) => {
+    if (excludeIndex !== null && index === excludeIndex) return sum;
+    return sum + Number(paymentPartAmountInVisitCurrency(part) || 0);
+  }, 0);
+  return Math.max(0, total - paid);
+}
+
+function paymentAmountForCurrency(amount, currency) {
+  return currencyUtils
+    ? currencyUtils.convert(amount, paymentCurrency(), currency)
+    : Number(amount || 0);
+}
+
+function suggestedPaymentPart({ currency = paymentCurrency() } = {}) {
+  const amount = paymentAmountForCurrency(remainingPaymentAmount(), currency);
+  return normalizedPaymentPart({
+    amount: amount > 0 ? amount.toFixed(2) : 0,
+    currency,
+    paymentMethod: "Gotovina",
+    paymentDate: todayInputDate()
+  });
+}
+
 function paymentSummary() {
   const total = currentVisitTotal();
   const currency = paymentCurrency();
   const paid = paymentParts.reduce((sum, part) => {
-    const normalized = normalizedPaymentPart(part);
-    const converted = currencyUtils
-      ? currencyUtils.convert(normalized.amount, normalized.currency, currency)
-      : normalized.amount;
-    return sum + Number(converted || 0);
+    return sum + Number(paymentPartAmountInVisitCurrency(part) || 0);
   }, 0);
   const clampedPaid = total > 0 ? Math.min(paid, total) : paid;
   const debt = Math.max(0, total - clampedPaid);
@@ -847,7 +875,7 @@ function renderPaymentParts() {
         </label>
         <label>
           Valuta
-          <select class="payment-part-currency">${currencyOptions}</select>
+          <select class="payment-part-currency" data-previous-currency="${escapeHtml(normalized.currency)}">${currencyOptions}</select>
         </label>
         <label>
           Nacin
@@ -866,13 +894,31 @@ function renderPaymentParts() {
 
   inputs.paymentPartsList.querySelectorAll(".payment-part-row").forEach(row => {
     const index = Number(row.dataset.paymentIndex);
+    const amountInput = row.querySelector(".payment-part-amount");
+    const currencySelect = row.querySelector(".payment-part-currency");
+    const methodSelect = row.querySelector(".payment-part-method");
+    const dateInput = row.querySelector(".payment-part-date");
     const updatePart = () => {
       paymentParts[index] = paymentPartFromRow(row);
       updatePaymentCalculation({ render: false });
       updatePreview();
     };
-    row.querySelectorAll("input, select").forEach(input => input.addEventListener("input", updatePart));
-    row.querySelectorAll("select, input[type='date']").forEach(input => input.addEventListener("change", updatePart));
+    amountInput?.addEventListener("input", updatePart);
+    currencySelect?.addEventListener("change", () => {
+      const previousCurrency = currencySelect.dataset.previousCurrency || paymentParts[index]?.currency || paymentCurrency();
+      const nextCurrency = currencySelect.value || paymentCurrency();
+      const amount = Number(amountInput?.value || 0);
+      if (previousCurrency !== nextCurrency && amountInput && amount > 0) {
+        const converted = currencyUtils
+          ? currencyUtils.convert(amount, previousCurrency, nextCurrency)
+          : amount;
+        amountInput.value = converted > 0 ? converted.toFixed(2) : "";
+      }
+      currencySelect.dataset.previousCurrency = nextCurrency;
+      updatePart();
+    });
+    methodSelect?.addEventListener("change", updatePart);
+    dateInput?.addEventListener("change", updatePart);
     row.querySelector(".payment-part-remove")?.addEventListener("click", () => {
       paymentParts.splice(index, 1);
       updatePaymentCalculation();
@@ -1527,7 +1573,7 @@ inputs.totalAmount?.addEventListener("input", () => {
 
 inputs.addPaymentPart?.addEventListener("click", () => {
   syncPaymentPartsFromDom();
-  paymentParts.push(normalizedPaymentPart({ currency: paymentCurrency() }));
+  paymentParts.push(suggestedPaymentPart({ currency: paymentCurrency() }));
   updatePaymentCalculation();
   updatePreview();
 });

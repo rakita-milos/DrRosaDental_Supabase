@@ -174,64 +174,6 @@
           <div id="patient-initial-condition-editor"></div>
         </div>
 
-        <div class="patient-tab-panel" id="clinical-chart-card" data-patient-panel-group="teeth">
-          <form id="clinical-chart-form" class="admin-codebook-form">
-            <input id="clinical-chart-entry-id" type="hidden" />
-            <div class="input-grid">
-              <label><span>Zub <span class="required-marker">*</span></span>
-                <input id="clinical-tooth" placeholder="16" required />
-              </label>
-              <label>Povrsine
-                <input id="clinical-surfaces" placeholder="MO, DO, B" />
-              </label>
-              <label>CDT kod
-                <input id="clinical-cdt" placeholder="D2391" />
-              </label>
-              <label>ADA kod
-                <input id="clinical-ada" placeholder="2391" />
-              </label>
-              <label>Status
-                <select id="clinical-status">
-                  <option value="planned">Planirano</option>
-                  <option value="in_progress">U toku</option>
-                  <option value="completed">Završeno</option>
-                  <option value="watch">Praćenje</option>
-                  <option value="referred">Upućen</option>
-                </select>
-              </label>
-              <label>Faza plana
-                <input id="clinical-phase" type="number" min="1" value="1" />
-              </label>
-              <label>Cena
-                <input id="clinical-price" type="number" min="0" step="0.01" />
-              </label>
-              <label>Valuta
-                <select id="clinical-currency">
-                  <option value="RSD">RSD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="USD">USD</option>
-                </select>
-              </label>
-              <label>Dijagnoza
-                <input id="clinical-diagnosis" />
-              </label>
-              <label>Procedura
-                <input id="clinical-procedure-code" />
-              </label>
-            </div>
-            <label>Napomena
-              <textarea id="clinical-notes" rows="3"></textarea>
-            </label>
-            <div id="clinical-price-preview" class="info-card">RSD iznos: 0.00 RSD</div>
-            <div class="form-actions">
-              <button class="primary-btn" type="submit">Sačuvaj zubni status</button>
-              <button class="secondary-btn" id="cancel-clinical-chart-edit-btn" type="button" hidden>Odustani od izmene</button>
-            </div>
-            <p id="clinical-chart-message" class="form-alert" role="status"></p>
-          </form>
-          <div class="table-wrap"><table><thead><tr><th>Zub</th><th>Kodovi</th><th>Status</th><th>Dijagnoza</th><th>Akcije</th></tr></thead><tbody id="clinical-chart-body"></tbody></table></div>
-        </div>
-
         <div class="patient-tab-panel" id="clinical-notes-card" data-patient-panel-group="clinical">
           <form id="clinical-note-form" class="admin-codebook-form">
             <input id="clinical-note-id" type="hidden" />
@@ -412,101 +354,6 @@
               <p id="imaging-viewer-empty" class="empty-row" hidden>Pregled nije dostupan za ovaj tip fajla. Koristite Preuzmi.</p>
             </div>
           </div>
-        </div>
-
-        <div class="patient-tab-panel" id="plans-card" data-patient-panel-group="finance">
-          <form id="treatment-plan-form" class="admin-codebook-form">
-            <input id="plan-id" type="hidden" />
-            <div class="input-grid">
-              <label>
-                Naziv plana
-                <input id="plan-title" placeholder="Plan terapije" />
-              </label>
-              <label>
-                Status
-                <select id="plan-status">
-                  <option value="draft">Nacrt</option>
-                  <option value="presented">Prezentovan</option>
-                  <option value="accepted">Prihvaćen</option>
-                  <option value="declined">Odbijen</option>
-                  <option value="completed">Završen</option>
-                </select>
-              </label>
-              <label>
-                Faza
-                <input id="plan-item-phase" type="number" min="1" value="1" />
-              </label>
-              <label>
-                Zub
-                <input id="plan-item-tooth" placeholder="npr. 16" />
-              </label>
-              <label>
-                <span>Procedura <span class="required-marker">*</span></span>
-                <input id="plan-item-procedure" placeholder="Implant" />
-              </label>
-              <label>
-                Cena
-                <input id="plan-item-price" type="number" min="0" step="0.01" />
-              </label>
-              <label class="full-width">
-                Opis
-                <textarea id="plan-item-description" rows="2"></textarea>
-              </label>
-            </div>
-            <div class="form-actions">
-              <button class="secondary-btn" id="add-plan-item-btn" type="button">Dodaj stavku</button>
-              <button class="primary-btn" type="submit">Sačuvaj plan</button>
-            </div>
-            <div id="plan-items-preview" class="info-card"></div>
-            <p id="treatment-plan-message" class="form-alert" role="status"></p>
-          </form>
-          <div class="table-wrap"><table><thead><tr><th>Plan</th><th>Status</th><th>Ukupno</th><th>Akcije</th></tr></thead><tbody id="treatment-plans-body"></tbody></table></div>
-        </div>
-
-        <div class="patient-tab-panel" id="perio-card" data-patient-panel-group="teeth">
-          <form id="perio-form" class="admin-codebook-form">
-            <div class="input-grid">
-              <label>
-                Datum
-                <input id="perio-date" type="date" />
-              </label>
-              <label>
-                <span>Zub <span class="required-marker">*</span></span>
-                <input id="perio-tooth" placeholder="16" />
-              </label>
-              <label>
-                Pozicija
-                <select id="perio-site">
-                  <option value="MB">MB</option><option value="B">B</option><option value="DB">DB</option>
-                  <option value="ML">ML</option><option value="L">L</option><option value="DL">DL</option>
-                </select>
-              </label>
-              <label>
-                Dzep mm
-                <input id="perio-pocket" type="number" min="0" max="15" />
-              </label>
-              <label>
-                Recesija mm
-                <input id="perio-recession" type="number" min="0" max="15" />
-              </label>
-              <label>
-                Mobilnost
-                <input id="perio-mobility" type="number" min="0" max="3" />
-              </label>
-              <label>
-                Furkacija
-                <input id="perio-furcation" type="number" min="0" max="3" />
-              </label>
-              <label class="checkbox-row"><input id="perio-bleeding" type="checkbox" /> Krvarenje</label>
-            </div>
-            <div class="form-actions">
-              <button class="secondary-btn" id="add-perio-measurement-btn" type="button">Dodaj merenje</button>
-              <button class="primary-btn" type="submit">Sačuvaj parodontalni nalaz</button>
-            </div>
-            <div id="perio-measurements-preview" class="info-card"></div>
-            <p id="perio-message" class="form-alert" role="status"></p>
-          </form>
-          <div class="table-wrap"><table><thead><tr><th>Datum</th><th>Merenja</th><th>Rizik</th></tr></thead><tbody id="perio-charts-body"></tbody></table></div>
         </div>
 
         <div class="patient-tab-panel" id="invoices-card" data-patient-panel-group="finance">
@@ -693,6 +540,6 @@
   <script src="../scripts/tooth-condition-editor.js"></script>
   <script src="../scripts/treatment-history.js"></script>
   <script src="../scripts/appointment-modal.js?v=patient-scheduler-20260804"></script>
-  <script src="../scripts/patient-dashboard.js?v=payment-history-table-20260812"></script>
+  <script src="../scripts/patient-dashboard.js?v=patient-card-simplified-20260815"></script>
 </body>
 </html>

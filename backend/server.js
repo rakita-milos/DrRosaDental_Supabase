@@ -2564,8 +2564,8 @@ function patientPayloadFromBody(body) {
   return {
     firstName: cleanText(body.first_name, { max: 80, required: true }),
     lastName: cleanText(body.last_name, { max: 80, required: true }),
-    dateOfBirth: nullable(cleanText(body.date_of_birth, { max: 20 })),
-    gender: nullable(cleanText(body.gender, { max: 30 })),
+    dateOfBirth: cleanText(body.date_of_birth, { max: 20, required: true }),
+    gender: cleanText(body.gender, { max: 30, required: true }),
     email: nullable(cleanText(body.email, { max: 255 })),
     phone: nullable(cleanText(body.phone, { max: 50 })),
     address: nullable(cleanText(body.address, { max: 255 })),
@@ -2768,8 +2768,8 @@ app.get('/api/patients/:id', authenticateToken, requirePermission('patients:read
 app.post('/api/patients', authenticateToken, requirePermission('patients:write'), validateBody(patientCreateSchema), async (req, res) => {
   try {
     const patientPayload = patientPayloadFromBody(req.body);
-    if (!patientPayload.firstName || !patientPayload.lastName) {
-      return res.status(400).json({ error: 'First name and last name required' });
+    if (!patientPayload.firstName || !patientPayload.lastName || !patientPayload.dateOfBirth || !patientPayload.gender) {
+      return res.status(400).json({ error: 'Ime, prezime, datum rođenja i pol su obavezni.' });
     }
     const duplicate = await patientsRepo.findDuplicatePatient(patientPayload);
     if (duplicate) {
@@ -2796,8 +2796,8 @@ app.put('/api/patients/:id', authenticateToken, requirePermission('patients:writ
 
     const data = { ...current, ...req.body };
     const patientPayload = patientPayloadFromBody(data);
-    if (!patientPayload.firstName || !patientPayload.lastName) {
-      return res.status(400).json({ error: 'First name and last name required' });
+    if (!patientPayload.firstName || !patientPayload.lastName || !patientPayload.dateOfBirth || !patientPayload.gender) {
+      return res.status(400).json({ error: 'Ime, prezime, datum rođenja i pol su obavezni.' });
     }
 
     res.json(await patientsRepo.updatePatient(patientId, patientPayload));
