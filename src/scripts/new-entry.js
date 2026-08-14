@@ -110,6 +110,7 @@ let totalAmountTouched = false;
 let alertTimeout;
 const procedureCatalog = window.DrRosaProcedureCatalog;
 const currencyUtils = window.DrRosaCurrencyUtils;
+const PAYMENT_ROUNDING_TOLERANCE_RSD = 1;
 
 const urlParams = new URLSearchParams(window.location.search);
 const patientIdParam = urlParams.get("patientId") || urlParams.get("id");
@@ -809,6 +810,12 @@ function paymentAmountForCurrency(amount, currency) {
     : Number(amount || 0);
 }
 
+function paymentRoundingTolerance() {
+  return currencyUtils
+    ? currencyUtils.convert(PAYMENT_ROUNDING_TOLERANCE_RSD, "RSD", paymentCurrency())
+    : PAYMENT_ROUNDING_TOLERANCE_RSD;
+}
+
 function suggestedPaymentPart({ currency = paymentCurrency() } = {}) {
   const amount = paymentAmountForCurrency(remainingPaymentAmount(), currency);
   return normalizedPaymentPart({
@@ -826,15 +833,17 @@ function paymentSummary() {
     return sum + Number(paymentPartAmountInVisitCurrency(part) || 0);
   }, 0);
   const clampedPaid = total > 0 ? Math.min(paid, total) : paid;
-  const debt = Math.max(0, total - clampedPaid);
+  const rawDebt = Math.max(0, total - clampedPaid);
+  const debt = rawDebt <= paymentRoundingTolerance() ? 0 : rawDebt;
+  const effectivePaid = debt <= 0 && total > 0 ? total : clampedPaid;
   const status = total > 0
-    ? clampedPaid <= 0
+    ? effectivePaid <= 0
       ? "Dugovanje"
-      : clampedPaid + 0.01 >= total
+      : debt <= 0
         ? "Placeno"
         : "Delimicno"
     : inputs.paymentStatus.value;
-  return { total, paid: clampedPaid, rawPaid: paid, debt, status, currency };
+  return { total, paid: effectivePaid, rawPaid: paid, debt, status, currency };
 }
 
 function paymentPartFromRow(row) {

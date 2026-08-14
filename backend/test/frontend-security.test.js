@@ -286,10 +286,14 @@ test('new entry syncs payment rows before adding another payment', () => {
 });
 
 test('new entry suggests remaining payment amount and converts row currency changes', () => {
-  assert.match(newEntryPageSource, /new-entry\.js\?v=payment-remaining-autofill-20260815/);
+  assert.match(newEntryPageSource, /new-entry\.js\?v=payment-rounding-tolerance-20260815/);
   assert.match(newEntrySource, /function paymentPartAmountInVisitCurrency\(part\)/);
   assert.match(newEntrySource, /function remainingPaymentAmount\(\{ excludeIndex = null \} = \{\}\)/);
   assert.match(newEntrySource, /function suggestedPaymentPart\(\{ currency = paymentCurrency\(\) \} = \{\}\)/);
+  assert.match(newEntrySource, /const PAYMENT_ROUNDING_TOLERANCE_RSD = 1/);
+  assert.match(newEntrySource, /function paymentRoundingTolerance\(\)/);
+  assert.match(newEntrySource, /const debt = rawDebt <= paymentRoundingTolerance\(\) \? 0 : rawDebt/);
+  assert.match(newEntrySource, /const effectivePaid = debt <= 0 && total > 0 \? total : clampedPaid/);
   assert.match(newEntrySource, /paymentParts\.push\(suggestedPaymentPart\(\{ currency: paymentCurrency\(\) \}\)\)/);
   assert.match(newEntrySource, /data-previous-currency="\$\{escapeHtml\(normalized\.currency\)\}"/);
   assert.match(newEntrySource, /currencySelect\?\.addEventListener\("change", \(\) => \{/);

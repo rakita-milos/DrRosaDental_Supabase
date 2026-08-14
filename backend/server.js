@@ -1166,6 +1166,8 @@ function roundMoney(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
 
+const PAYMENT_ROUNDING_TOLERANCE_RSD = 1;
+
 async function exchangeRateToRsd(currency) {
   const normalized = normalizeCurrency(currency);
   if (normalized === 'RSD') return 1;
@@ -1219,17 +1221,23 @@ async function calculatePaymentSummary({ amount, currency, paymentParts, payment
   const totalRsd = total * recordRate;
   const paidRsd = paymentParts.reduce((sum, part) => sum + Number(part.amountRsd || 0), 0);
   const paidInRecordCurrency = roundMoney(recordRate > 0 ? paidRsd / recordRate : paidRsd);
-  const debtInRecordCurrency = roundMoney(Math.max(0, total - paidInRecordCurrency));
+  const debtRsd = Math.max(0, totalRsd - paidRsd);
+  const debtInRecordCurrency = debtRsd <= PAYMENT_ROUNDING_TOLERANCE_RSD
+    ? 0
+    : roundMoney(Math.max(0, total - paidInRecordCurrency));
+  const effectivePaidInRecordCurrency = debtInRecordCurrency <= 0 && total > 0
+    ? total
+    : paidInRecordCurrency;
   const status = total > 0
     ? paidRsd <= 0
       ? 'Dugovanje'
-      : paidRsd + 0.01 >= totalRsd
+      : debtRsd <= PAYMENT_ROUNDING_TOLERANCE_RSD
         ? 'PlaÄ‡eno'
         : 'DelimiÄno'
     : normalizePaymentStatus(paymentStatus);
   return {
     amountDue: debtInRecordCurrency,
-    amountPaid: Math.min(total || paidInRecordCurrency, paidInRecordCurrency),
+    amountPaid: Math.min(total || effectivePaidInRecordCurrency, effectivePaidInRecordCurrency),
     paymentStatus: status
   };
 }

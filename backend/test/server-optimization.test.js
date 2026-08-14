@@ -116,6 +116,15 @@ test('record debt payment endpoint appends one payment part without replacing hi
   assert.doesNotMatch(appendPaymentRoute, /recordsPaymentsRepo\.upsertPayment/);
 });
 
+test('record payment summary ignores sub-dinar currency rounding residue', () => {
+  assert.match(serverSource, /const PAYMENT_ROUNDING_TOLERANCE_RSD = 1/);
+  assert.match(serverSource, /const debtRsd = Math\.max\(0, totalRsd - paidRsd\)/);
+  assert.match(serverSource, /debtRsd <= PAYMENT_ROUNDING_TOLERANCE_RSD[\s\S]*\? 0[\s\S]*: roundMoney\(Math\.max\(0, total - paidInRecordCurrency\)\)/);
+  assert.match(serverSource, /const effectivePaidInRecordCurrency = debtInRecordCurrency <= 0 && total > 0[\s\S]*\? total[\s\S]*: paidInRecordCurrency/);
+  assert.match(serverSource, /debtRsd <= PAYMENT_ROUNDING_TOLERANCE_RSD[\s\S]*\? 'Pla/);
+  assert.match(serverSource, /amountPaid: Math\.min\(total \|\| effectivePaidInRecordCurrency, effectivePaidInRecordCurrency\)/);
+});
+
 test('patient summaries endpoint avoids hydrating full visit records for all-records page', () => {
   const summariesRoute = serverSource.match(/app\.get\('\/api\/patient-summaries'[\s\S]*?\n\}\);/)?.[0] || '';
   assert.match(serverSource, /app\.get\('\/api\/patient-summaries'/);
