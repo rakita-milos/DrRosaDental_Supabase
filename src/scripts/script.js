@@ -102,6 +102,37 @@ function newEntryUrlFromAppointment(appointment) {
   return `new-entry.html?${params.toString()}`;
 }
 
+function recordId(record) {
+  return record.recordId || record.record_id || record.id;
+}
+
+function patientDashboardUrlFromRecord(record) {
+  const patientId = record.patientId || record.patient_id;
+  if (patientId) return `patient-dashboard.html?patientId=${encodeURIComponent(patientId)}`;
+  return `patient-dashboard.html?patient=${encodeURIComponent(record.patient || "-")}`;
+}
+
+function debtPaymentUrlFromRecord(record) {
+  const id = recordId(record);
+  return id
+    ? `new-entry.html?record=${encodeURIComponent(id)}&payment=debt#entry-details-section`
+    : patientDashboardUrlFromRecord(record);
+}
+
+function formatCurrencyAmounts(amounts) {
+  const entries = Object.entries(amounts).filter(([, amount]) => Number(amount || 0) > 0);
+  if (!entries.length) return "0.00 RSD";
+  return entries.map(([currency, amount]) => window.DrRosaCurrencyUtils
+    ? window.DrRosaCurrencyUtils.formatMoney(amount, currency)
+    : `${Number(amount || 0).toFixed(2)} ${currency}`).join(" / ");
+}
+
+function amountInRsd(amount, currency) {
+  return window.DrRosaCurrencyUtils
+    ? window.DrRosaCurrencyUtils.convert(amount, currency, "RSD")
+    : Number(amount || 0);
+}
+
 function patientDebtSummary(records, appointment) {
   const patientId = appointmentPatientId(appointment);
   const name = appointmentPatientName(appointment);
@@ -113,11 +144,8 @@ function patientDebtSummary(records, appointment) {
     const currency = record.currency || "RSD";
     debts[currency] = (debts[currency] || 0) + Number(record.amountDue || record.amount_due || 0);
   });
-  const entries = Object.entries(debts).filter(([, amount]) => amount > 0);
-  if (!entries.length) return "";
-  return entries.map(([currency, amount]) => window.DrRosaCurrencyUtils
-    ? window.DrRosaCurrencyUtils.formatMoney(amount, currency)
-    : `${amount.toFixed(2)} ${currency}`).join(" / ");
+  const summary = formatCurrencyAmounts(debts);
+  return summary === "0.00 RSD" ? "" : summary;
 }
 
 function renderDueSummary(records) {
@@ -125,6 +153,63 @@ function renderDueSummary(records) {
   const debtorsCountEl = document.getElementById("debtors-count");
   if (debtorsCountEl) debtorsCountEl.textContent = uniqueDebtors;
 }
+
+function dashboardDebtorRows(records) {
+  const debtors = new Map();
+  records.filter(paymentIsDebt).forEach(record => {
+    const patientId = record.patientId || record.patient_id;
+    const name = record.patient || "-";
+    const key = patientId ? `id:${patientId}` : `name:${name}`;
+    const currency = record.currency || "RSD";
+    const amount = Number(record.amountDue || record.amount_due || 0);
+    const amountRsd = amountInRsd(amount, currency);
+    if (!debtors.has(key)) {
+      debtors.set(key, {
+        patient: name,
+        amounts: {},
+        totalRsd: 0,
+        largestDebtRecord: record,
+        largestDebtRsd: amountRsd
+      });
+    }
+    const debtor = debtors.get(key);
+    debtor.amounts[currency] = (debtor.amounts[currency] || 0) + amount;
+    debtor.totalRsd += amountRsd;
+    if (amountRsd > debtor.largestDebtRsd) {
+      debtor.largestDebtRecord = record;
+      debtor.largestDebtRsd = amountRsd;
+    }
+  });
+  return Array.from(debtors.values())
+    .sort((a, b) => b.totalRsd - a.totalRsd)
+    .slice(0, 5);
+}
+
+function renderDashboardDebtors(records) {
+  const container = document.getElementById("dashboard-debtors-list");
+  if (!container) return;
+  const debtors = dashboardDebtorRows(records);
+  if (!debtors.length) {
+    container.innerHTML = `
+      <div class="dashboard-empty-state">
+        <strong>Nema otvorenih dugovanja.</strong>
+        <span>Sve evidentirane posete su izmirene.</span>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = debtors.map(debtor => `
+    <article class="dashboard-debtor-row">
+      <a class="dashboard-debtor-main" href="${debtPaymentUrlFromRecord(debtor.largestDebtRecord)}">
+        <strong>${window.DrRosaSecurity.escapeHtml(debtor.patient)}</strong>
+        <span>${window.DrRosaSecurity.escapeHtml(formatCurrencyAmounts(debtor.amounts))}</span>
+      </a>
+      <a class="secondary-btn" href="${debtPaymentUrlFromRecord(debtor.largestDebtRecord)}">Dodaj uplatu</a>
+    </article>
+  `).join("");
+}
+
 
 function setCount(id, value) {
   const element = document.getElementById(id);
@@ -322,10 +407,12 @@ function renderDashboardAlerts({ patients, records, appointments }) {
     renderDashboardStats({ patients, appointments, records, chairs });
     renderDueSummary(records);
     renderTodaySchedule(appointments, records);
+    renderDashboardDebtors(records);
     renderDashboardAlerts({ patients, records, appointments });
   } catch (error) {
     renderDashboardStats({ patients: [], appointments: [], records: [], chairs: [] });
     renderTodaySchedule([], []);
+    renderDashboardDebtors([]);
     renderDashboardAlerts({ patients: [], appointments: [], records: [] });
     console.error("Dashboard load error:", error);
   }

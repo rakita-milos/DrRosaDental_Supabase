@@ -539,6 +539,25 @@ test('dashboard primary KPI links are part of the patient evidence hero', () => 
   assert.strictEqual((indexPageSource.match(/id="debtors-count"/g) || []).length, 1);
 });
 
+test('dashboard shows debtors above priorities with direct payment actions', () => {
+  const debtorsPanelIndex = indexPageSource.indexOf('id="dashboard-debtors-list"');
+  const prioritiesIndex = indexPageSource.indexOf('<p class="eyebrow">Prioriteti</p>');
+  assert.ok(debtorsPanelIndex > -1);
+  assert.ok(prioritiesIndex > debtorsPanelIndex);
+  assert.match(indexPageSource, /class="dashboard-side-stack"/);
+  assert.match(indexPageSource, /script\.js\?v=dashboard-debtors-20260815/);
+  assert.match(dashboardSource, /function dashboardDebtorRows\(records\)/);
+  assert.match(dashboardSource, /records\.filter\(paymentIsDebt\)/);
+  assert.match(dashboardSource, /function renderDashboardDebtors\(records\)/);
+  assert.match(dashboardSource, /renderDashboardDebtors\(records\)/);
+  assert.match(dashboardSource, /new-entry\.html\?record=\$\{encodeURIComponent\(id\)\}&payment=debt#entry-details-section/);
+  assert.match(dashboardSource, />Dodaj uplatu<\/a>/);
+  assert.match(dashboardSource, /window\.DrRosaSecurity\.escapeHtml\(debtor\.patient\)/);
+  assert.match(dashboardSource, /window\.DrRosaSecurity\.escapeHtml\(formatCurrencyAmounts\(debtor\.amounts\)\)/);
+  assert.match(stylesSource, /\.dashboard-debtors-list/);
+  assert.match(stylesSource, /\.dashboard-debtor-row/);
+});
+
 test('form option and autocomplete attributes use attribute escaping', () => {
   assert.match(allRecordsSource, /value="\$\{window\.DrRosaSecurity\.escapeAttribute\(value\)\}"/);
   assert.match(newEntrySource, /const escapeAttribute = window\.DrRosaSecurity\.escapeAttribute/);

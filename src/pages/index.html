@@ -107,15 +107,27 @@
           <div id="today-schedule-list" class="today-schedule-list"></div>
         </section>
 
-        <section class="list-section dashboard-alert-panel">
-          <div class="section-header">
-            <div>
-              <p class="eyebrow">Prioriteti</p>
-              <h2>Upozorenja za danas</h2>
+        <div class="dashboard-side-stack">
+          <section class="list-section dashboard-debtors-panel">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Naplata</p>
+                <h2>Duznici</h2>
+              </div>
             </div>
-          </div>
-          <div id="dashboard-alert-list" class="dashboard-alert-list"></div>
-        </section>
+            <div id="dashboard-debtors-list" class="dashboard-debtors-list"></div>
+          </section>
+
+          <section class="list-section dashboard-alert-panel">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Prioriteti</p>
+                <h2>Upozorenja za danas</h2>
+              </div>
+            </div>
+            <div id="dashboard-alert-list" class="dashboard-alert-list"></div>
+          </section>
+        </div>
       </section>
     </main>
   </div>
@@ -123,6 +135,6 @@
   <script src="../scripts/security-utils.js"></script>
   <script src="../scripts/api.js"></script>
   <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
-  <script src="../scripts/script.js"></script>
+  <script src="../scripts/script.js?v=dashboard-debtors-20260815"></script>
 </body>
 </html>
