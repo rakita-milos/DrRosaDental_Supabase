@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sve evidencije | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css?v=records-summary-20260812" />
+  <link rel="stylesheet" href="../styles/styles.css?v=records-advanced-search-20260814" />
 </head>
 <body>
   <div class="app-shell">
@@ -46,45 +46,52 @@
           </div>
         </div>
         <div class="records-filter-panel">
-          <div class="filter-actions">
-            <select id="search-input">
-              <option value="">Svi pacijenti</option>
-            </select>
-            <select id="status-filter">
+          <div class="records-primary-search">
+            <div class="records-patient-search">
+              <select id="search-input" data-searchable="true" data-search-placeholder="Pretraži pacijenta...">
+                <option value="">Svi pacijenti</option>
+              </select>
+            </div>
+            <button id="advanced-search-toggle" class="secondary-btn records-advanced-toggle" type="button" aria-expanded="false" aria-controls="advanced-search-panel">Prikaži ostalu pretragu</button>
+          </div>
+          <div id="advanced-search-panel" class="records-advanced-search" hidden>
+            <div class="filter-actions">
+              <select id="status-filter">
               <option value="">Svi statusi</option>
               <option value="Zakazano">Zakazano</option>
               <option value="U toku">U toku</option>
               <option value="Završeno">Završeno</option>
               <option value="Otkazano">Otkazano</option>
             </select>
-            <select id="doctor-filter">
+              <select id="doctor-filter">
               <option value="">Svi doktori</option>
             </select>
-            <input id="date-filter" type="date" placeholder="Odaberi datum" />
-            <select id="period-filter">
+              <input id="date-filter" type="date" placeholder="Odaberi datum" />
+              <select id="period-filter">
               <option value="">Svi periodi</option>
               <option value="day">Danas</option>
               <option value="week">Ova nedelja</option>
               <option value="month">Ovaj mesec</option>
             </select>
-            <select id="activity-filter">
+              <select id="activity-filter">
               <option value="">Sve delatnosti</option>
             </select>
-            <select id="procedure-filter" disabled>
+              <select id="procedure-filter" disabled>
               <option value="">Prvo odaberi delatnost</option>
             </select>
-            <select id="payment-filter">
+              <select id="payment-filter">
               <option value="">Sva plaćanja</option>
               <option value="Plaćeno">Plaćeno</option>
               <option value="Dugovanje">Dugovanje</option>
               <option value="Delimično">Delimično</option>
               <option value="debtors">Dužnici</option>
             </select>
-            <select id="appointment-filter">
+              <select id="appointment-filter">
               <option value="">Svi termini</option>
               <option value="has_upcoming">Ima termin</option>
               <option value="no_upcoming">Bez sledeceg termina</option>
             </select>
+            </div>
           </div>
           <div class="export-actions records-export-actions">
             <button id="export-excel-btn" class="secondary-btn" type="button">Excel</button>
@@ -119,6 +126,6 @@
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/export-utils.js"></script>
   <script src="../scripts/procedure-catalog.js"></script>
-  <script src="../scripts/all-records.js?v=records-summary-20260812"></script>
+  <script src="../scripts/all-records.js?v=records-advanced-search-20260814"></script>
 </body>
 </html>

@@ -5079,6 +5079,33 @@ td:nth-child(5) {
   display: block;
 }
 
+.custom-select-search-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;
+  padding: 10px;
+  border-bottom: 1px solid #e4edf5;
+  background: white;
+}
+
+.custom-select-search-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #cdddea;
+  border-radius: 10px;
+  background: #f8fbff;
+  color: #17212b;
+  font: inherit;
+  line-height: 1.2;
+}
+
+.custom-select-search-input:focus-visible {
+  outline: 3px solid rgba(24, 145, 240, 0.18);
+  border-color: #1891f0;
+}
+
 .custom-select-option {
   display: block;
   width: 100%;
@@ -5110,6 +5137,20 @@ td:nth-child(5) {
   cursor: not-allowed;
   color: #95a3b3;
   background: #f7f9fb;
+}
+
+.custom-select-option[hidden],
+.custom-select-empty[hidden] {
+  display: none;
+}
+
+.custom-select-empty {
+  display: block;
+  padding: 14px;
+  color: #6b7c8f;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  text-align: center;
 }
 
 .patient-autocomplete-field {
@@ -6017,6 +6058,26 @@ td:nth-child(5) {
   margin-bottom: 22px;
 }
 
+.records-primary-search {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.records-patient-search {
+  min-width: 0;
+}
+
+.records-advanced-toggle {
+  min-height: 52px;
+  white-space: nowrap;
+}
+
+.records-advanced-search[hidden] {
+  display: none;
+}
+
 .records-filter-panel .filter-actions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -6514,6 +6575,15 @@ td:nth-child(5) {
   .records-filter-panel,
   .filter-actions {
     min-width: 0;
+  }
+
+  .records-primary-search {
+    grid-template-columns: 1fr;
+  }
+
+  .records-advanced-toggle {
+    width: 100%;
+    white-space: normal;
   }
 
   .filter-actions {

@@ -59,6 +59,9 @@ test("page objects expose core elements for every application page", async ({ pa
   const allRecords = new AllRecordsPage(page);
   await allRecords.goto();
   await allRecords.expectCoreElements();
+  await allRecords.expectSearchablePatientDropdown(fullName);
+  await allRecords.expectAdvancedSearchVisible();
+  await allRecords.expectAdvancedSearchResetPreservesPatient(fullName);
 
   const patientDashboard = new PatientDashboardPage(page);
   await patientDashboard.goto(fullName);

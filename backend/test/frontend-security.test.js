@@ -29,7 +29,7 @@ test('shared frontend security helpers escape text and attributes', () => {
   assert.match(securitySource, /function escapeHtml\(value\)/);
   assert.match(securitySource, /function escapeAttribute\(value\)/);
   assert.match(securitySource, /window\.DrRosaSecurity = \{/);
-  assert.match(apiSource, /const \{ escapeHtml \} = window\.DrRosaSecurity/);
+  assert.match(apiSource, /const \{ escapeHtml, escapeAttribute \} = window\.DrRosaSecurity/);
 });
 
 test('global notifications do not replay old Google sync toasts on app open', () => {
@@ -88,6 +88,16 @@ test('all records doctor filter is populated from the doctors reference list', (
   assert.match(allRecordsSource, /doctorFilter\.innerHTML = option\("", "Svi doktori"\) \+ doctors\.map/);
   assert.doesNotMatch(allRecordsPageSource, /<option value="Dr Novak">/);
   assert.doesNotMatch(allRecordsPageSource, /<option value="Dr Horvat">/);
+});
+
+test('all records patient dropdown supports searchable custom select options', () => {
+  assert.match(allRecordsPageSource, /<select id="search-input"[^>]*data-searchable="true"/);
+  assert.match(apiSource, /function foldSearchText\(value\)/);
+  assert.match(apiSource, /function filterSelectOptions\(wrap, term\)/);
+  assert.match(apiSource, /custom-select-search-input/);
+  assert.match(apiSource, /custom-select-empty/);
+  assert.match(stylesSource, /\.custom-select-search-input/);
+  assert.match(stylesSource, /\.custom-select-empty/);
 });
 
 test('shared API caches reference dropdown data and invalidates it after admin changes', () => {

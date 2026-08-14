@@ -9,6 +9,9 @@ class AllRecordsPage {
     this.paymentFilter = page.locator("#payment-filter");
     this.exportExcel = page.locator("#export-excel-btn");
     this.exportPdf = page.locator("#export-pdf-btn");
+    this.advancedSearchToggle = page.locator("#advanced-search-toggle");
+    this.advancedSearchPanel = page.locator("#advanced-search-panel");
+    this.patientSelectWrap = page.locator("#search-input").locator("xpath=ancestor::*[contains(@class, 'custom-select-wrap')][1]");
     this.doctorFilter = page.locator("#doctor-filter");
     this.dateFilter = page.locator('[data-drrosa-for="date-filter"]');
     this.periodFilter = page.locator("#period-filter");
@@ -21,11 +24,48 @@ class AllRecordsPage {
   }
 
   async filterByPatient(name) {
-    await this.patientFilter.selectOption(name);
+    await this.patientFilter.selectOption({ label: name });
+  }
+
+  async searchAndSelectPatient(name) {
+    await this.patientSelectWrap.locator(".custom-select-button").click();
+    await this.patientSelectWrap.locator(".custom-select-search-input").fill(name.slice(0, Math.min(name.length, 6)));
+    await expect(this.patientSelectWrap.locator(".custom-select-option", { hasText: name })).toBeVisible();
+    await this.patientSelectWrap.locator(".custom-select-option", { hasText: name }).click();
+  }
+
+  async showAdvancedSearch() {
+    if (await this.advancedSearchPanel.isHidden()) {
+      await this.advancedSearchToggle.click();
+    }
+  }
+
+  async hideAdvancedSearch() {
+    if (await this.advancedSearchPanel.isVisible()) {
+      await this.advancedSearchToggle.click();
+    }
   }
 
   async expectCoreElements() {
     await expect(this.patientFilter).toBeVisible();
+    await expect(this.advancedSearchToggle).toBeVisible();
+    await expect(this.advancedSearchToggle).toHaveText("Prikaži ostalu pretragu");
+    await expect(this.advancedSearchPanel).toBeHidden();
+    await expect(this.statusFilter).toBeHidden();
+    await expect(this.doctorFilter).toBeHidden();
+    await expect(this.dateFilter).toBeHidden();
+    await expect(this.periodFilter).toBeHidden();
+    await expect(this.activityFilter).toBeHidden();
+    await expect(this.procedureFilter).toBeHidden();
+    await expect(this.paymentFilter).toBeHidden();
+    await expect(this.exportExcel).toBeVisible();
+    await expect(this.exportPdf).toBeVisible();
+    await expect(this.tableBody).toBeVisible();
+  }
+
+  async expectAdvancedSearchVisible() {
+    await this.showAdvancedSearch();
+    await expect(this.advancedSearchToggle).toHaveText("Sakrij ostalu pretragu");
     await expect(this.statusFilter).toBeVisible();
     await expect(this.doctorFilter).toBeVisible();
     await expect(this.dateFilter).toBeVisible();
@@ -33,9 +73,25 @@ class AllRecordsPage {
     await expect(this.activityFilter).toBeVisible();
     await expect(this.procedureFilter).toBeVisible();
     await expect(this.paymentFilter).toBeVisible();
-    await expect(this.exportExcel).toBeVisible();
-    await expect(this.exportPdf).toBeVisible();
-    await expect(this.tableBody).toBeVisible();
+  }
+
+  async expectAdvancedSearchResetPreservesPatient(name) {
+    await this.filterByPatient(name);
+    await this.showAdvancedSearch();
+    await this.statusFilter.selectOption("Zakazano");
+    await this.hideAdvancedSearch();
+    await expect(this.advancedSearchPanel).toBeHidden();
+    await expect(this.statusFilter).toHaveValue("");
+    await expect(this.patientFilter).toHaveValue(/.+/);
+  }
+
+  async expectSearchablePatientDropdown(name) {
+    await this.searchAndSelectPatient(name);
+    await expect(this.tableBody).toContainText(name);
+    await this.patientSelectWrap.locator(".custom-select-button").click();
+    await this.patientSelectWrap.locator(".custom-select-search-input").fill("zzzzzz-no-patient");
+    await expect(this.patientSelectWrap.locator(".custom-select-empty")).toBeVisible();
+    await this.page.keyboard.press("Escape");
   }
 
   async expectPatientVisible(name) {
@@ -53,10 +109,12 @@ class AllRecordsPage {
   }
 
   async filterByStatus(status) {
+    await this.showAdvancedSearch();
     await this.statusFilter.selectOption(status);
   }
 
   async filterByPaymentStatus(status) {
+    await this.showAdvancedSearch();
     await this.paymentFilter.selectOption(status);
   }
 

@@ -35,6 +35,8 @@ const activityFilter = document.getElementById("activity-filter");
 const procedureFilter = document.getElementById("procedure-filter");
 const paymentFilter = document.getElementById("payment-filter");
 const appointmentFilter = document.getElementById("appointment-filter");
+const advancedSearchToggle = document.getElementById("advanced-search-toggle");
+const advancedSearchPanel = document.getElementById("advanced-search-panel");
 const exportExcelBtn = document.getElementById("export-excel-btn");
 const exportPdfBtn = document.getElementById("export-pdf-btn");
 const procedureCatalog = window.DrRosaProcedureCatalog;
@@ -51,6 +53,34 @@ if (urlParams.get("filter") === "debtors" && paymentFilter) {
 }
 if (urlParams.get("appointment") && appointmentFilter) {
   appointmentFilter.value = urlParams.get("appointment");
+}
+
+function syncSelectControl(select) {
+  if (!select) return;
+  select.dispatchEvent(new Event("drrosa-select-value"));
+}
+
+function resetAdvancedFilters() {
+  [statusFilter, doctorFilter, dateFilter, periodFilter, activityFilter, procedureFilter, paymentFilter, appointmentFilter]
+    .filter(Boolean)
+    .forEach(input => {
+      input.value = "";
+      syncSelectControl(input);
+    });
+  populateProcedureFilter();
+  syncSelectControl(procedureFilter);
+}
+
+function hasAdvancedFilterValue() {
+  return [statusFilter, doctorFilter, dateFilter, periodFilter, activityFilter, procedureFilter, paymentFilter, appointmentFilter]
+    .some(input => Boolean(input?.value));
+}
+
+function setAdvancedSearchOpen(open) {
+  if (!advancedSearchToggle || !advancedSearchPanel) return;
+  advancedSearchPanel.hidden = !open;
+  advancedSearchToggle.setAttribute("aria-expanded", String(open));
+  advancedSearchToggle.textContent = open ? "Sakrij ostalu pretragu" : "Prikaži ostalu pretragu";
 }
 
 function formatDate(dateString) {
@@ -463,6 +493,15 @@ activityFilter?.addEventListener("change", () => {
   refreshFromApi();
 });
 
+advancedSearchToggle?.addEventListener("click", () => {
+  const willOpen = advancedSearchPanel?.hidden !== false;
+  if (!willOpen) {
+    resetAdvancedFilters();
+    refreshFromApi();
+  }
+  setAdvancedSearchOpen(willOpen);
+});
+
 exportExcelBtn?.addEventListener("click", () => exportFiltered("excel"));
 exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
 
@@ -488,5 +527,6 @@ exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
   populateDoctorFilter();
   populateActivityFilter();
   populateProcedureFilter();
+  setAdvancedSearchOpen(hasAdvancedFilterValue());
   refresh();
 })();

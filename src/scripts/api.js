@@ -1,6 +1,6 @@
 (function () {
   const API_BASE = window.DRROSA_API_BASE || "/api";
-  const { escapeHtml } = window.DrRosaSecurity;
+  const { escapeHtml, escapeAttribute } = window.DrRosaSecurity;
 
   function getSession() {
     return JSON.parse(localStorage.getItem("drrosa-session") || "null");
@@ -1152,6 +1152,35 @@
         || "Odaberite";
     }
 
+    function foldSearchText(value) {
+      return String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+    }
+
+    function visibleOptionButtons(list) {
+      return Array.from(list.querySelectorAll('.custom-select-option:not([aria-disabled="true"])'))
+        .filter(option => !option.hidden);
+    }
+
+    function filterSelectOptions(wrap, term) {
+      const list = wrap.querySelector(".custom-select-list");
+      if (!list) return;
+      const query = foldSearchText(term);
+      const options = Array.from(list.querySelectorAll(".custom-select-option"));
+      let visibleCount = 0;
+
+      options.forEach(option => {
+        const isMatch = !query || foldSearchText(option.textContent).includes(query);
+        option.hidden = !isMatch;
+        if (isMatch) visibleCount += 1;
+      });
+
+      const empty = list.querySelector(".custom-select-empty");
+      if (empty) empty.hidden = visibleCount > 0;
+    }
+
     function syncSelect(select) {
       const wrap = select.closest(".custom-select-wrap");
       if (!wrap) return;
@@ -1159,9 +1188,13 @@
       const list = wrap.querySelector(".custom-select-list");
       if (!button || !list) return;
 
+      const isSearchable = select.dataset.searchable === "true";
+      const searchMarkup = isSearchable
+        ? `<span class="custom-select-search-wrap"><input class="custom-select-search-input" type="search" autocomplete="off" placeholder="${escapeAttribute(select.dataset.searchPlaceholder || "Pretraga...")}" aria-label="${escapeAttribute(select.dataset.searchPlaceholder || "Pretraga opcija")}" /></span>`
+        : "";
       button.textContent = selectedText(select);
       button.disabled = select.disabled;
-      list.innerHTML = Array.from(select.options).map((option, index) => {
+      list.innerHTML = searchMarkup + Array.from(select.options).map((option, index) => {
         const selected = option.selected ? "true" : "false";
         const disabled = option.disabled ? "true" : "false";
         return `
@@ -1170,7 +1203,7 @@
             ${escapeHtml(option.textContent)}
           </button>
         `;
-      }).join("");
+      }).join("") + (isSearchable ? `<span class="custom-select-empty" hidden>Nema rezultata</span>` : "");
     }
 
     function enhanceSelect(select) {
@@ -1204,6 +1237,12 @@
         button.setAttribute("aria-expanded", String(willOpen));
         if (willOpen) {
           requestAnimationFrame(() => {
+            const search = list.querySelector(".custom-select-search-input");
+            if (search) {
+              search.value = "";
+              filterSelectOptions(wrap, "");
+              search.focus();
+            }
             const overflow = list.getBoundingClientRect().bottom - window.innerHeight + 12;
             if (overflow > 0) window.scrollBy({ top: overflow, behavior: "auto" });
           });
@@ -1214,6 +1253,10 @@
         if (!["ArrowDown", "Enter", " "].includes(event.key)) return;
         event.preventDefault();
         button.click();
+        if (select.dataset.searchable === "true") {
+          list.querySelector(".custom-select-search-input")?.focus();
+          return;
+        }
         list.querySelector('[aria-selected="true"], .custom-select-option:not([aria-disabled="true"])')?.focus();
       });
 
@@ -1229,8 +1272,33 @@
         button.focus();
       });
 
+      list.addEventListener("input", event => {
+        if (!event.target.classList.contains("custom-select-search-input")) return;
+        filterSelectOptions(wrap, event.target.value);
+      });
+
       list.addEventListener("keydown", event => {
-        const options = Array.from(list.querySelectorAll('.custom-select-option:not([aria-disabled="true"])'));
+        const searchField = event.target.closest(".custom-select-search-input");
+        if (searchField) {
+          if (event.key === "Escape") {
+            closeAll();
+            button.focus();
+            return;
+          }
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            visibleOptionButtons(list)[0]?.focus();
+            return;
+          }
+          if (event.key === "Enter") {
+            event.preventDefault();
+            visibleOptionButtons(list)[0]?.click();
+            return;
+          }
+          return;
+        }
+
+        const options = visibleOptionButtons(list);
         const currentIndex = options.indexOf(document.activeElement);
         if (event.key === "Escape") {
           closeAll();
