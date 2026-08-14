@@ -205,7 +205,9 @@ function renderDashboardDebtors(records) {
         <strong>${window.DrRosaSecurity.escapeHtml(debtor.patient)}</strong>
         <span>${window.DrRosaSecurity.escapeHtml(formatCurrencyAmounts(debtor.amounts))}</span>
       </a>
-      <a class="secondary-btn" href="${debtPaymentUrlFromRecord(debtor.largestDebtRecord)}">Dodaj uplatu</a>
+      <div class="dashboard-debtor-actions">
+        <a class="secondary-btn" href="${debtPaymentUrlFromRecord(debtor.largestDebtRecord)}">Dodaj uplatu</a>
+      </div>
     </article>
   `).join("");
 }

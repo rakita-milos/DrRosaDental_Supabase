@@ -551,11 +551,14 @@ test('dashboard shows debtors above priorities with direct payment actions', () 
   assert.match(dashboardSource, /function renderDashboardDebtors\(records\)/);
   assert.match(dashboardSource, /renderDashboardDebtors\(records\)/);
   assert.match(dashboardSource, /new-entry\.html\?record=\$\{encodeURIComponent\(id\)\}&payment=debt#entry-details-section/);
+  assert.match(dashboardSource, /class="dashboard-debtor-main"/);
+  assert.match(dashboardSource, /class="dashboard-debtor-actions"/);
   assert.match(dashboardSource, />Dodaj uplatu<\/a>/);
   assert.match(dashboardSource, /window\.DrRosaSecurity\.escapeHtml\(debtor\.patient\)/);
   assert.match(dashboardSource, /window\.DrRosaSecurity\.escapeHtml\(formatCurrencyAmounts\(debtor\.amounts\)\)/);
   assert.match(stylesSource, /\.dashboard-debtors-list/);
   assert.match(stylesSource, /\.dashboard-debtor-row/);
+  assert.match(stylesSource, /\.dashboard-debtor-actions[\s\S]*justify-content: flex-end/);
 });
 
 test('form option and autocomplete attributes use attribute escaping', () => {

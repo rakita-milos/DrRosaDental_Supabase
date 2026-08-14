@@ -2562,9 +2562,9 @@ main {
 
 .dashboard-debtor-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  align-items: start;
   padding: 11px;
   border: 1px solid #f3d3b7;
   border-left: 5px solid #f97316;
@@ -2593,6 +2593,11 @@ main {
 .dashboard-debtor-main span {
   color: #9a3412;
   font-weight: 900;
+}
+
+.dashboard-debtor-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .today-appointment-card {
@@ -6730,10 +6735,6 @@ td:nth-child(5) {
 
   .dashboard-day-summary,
   .dashboard-next-chairs {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-debtor-row {
     grid-template-columns: 1fr;
   }
 
