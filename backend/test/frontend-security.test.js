@@ -65,6 +65,17 @@ test('all records page lists every patient, including patients without visits', 
   assert.match(allRecordsSource, /currentExportRows = patientRows\.map/);
 });
 
+test('all records debtor dashboard link applies the payment filter before initial load', () => {
+  assert.match(indexPageSource, /all-records\.html\?filter=debtors/);
+  assert.match(allRecordsPageSource, /all-records\.js\?v=records-url-debtors-20260815/);
+  assert.match(allRecordsSource, /function applyUrlFilters\(\)/);
+  assert.match(allRecordsSource, /urlParams\.get\("payment"\) \|\| urlParams\.get\("filter"\)/);
+  assert.match(allRecordsSource, /paymentParam === "debtors"[\s\S]*paymentFilter\.value = "debtors"/);
+  assert.match(allRecordsSource, /applyUrlFilters\(\);\s*await procedureCatalog\.loadFromApi/);
+  assert.match(allRecordsSource, /await populateCodebookFilters\(\);\s*applyUrlFilters\(\);/);
+  assert.match(allRecordsSource, /\[allPatientRows, allAppointments, allDoctors\] = await Promise\.all\(\[[\s\S]*loadPatientSummaries\(summaryFilterParams\(\)\)/);
+});
+
 test('all records summary table omits last procedure and uses compact columns', () => {
   const tableStart = allRecordsPageSource.indexOf('<table class="records-table">');
   const tableMarkup = allRecordsPageSource.slice(tableStart, tableStart + 900);

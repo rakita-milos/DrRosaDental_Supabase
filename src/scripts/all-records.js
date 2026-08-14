@@ -48,11 +48,17 @@ let allDoctors = [];
 let currentExportRows = [];
 
 const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get("filter") === "debtors" && paymentFilter) {
-  paymentFilter.value = "debtors";
-}
-if (urlParams.get("appointment") && appointmentFilter) {
-  appointmentFilter.value = urlParams.get("appointment");
+
+function applyUrlFilters() {
+  const paymentParam = urlParams.get("payment") || urlParams.get("filter");
+  if (paymentParam === "debtors" && paymentFilter) {
+    paymentFilter.value = "debtors";
+    syncSelectControl(paymentFilter);
+  }
+  if (urlParams.get("appointment") && appointmentFilter) {
+    appointmentFilter.value = urlParams.get("appointment");
+    syncSelectControl(appointmentFilter);
+  }
 }
 
 function syncSelectControl(select) {
@@ -507,11 +513,13 @@ exportPdfBtn?.addEventListener("click", () => exportFiltered("pdf"));
 
 (async function init() {
   if (!await requireAccess()) return;
+  applyUrlFilters();
   await procedureCatalog.loadFromApi?.();
   await populateCodebookFilters();
+  applyUrlFilters();
   try {
     [allPatientRows, allAppointments, allDoctors] = await Promise.all([
-      loadPatientSummaries(),
+      loadPatientSummaries(summaryFilterParams()),
       window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : [],
       window.DrRosaApi.getDoctors ? window.DrRosaApi.getDoctors().catch(() => []) : []
     ]);
