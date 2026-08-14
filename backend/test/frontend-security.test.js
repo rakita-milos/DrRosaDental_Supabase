@@ -276,6 +276,16 @@ test('new entry payment rows use one-line desktop layout without per-payment not
   assert.doesNotMatch(stylesSource, /\.payment-part-notes/);
 });
 
+test('new entry tooth treatment note sits directly before saving selected teeth', () => {
+  const pendingListIndex = newEntryPageSource.indexOf('id="pending-treatment-list"');
+  const noteIndex = newEntryPageSource.indexOf('id="treatment-note"');
+  const saveIndex = newEntryPageSource.indexOf('id="save-treatment"');
+  assert.ok(pendingListIndex > -1);
+  assert.ok(noteIndex > pendingListIndex);
+  assert.ok(saveIndex > noteIndex);
+  assert.doesNotMatch(newEntryPageSource.slice(noteIndex, saveIndex), /id="add-treatment-item"/);
+});
+
 test('new entry syncs payment rows before adding another payment', () => {
   assert.match(newEntrySource, /function paymentPartFromRow\(row\)/);
   assert.match(newEntrySource, /function syncPaymentPartsFromDom\(\)/);
