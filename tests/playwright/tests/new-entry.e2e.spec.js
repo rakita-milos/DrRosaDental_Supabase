@@ -75,6 +75,25 @@ async function expectRecordWithNote(request, baseURL, fullName, note) {
   }).toBeTruthy();
 }
 
+test("new entry: tooth map keeps clinical FDI orientation", async ({ page, request, baseURL }) => {
+  const stamp = Date.now();
+  const fullName = await createTestPatient(request, baseURL, stamp, "Orientation");
+
+  await gotoNewEntry(page, fullName);
+  const boxFor = async tooth => page.locator(`.tooth-node[data-tooth='${tooth}']`).boundingBox();
+  const upperRightCentral = await boxFor("11");
+  const upperLeftCentral = await boxFor("21");
+  const lowerRightCentral = await boxFor("41");
+  const lowerLeftCentral = await boxFor("31");
+
+  expect(upperRightCentral).toBeTruthy();
+  expect(upperLeftCentral).toBeTruthy();
+  expect(lowerRightCentral).toBeTruthy();
+  expect(lowerLeftCentral).toBeTruthy();
+  expect(upperRightCentral.x).toBeLessThan(upperLeftCentral.x);
+  expect(lowerRightCentral.x).toBeLessThan(lowerLeftCentral.x);
+});
+
 test("new entry: saves a fully populated visit without selecting teeth", async ({ page, request, baseURL }) => {
   const stamp = Date.now();
   const fullName = await createTestPatient(request, baseURL, stamp);
