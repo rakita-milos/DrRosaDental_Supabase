@@ -119,8 +119,6 @@ const patientParam = urlParams.get("patient");
 const recordParam = urlParams.get("record");
 if (patientParam || patientIdParam) {
   inputs.patient.value = patientParam || "";
-  const newPatientLink = document.getElementById("new-patient-link");
-  if (newPatientLink) newPatientLink.style.display = "none";
 }
 
 function formatDate(rawDate) {

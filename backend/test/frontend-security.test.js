@@ -307,7 +307,7 @@ test('new entry syncs payment rows before adding another payment', () => {
 });
 
 test('new entry suggests remaining payment amount and converts row currency changes', () => {
-  assert.match(newEntryPageSource, /new-entry\.js\?v=default-visit-date-20260817/);
+  assert.match(newEntryPageSource, /new-entry\.js\?v=patient-nav-visible-20260817/);
   assert.match(newEntrySource, /function paymentPartAmountInVisitCurrency\(part\)/);
   assert.match(newEntrySource, /function remainingPaymentAmount\(\{ excludeIndex = null \} = \{\}\)/);
   assert.match(newEntrySource, /function suggestedPaymentPart\(\{ currency = paymentCurrency\(\) \} = \{\}\)/);
@@ -607,6 +607,13 @@ test('new patient page keeps quick entry fields visible and hides optional detai
   assert.match(newPatientSource, /function setExtraFieldsOpen\(open\)/);
   assert.match(newPatientSource, /hasAdditionalPatientDetails\(patient, chartEntries\)/);
   assert.match(newPatientSource, /setExtraFieldsOpen\(false\)/);
+});
+
+test('new entry keeps global new patient navigation visible when patient is preselected', () => {
+  assert.match(newEntryPageSource, /id="new-patient-link" href="new-patient\.html" class="nav-link">Novi pacijent/);
+  assert.doesNotMatch(newEntrySource, /new-patient-link[\s\S]{0,160}style\.display\s*=\s*"none"/);
+  assert.match(newEntrySource, /function lockPatientFromQuery\(\)/);
+  assert.match(newEntrySource, /inputs\.patient\.readOnly = true/);
 });
 
 test('online booking is not exposed from protected application navigation while disabled', () => {
