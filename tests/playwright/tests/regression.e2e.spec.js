@@ -20,9 +20,8 @@ test.afterEach(async ({ request, baseURL }) => {
 
 test("regression: staff cannot open director admin area", async ({ page }) => {
   await authenticate(page, "staff");
-  await page.goto("/src/pages/director-panel.html");
-  await expect(page).toHaveURL(/index\.html/);
-  await expect(page).not.toHaveURL(/director-panel\.html/);
+  const response = await page.goto("/src/pages/director-panel.html");
+  expect(response?.status()).toBe(403);
 });
 
 test("regression: filtered records export uses visible filtered rows", async ({ page, request, baseURL }) => {

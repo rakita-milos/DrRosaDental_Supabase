@@ -616,6 +616,19 @@ test('new entry keeps global new patient navigation visible when patient is pres
   assert.match(newEntrySource, /inputs\.patient\.readOnly = true/);
 });
 
+test('director panel navigation stays role-gated without delayed per-page toggles', () => {
+  assert.match(apiSource, /function syncDirectorNavigation\(session = getSession\(\)\)/);
+  assert.match(apiSource, /session\?\.role === "director"/);
+  assert.match(apiSource, /querySelectorAll\("#director-panel-link"\)/);
+  assert.match(apiSource, /link\.hidden = !isDirector/);
+  assert.match(apiSource, /syncDirectorNavigation\(session\)/);
+  assert.match(apiSource, /syncDirectorNavigation\(null\)/);
+  assert.match(directorReportsSource, /verifySession\("director"\)/);
+  assert.match(serverSource, /function requireDirector\(req, res, next\)/);
+  assert.match(serverSource, /req\.user\.role !== 'director'/);
+  assert.match(serverSource, /app\.get\('\/api\/director\/reports\/financial', authenticateToken, requireDirector/);
+});
+
 test('online booking is not exposed from protected application navigation while disabled', () => {
   const protectedPages = [
     'index.html',

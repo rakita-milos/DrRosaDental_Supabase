@@ -9,6 +9,14 @@
   },
   "rewrites": [
     {
+      "source": "/src/pages/director-panel.html",
+      "destination": "/api"
+    },
+    {
+      "source": "/src/scripts/director-reports.js",
+      "destination": "/api"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api"
     }

@@ -103,8 +103,8 @@ test("failure paths: login, required fields and page validation reject bad input
 
 test("failure paths: protected director functionality blocks staff and validates codebook form", async ({ page }) => {
   await authenticate(page, "staff");
-  await page.goto("/src/pages/director-panel.html");
-  await expect(page).not.toHaveURL(/director-panel\.html/);
+  const response = await page.goto("/src/pages/director-panel.html");
+  expect(response?.status()).toBe(403);
 
   await authenticate(page, "director");
   const directorPanel = new DirectorPanelPage(page);

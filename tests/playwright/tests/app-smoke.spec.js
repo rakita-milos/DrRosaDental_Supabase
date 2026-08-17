@@ -59,8 +59,8 @@ test("staff and director navigation expose the right role surface", async ({ pag
   await authenticate(page, "staff");
   await page.goto("/src/pages/index.html");
   await expect(page.locator("#director-panel-link")).toBeHidden();
-  await page.goto("/src/pages/director-panel.html");
-  await expect(page).toHaveURL(/index\.html/);
+  const staffDirectorResponse = await page.goto("/src/pages/director-panel.html");
+  expect(staffDirectorResponse?.status()).toBe(403);
 
   await authenticate(page, "director");
   await page.goto("/src/pages/index.html");

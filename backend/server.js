@@ -4932,7 +4932,7 @@ async function handleManualGooglePull(req, res) {
   }
 }
 
-app.post('/api/director/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), validateBody(googlePullSchema), handleManualGooglePull);
+app.post('/api/director/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requireDirector, requirePermission('calendar:write'), validateBody(googlePullSchema), handleManualGooglePull);
 app.post('/api/calendar-sync/pull-google', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), validateBody(googlePullSchema), handleManualGooglePull);
 app.post('/api/calendar-sync/pull-google/step', googleSyncLimiter, authenticateToken, requirePermission('calendar:write'), asyncRoute(async (req, res) => {
   const result = await processGooglePullJobStep({
@@ -5830,7 +5830,9 @@ const frontendRoot = path.resolve(__dirname, '..');
 registerSystemRoutes(app, {
   express,
   databaseClient: DB_CLIENT,
-  frontendRoot
+  frontendRoot,
+  authenticateToken,
+  requireDirector
 });
 
 // ============ ERROR HANDLING ============

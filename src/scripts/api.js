@@ -6,14 +6,24 @@
     return JSON.parse(localStorage.getItem("drrosa-session") || "null");
   }
 
+  function syncDirectorNavigation(session = getSession()) {
+    const isDirector = session?.role === "director";
+    document.querySelectorAll("#director-panel-link").forEach(link => {
+      link.hidden = !isDirector;
+      link.style.display = isDirector ? "" : "none";
+    });
+  }
+
   function setSession(data) {
     localStorage.removeItem("drrosa-refresh-token");
     localStorage.removeItem("drrosa-token");
-    localStorage.setItem("drrosa-session", JSON.stringify({
+    const session = {
       ...(data.user || data),
       loginTime: new Date().toISOString(),
       refreshExpiresAt: data.refreshExpiresAt || null
-    }));
+    };
+    localStorage.setItem("drrosa-session", JSON.stringify(session));
+    syncDirectorNavigation(session);
   }
 
   function clearSession() {
@@ -21,6 +31,7 @@
     localStorage.removeItem("drrosa-refresh-token");
     localStorage.removeItem("drrosa-session");
     clearReferenceCache();
+    syncDirectorNavigation(null);
   }
 
   async function refreshSession() {
@@ -152,6 +163,7 @@
     const session = getSession();
     if (!session) return null;
     if (requiredRole && session.role !== requiredRole) return null;
+    syncDirectorNavigation(session);
     try {
       const data = await request("/auth/verify", { method: "POST" });
       if (requiredRole && data.user.role !== requiredRole) return null;
@@ -1347,6 +1359,12 @@
     document.addEventListener("DOMContentLoaded", initializeCustomSelects);
   } else {
     initializeCustomSelects();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => syncDirectorNavigation());
+  } else {
+    syncDirectorNavigation();
   }
 
   function initializeResponsiveMenu() {
