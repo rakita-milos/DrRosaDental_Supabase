@@ -34,6 +34,16 @@
     syncDirectorNavigation(null);
   }
 
+  function apiError(message, status) {
+    const error = new Error(message || "API request failed");
+    if (status) error.status = status;
+    return error;
+  }
+
+  function isAuthFailure(error) {
+    return error?.status === 401 || error?.status === 403;
+  }
+
   async function refreshSession() {
     // Server will read refresh token from httpOnly cookie when present.
     const response = await fetch(`${API_BASE}/auth/refresh`, {
@@ -42,7 +52,7 @@
       credentials: 'include'
     });
     if (!response.ok) {
-      clearSession();
+      if (response.status === 401 || response.status === 403) clearSession();
       return null;
     }
     const data = await response.json();
@@ -69,7 +79,7 @@
         if (refreshed) return request(path, options, false);
       }
       const message = await response.json().catch(() => ({}));
-      throw new Error(message.error || "API request failed");
+      throw apiError(message.error || "API request failed", response.status);
     }
 
     return response.json();
@@ -169,9 +179,15 @@
       if (requiredRole && data.user.role !== requiredRole) return null;
       setSession({ user: data.user });
       return data.user;
-    } catch (_error) {
-      clearSession();
-      return null;
+    } catch (error) {
+      if (isAuthFailure(error)) {
+        clearSession();
+        return null;
+      }
+      // Fast page changes can abort /auth/verify; keep the local session and
+      // let protected API routes continue to enforce access server-side.
+      syncDirectorNavigation(session);
+      return session;
     }
   }
 

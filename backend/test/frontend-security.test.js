@@ -32,6 +32,16 @@ test('shared frontend security helpers escape text and attributes', () => {
   assert.match(apiSource, /const \{ escapeHtml, escapeAttribute \} = window\.DrRosaSecurity/);
 });
 
+test('session verification does not clear login state on navigation aborts', () => {
+  assert.match(apiSource, /function apiError\(message, status\)/);
+  assert.match(apiSource, /error\.status = status/);
+  assert.match(apiSource, /function isAuthFailure\(error\)/);
+  assert.match(apiSource, /if \(isAuthFailure\(error\)\) \{\s*clearSession\(\);[\s\S]*return null;\s*\}/);
+  assert.match(apiSource, /Fast page changes can abort \/auth\/verify/);
+  assert.match(apiSource, /syncDirectorNavigation\(session\);\s*return session;/);
+  assert.doesNotMatch(apiSource, /catch \(_error\) \{\s*clearSession\(\);\s*return null;\s*\}/);
+});
+
 test('global notifications do not replay old Google sync toasts on app open', () => {
   assert.match(apiSource, /getNotifications\(\{ latest: true, limit: 1 \}\)/);
   assert.match(apiSource, /const startedAt = Date\.now\(\)/);
