@@ -112,11 +112,32 @@ let alertTimeout;
 const procedureCatalog = window.DrRosaProcedureCatalog;
 const currencyUtils = window.DrRosaCurrencyUtils;
 const PAYMENT_ROUNDING_TOLERANCE_RSD = 1;
+const NEW_ENTRY_PATIENT_STORAGE_KEY = "drrosa-new-entry-patient";
 
 const urlParams = new URLSearchParams(window.location.search);
-const patientIdParam = urlParams.get("patientId") || urlParams.get("id");
 const patientParam = urlParams.get("patient");
 const recordParam = urlParams.get("record");
+function takePendingNewEntryPatientId() {
+  try {
+    const raw = window.sessionStorage.getItem(NEW_ENTRY_PATIENT_STORAGE_KEY);
+    if (!raw) return "";
+    window.sessionStorage.removeItem(NEW_ENTRY_PATIENT_STORAGE_KEY);
+    const payload = JSON.parse(raw);
+    const createdAt = Number(payload?.createdAt || 0);
+    const maxAgeMs = 15 * 60 * 1000;
+    if (!payload?.patientId || !createdAt || Date.now() - createdAt > maxAgeMs) return "";
+    return String(payload.patientId);
+  } catch (_error) {
+    try {
+      window.sessionStorage.removeItem(NEW_ENTRY_PATIENT_STORAGE_KEY);
+    } catch {
+      // Ignore storage cleanup errors.
+    }
+    return "";
+  }
+}
+
+const patientIdParam = urlParams.get("patientId") || urlParams.get("id") || (recordParam ? "" : takePendingNewEntryPatientId());
 if (patientParam || patientIdParam) {
   inputs.patient.value = patientParam || "";
 }

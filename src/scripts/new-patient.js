@@ -29,6 +29,7 @@ const formMessage = document.getElementById("patient-form-message");
 const extraFieldsToggle = document.getElementById("toggle-patient-extra-fields");
 const extraFieldsPanel = document.getElementById("patient-extra-fields");
 const patientId = new URLSearchParams(window.location.search).get("patient");
+const NEW_ENTRY_PATIENT_STORAGE_KEY = "drrosa-new-entry-patient";
 let initialConditionEditor;
 
 function setFormMessage(message = "", type = "info") {
@@ -106,6 +107,25 @@ async function saveInitialConditionsForPatient(savedPatientId) {
   }
 }
 
+function continueWithNewEntry(savedPatient) {
+  const patientIdForEntry = savedPatient?.id;
+  if (!patientIdForEntry) {
+    setFormMessage("Pacijent je sacuvan, ali nije vracen ID za nastavak unosa.", "error");
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(NEW_ENTRY_PATIENT_STORAGE_KEY, JSON.stringify({
+      patientId: patientIdForEntry,
+      createdAt: Date.now()
+    }));
+  } catch (_error) {
+    setFormMessage("Pacijent je sacuvan, ali browser ne dozvoljava nastavak preko sesije.", "error");
+    return;
+  }
+  setFormMessage("Pacijent je sacuvan. Otvaram novi unos...", "success");
+  window.location.href = "new-entry.html";
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (form.dataset.drrosaBusy === "1") return;
@@ -143,11 +163,7 @@ form.addEventListener("submit", async (event) => {
     }
     const savedPatient = await window.DrRosaApi.createPatient(patient);
     await saveInitialConditionsForPatient(savedPatient.id);
-    alert("Pacijent sačuvan!");
-    setFormMessage("Pacijent je sačuvan.", "success");
-    form.reset();
-    initialConditionEditor?.clear();
-    setExtraFieldsOpen(false);
+    continueWithNewEntry(savedPatient);
   } catch (error) {
     alert(error.message || "Pacijent nije sačuvan. Proverite vezu sa serverom.");
   } finally {

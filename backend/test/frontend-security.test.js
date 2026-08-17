@@ -619,6 +619,18 @@ test('new patient page keeps quick entry fields visible and hides optional detai
   assert.match(newPatientSource, /setExtraFieldsOpen\(false\)/);
 });
 
+test('new patient creation continues to new entry without exposing patient id in the URL', () => {
+  assert.match(newPatientSource, /const NEW_ENTRY_PATIENT_STORAGE_KEY = "drrosa-new-entry-patient"/);
+  assert.match(newPatientSource, /window\.sessionStorage\.setItem\(NEW_ENTRY_PATIENT_STORAGE_KEY/);
+  assert.match(newPatientSource, /patientId: patientIdForEntry/);
+  assert.match(newPatientSource, /window\.location\.href = "new-entry\.html"/);
+  assert.doesNotMatch(newPatientSource, /new-entry\.html\?patientId=/);
+  assert.match(newEntrySource, /function takePendingNewEntryPatientId\(\)/);
+  assert.match(newEntrySource, /window\.sessionStorage\.removeItem\(NEW_ENTRY_PATIENT_STORAGE_KEY\)/);
+  assert.match(newEntrySource, /Date\.now\(\) - createdAt > maxAgeMs/);
+  assert.match(newEntrySource, /urlParams\.get\("patientId"\) \|\| urlParams\.get\("id"\) \|\| \(recordParam \? "" : takePendingNewEntryPatientId\(\)\)/);
+});
+
 test('new entry keeps global new patient navigation visible when patient is preselected', () => {
   assert.match(newEntryPageSource, /id="new-patient-link" href="new-patient\.html" class="nav-link">Novi pacijent/);
   assert.doesNotMatch(newEntrySource, /new-patient-link[\s\S]{0,160}style\.display\s*=\s*"none"/);
