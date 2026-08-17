@@ -53,7 +53,7 @@ test("smoke: patient card links into appointment and visit payment workflow", as
   await expect(page.locator("#payment-status-display")).toContainText(/Delimi|Dug|Pla/);
   await expect(page.locator("#payment-debt-display")).toContainText(/60/);
   await page.locator("#note").fill(`${TEST_PREFIX} visit ${stamp}`);
-  await page.locator("#new-entry-form button[type='submit']").click();
+  await page.getByRole("button", { name: /Sa.uvaj unos/i }).click();
   await expect(page).toHaveURL(/patient-dashboard\.html/);
   await expect(page.locator("#patient-activity-timeline")).toContainText("Kontrola");
 

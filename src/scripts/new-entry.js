@@ -71,6 +71,7 @@ const inputs = {
   previousPaymentsNext: document.getElementById("previous-payments-next"),
   previousPaymentsPage: document.getElementById("previous-payments-page"),
   previousDebtPaymentForm: document.getElementById("previous-debt-payment-form"),
+  previousDebtPaymentPanel: document.getElementById("previous-debt-payment-panel"),
   previousDebtRecordId: document.getElementById("previous-debt-record-id"),
   previousDebtPaymentContext: document.getElementById("previous-debt-payment-context"),
   previousDebtPaymentAmount: document.getElementById("previous-debt-payment-amount"),
@@ -689,15 +690,15 @@ function openPreviousDebtPaymentForm(record) {
   if (inputs.previousDebtPaymentContext) {
     inputs.previousDebtPaymentContext.textContent = `Poseta ${formatDate(record.visitDate)} - dug ${formatMoney(record.debt || 0, record.currency || "RSD")}`;
   }
-  if (inputs.previousDebtPaymentForm) {
-    inputs.previousDebtPaymentForm.hidden = false;
+  if (inputs.previousDebtPaymentPanel) {
+    inputs.previousDebtPaymentPanel.hidden = false;
     inputs.previousDebtPaymentAmount?.focus();
   }
 }
 
 function closePreviousDebtPaymentForm() {
   selectedDebtPaymentRecord = null;
-  if (inputs.previousDebtPaymentForm) inputs.previousDebtPaymentForm.hidden = true;
+  if (inputs.previousDebtPaymentPanel) inputs.previousDebtPaymentPanel.hidden = true;
   inputs.previousDebtPaymentForm?.reset();
 }
 
@@ -1618,7 +1619,8 @@ inputs.previousDebtPaymentForm?.addEventListener("submit", async event => {
     showAlert("Unesite iznos uplate veći od 0.", "error", { persist: true, scroll: true });
     return;
   }
-  const submitButton = inputs.previousDebtPaymentForm.querySelector("button[type='submit']");
+  const submitButton = document.querySelector("button[type='submit'][form='previous-debt-payment-form']")
+    || inputs.previousDebtPaymentForm.querySelector("button[type='submit']");
   const oldText = submitButton?.textContent;
   if (submitButton) {
     submitButton.disabled = true;

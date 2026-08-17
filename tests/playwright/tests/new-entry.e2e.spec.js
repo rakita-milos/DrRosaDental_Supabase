@@ -75,6 +75,10 @@ async function expectRecordWithNote(request, baseURL, fullName, note) {
   }).toBeTruthy();
 }
 
+function saveEntryButton(page) {
+  return page.getByRole("button", { name: /Sa.uvaj unos/i });
+}
+
 test("new entry: tooth map keeps clinical FDI orientation", async ({ page, request, baseURL }) => {
   const stamp = Date.now();
   const fullName = await createTestPatient(request, baseURL, stamp, "Orientation");
@@ -102,6 +106,11 @@ test("new entry: saves a fully populated visit without selecting teeth", async (
   await gotoNewEntry(page, fullName);
   await fillBasicVisit(page, { note });
   await expect(page.locator(".tooth-node.selected")).toHaveCount(0);
+  await expect(page.locator("#new-entry-form form")).toHaveCount(0);
+  const mainFormOwnsPreviousDebtFields = await page.locator("#new-entry-form").evaluate(form =>
+    Array.from(form.elements).some(element => element.id?.startsWith("previous-debt-payment-"))
+  );
+  expect(mainFormOwnsPreviousDebtFields).toBe(false);
 
   await page.route("**/api/records", async route => {
     if (route.request().method() === "POST") {
@@ -110,7 +119,7 @@ test("new entry: saves a fully populated visit without selecting teeth", async (
     await route.continue();
   });
 
-  await page.locator("#new-entry-form button[type='submit']").click();
+  await saveEntryButton(page).click();
   await expect(page.locator("#save-status")).toContainText(/Čuvanje|Cuvanje/i);
   await expectRecordWithNote(request, baseURL, fullName, note);
 });
@@ -125,7 +134,7 @@ test("new entry: explains why save is blocked when no procedure or tooth treatme
   await page.locator("#shift").selectOption({ index: 0 }, { force: true });
   await setFormValue(page, "#total-amount", "30");
 
-  await page.locator("#new-entry-form button[type='submit']").click();
+  await saveEntryButton(page).click();
   await expect(page.locator("#save-status")).toContainText(/odaberite osnovnu delatnost|postupak|mapi zuba/i);
 });
 
@@ -269,7 +278,7 @@ test("new entry: multiple procedures can be added to multiple selected teeth", a
     await route.continue();
   });
 
-  await page.locator("#new-entry-form button[type='submit']").click();
+  await saveEntryButton(page).click();
   await expect.poll(() => postedRecord).toBeTruthy();
   expect(postedRecord.treatments["11"]).toHaveLength(2);
   expect(postedRecord.treatments["12"]).toHaveLength(2);
@@ -321,7 +330,7 @@ test("new entry: general procedures and tooth-map treatments are combined in tot
     await route.continue();
   });
 
-  await page.locator("#new-entry-form button[type='submit']").click();
+  await saveEntryButton(page).click();
   await expect.poll(() => postedRecord).toBeTruthy();
 
   const generalTotal = postedRecord.generalTreatments.reduce((sum, treatment) => sum + Number(treatment.price || 0), 0);

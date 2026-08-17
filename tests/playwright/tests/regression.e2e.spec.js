@@ -154,7 +154,7 @@ test("regression: new visit without tooth map accepts split EUR and RSD payments
   );
   expect(invalidControls).toEqual([]);
 
-  await page.locator("#new-entry-form button[type='submit']").click();
+  await page.getByRole("button", { name: /Sa.uvaj unos/i }).click();
   await expect(page.locator(".form-alert")).toContainText(/Unos je spremljen|Unos je sa/i);
   const records = await request.get(`${baseURL}/api/records`, {
     headers: { Authorization: `Bearer ${require("../utils/auth").tokenFor("staff")}` }
@@ -223,7 +223,7 @@ test("regression: new visit split payments works through visible custom selects"
   }));
   expect(stateBeforeSave.invalid).toEqual([]);
 
-  await page.locator("#new-entry-form button[type='submit']").click();
+  await page.getByRole("button", { name: /Sa.uvaj unos/i }).click();
   await expect(page.locator(".form-alert")).toContainText(/Unos je spremljen|Unos je sa/i);
   const records = await request.get(`${baseURL}/api/records`, {
     headers: { Authorization: `Bearer ${require("../utils/auth").tokenFor("staff")}` }
@@ -288,7 +288,7 @@ test("regression: zero-priced procedure can save split payments after manual tot
   await page.locator(".payment-part-row").nth(1).locator(".payment-part-currency").selectOption("RSD");
 
   await expect(page.locator("#payment-total-display")).toContainText("50.00 EUR");
-  await page.locator("#new-entry-form button[type='submit']").click();
+  await page.getByRole("button", { name: /Sa.uvaj unos/i }).click();
   await expect(page.locator(".form-alert")).toContainText(/Unos je spremljen|Unos je sa/i);
 
   const records = await request.get(`${baseURL}/api/records`, {
@@ -349,7 +349,7 @@ test("regression: split payment without total amount shows actionable error", as
   await page.locator(".payment-part-row").nth(0).locator(".payment-part-amount").fill("10");
   await page.locator(".payment-part-row").nth(0).locator(".payment-part-currency").selectOption("EUR");
 
-  await page.locator("#new-entry-form button[type='submit']").click();
+  await page.getByRole("button", { name: /Sa.uvaj unos/i }).click();
   await expect(page.locator(".form-alert")).toContainText(/Ukupno za naplatu/i);
   await updateCodebookItem(request, baseURL, procedureItem.id, { ...procedureItem, isActive: false });
   await updateCodebookItem(request, baseURL, activityItem.id, { ...activityItem, isActive: false });
