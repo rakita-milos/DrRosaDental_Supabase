@@ -606,8 +606,10 @@ test('new patient page keeps quick entry fields visible and hides optional detai
   assert.match(newPatientPageSource, /class="form-grid patient-basic-fields"/);
   assert.match(newPatientPageSource, /id="first-name" type="text" required/);
   assert.match(newPatientPageSource, /id="last-name" type="text" required/);
-  assert.match(newPatientPageSource, /id="birth-date" type="date" required/);
-  assert.match(newPatientPageSource, /id="gender" required/);
+  assert.match(newPatientPageSource, /id="birth-date" type="date"/);
+  assert.doesNotMatch(newPatientPageSource, /id="birth-date" type="date" required/);
+  assert.match(newPatientPageSource, /id="gender"/);
+  assert.doesNotMatch(newPatientPageSource, /id="gender" required/);
   assert.match(newPatientPageSource, /id="address" type="text"/);
   assert.match(newPatientPageSource, /id="phone" type="tel"/);
   assert.match(newPatientPageSource, /id="toggle-patient-extra-fields"/);

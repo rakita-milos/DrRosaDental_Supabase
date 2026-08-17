@@ -55,17 +55,25 @@ test('patient create schema validates required patient identity fields', () => {
   assert.equal(error, undefined);
 });
 
-test('patient create schema rejects missing birth date and gender', () => {
+test('patient create schema accepts missing birth date and gender', () => {
+  const { error } = patientCreateSchema.validate({
+    first_name: 'Ana',
+    last_name: 'Kovac'
+  });
+  assert.equal(error, undefined);
+});
+
+test('patient create schema rejects missing first and last name', () => {
   const { error } = patientCreateSchema.validate(
     {
-      first_name: 'Ana',
-      last_name: 'Kovac'
+      date_of_birth: '1990-05-12',
+      gender: 'Zenski'
     },
     { abortEarly: false }
   );
   assert(error instanceof Error);
-  assert.match(error.message, /date_of_birth/);
-  assert.match(error.message, /gender/);
+  assert.match(error.message, /first_name/);
+  assert.match(error.message, /last_name/);
 });
 
 test('patient document schema validates file upload payload', () => {
