@@ -77,7 +77,7 @@ async function authenticateWithSignedToken(page, role = "staff") {
   await page.context().addCookies([{
     name: "drrosa_access",
     value: token,
-    url: `${origin}/api`,
+    url: origin,
     httpOnly: true,
     sameSite: "Lax"
   }]);

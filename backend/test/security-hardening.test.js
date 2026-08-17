@@ -47,6 +47,14 @@ test('all director-prefixed API routes require director role', () => {
   });
 });
 
+test('auth cookies cover protected director static routes and logout clears old api-path cookies', () => {
+  assert.match(serverSource, /function cookieOptions\(maxAge\)[\s\S]*path: '\/'/);
+  assert.match(serverSource, /res\.clearCookie\('drrosa_access', \{ path: '\/' \}\)/);
+  assert.match(serverSource, /res\.clearCookie\('drrosa_refresh', \{ path: '\/' \}\)/);
+  assert.match(serverSource, /res\.clearCookie\('drrosa_access', \{ path: '\/api' \}\)/);
+  assert.match(serverSource, /res\.clearCookie\('drrosa_refresh', \{ path: '\/api' \}\)/);
+});
+
 test('public booking schema accepts captcha tokens', () => {
   const { error, value } = publicBookingSchema.validate({
     firstName: 'Ana',

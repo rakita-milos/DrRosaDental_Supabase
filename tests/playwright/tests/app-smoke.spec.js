@@ -70,6 +70,26 @@ test("staff and director navigation expose the right role surface", async ({ pag
   await expect(page.locator("#reports-grid")).toBeVisible();
 });
 
+test("director can move through the main menu without losing the session", async ({ page }) => {
+  await authenticate(page, "director");
+  await page.goto("/src/pages/index.html");
+
+  const menuFlow = [
+    { name: "Kalendar", url: /calendar\.html/, text: /Kalendar termina/i },
+    { name: "Novi unos", url: /new-entry\.html/, text: /Dodaj pregled/i },
+    { name: "Novi pacijent", url: /new-patient\.html/, text: /Unos novog pacijenta/i },
+    { name: "Evidencija", url: /all-records\.html/, text: /Pregled svih zapisa/i },
+    { name: "Direktor panel", url: /director-panel\.html/, text: /Direktor panel/i }
+  ];
+
+  for (const item of menuFlow) {
+    await page.getByRole("link", { name: item.name }).click();
+    await expect(page).toHaveURL(item.url);
+    await expect(page.locator("body")).toContainText(item.text);
+    await expect(page.locator("body")).not.toContainText(/login|No token provided|Director access required/i);
+  }
+});
+
 test("director admin codebooks expose all expected sections", async ({ page }) => {
   await authenticate(page, "director");
   await page.goto("/src/pages/director-panel.html");

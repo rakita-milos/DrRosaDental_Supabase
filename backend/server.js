@@ -653,7 +653,7 @@ function cookieOptions(maxAge) {
     secure: isProduction,
     sameSite: 'Strict',
     maxAge,
-    path: '/api'
+    path: '/'
   };
 }
 
@@ -2719,6 +2719,8 @@ app.post('/api/auth/logout', authenticateToken, async (req, res) => {
     }
     await auditLog({ userId: req.user.id, action: 'logout', entityType: 'user', entityId: req.user.id, req });
     try {
+      res.clearCookie('drrosa_access', { path: '/' });
+      res.clearCookie('drrosa_refresh', { path: '/' });
       res.clearCookie('drrosa_access', { path: '/api' });
       res.clearCookie('drrosa_refresh', { path: '/api' });
     } catch (e) {
