@@ -98,6 +98,18 @@ test("new entry: tooth map keeps clinical FDI orientation", async ({ page, reque
   expect(lowerRightCentral.x).toBeLessThan(lowerLeftCentral.x);
 });
 
+test("new entry: defaults visit date to today and keeps it editable", async ({ page, request, baseURL }) => {
+  const stamp = Date.now();
+  const fullName = await createTestPatient(request, baseURL, stamp, "DefaultDate");
+
+  await gotoNewEntry(page, fullName);
+  const today = await page.evaluate(() => window.DrRosaDateUtils.isoDateKey(new Date()));
+  await expect(page.locator("#last-visit")).toHaveValue(today);
+
+  await page.locator('[data-drrosa-for="last-visit"]').fill("06.07.2026");
+  await expect(page.locator("#last-visit")).toHaveValue("2026-07-06");
+});
+
 test("new entry: saves a fully populated visit without selecting teeth", async ({ page, request, baseURL }) => {
   const stamp = Date.now();
   const fullName = await createTestPatient(request, baseURL, stamp);

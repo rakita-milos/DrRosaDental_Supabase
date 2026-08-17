@@ -765,7 +765,12 @@ function refreshPreviousPaymentsForPatient({ force = false } = {}) {
 }
 
 function todayInputDate() {
-  return new Date().toISOString().slice(0, 10);
+  return window.DrRosaDateUtils?.isoDateKey?.(new Date()) || new Date().toISOString().slice(0, 10);
+}
+
+function setDefaultVisitDate() {
+  if (!inputs.lastVisit || inputs.lastVisit.value) return;
+  inputs.lastVisit.value = todayInputDate();
 }
 
 function availableCurrencyCodes() {
@@ -2066,6 +2071,8 @@ form.addEventListener("submit", async (event) => {
         ? await window.DrRosaApi.getRecord(recordParam)
         : allRecords.find(record => String(record.id) === String(recordParam));
       openRecordInForm(selectedRecord);
+    } else {
+      setDefaultVisitDate();
     }
   } catch (error) {
     console.error("Form setup error:", error);
