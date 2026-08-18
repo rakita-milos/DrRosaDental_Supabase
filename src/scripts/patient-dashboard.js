@@ -78,6 +78,12 @@ function recordDetailsUrl(record) {
   return `new-entry.html?${params.toString()}`;
 }
 
+function recordVisitNote(record) {
+  const note = String(record.note || record.notes || "").trim();
+  if (!note || note === "-") return "";
+  return note.length > 220 ? `${note.slice(0, 217).trim()}...` : note;
+}
+
 function treatmentListForValue(treatments) {
   if (!treatments) return [];
   return Array.isArray(treatments) ? treatments : [treatments];
@@ -528,6 +534,7 @@ function renderPatientTimeline(records, nextAppointment, patientId) {
       title: record.procedure || "Poseta",
       meta: [record.doctor, record.status, record.paymentStatus].filter(Boolean).join(" / "),
       amount: recordPaymentSummary(record),
+      note: recordVisitNote(record),
       details: renderRecordPaymentDetails(record),
       href: recordDetailsUrl(record),
       recordId: record.id,
@@ -595,6 +602,7 @@ function renderPatientTimeline(records, nextAppointment, patientId) {
         <strong><span class="patient-timeline-badge ${escapeHtml(item.type || "activity")}">${escapeHtml(item.typeLabel || "Aktivnost")}</span>${escapeHtml(item.title)}</strong>
         <span>${escapeHtml(item.meta || "-")}</span>
         <small>${escapeHtml(item.amount || "")}</small>
+        ${item.note ? `<p class="patient-timeline-note">${escapeHtml(item.note)}</p>` : ""}
         ${item.details || ""}
       </div>
       <div class="patient-timeline-actions">

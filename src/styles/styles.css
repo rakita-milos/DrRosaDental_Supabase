@@ -3441,6 +3441,15 @@ main {
   font-weight: 750;
 }
 
+.patient-timeline-note {
+  margin: 4px 0 0;
+  color: #263746;
+  font-size: 0.92rem;
+  line-height: 1.42;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
 .patient-payment-details {
   margin-top: 6px;
 }
