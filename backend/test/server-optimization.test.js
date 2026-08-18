@@ -133,6 +133,9 @@ test('patient summaries endpoint avoids hydrating full visit records for all-rec
   assert.match(recordsRepoSource, /COUNT\(mr\.id\)::int AS visits/);
   assert.match(recordsRepoSource, /MAX\(mr\.visit_date\) AS last_visit/);
   assert.match(recordsRepoSource, /jsonb_object_agg\(dt\.currency, dt\.total_debt\)/);
+  assert.match(recordsRepoSource, /ranked_debts AS/);
+  assert.match(recordsRepoSource, /representative_debt_record_id/);
+  assert.match(serverSource, /representativeDebtRecordId: row\.representative_debt_record_id/);
   assert.doesNotMatch(recordsRepoSource.match(/function patientSummariesSql[\s\S]*?function createPostgresRecordsRepository/)?.[0] || '', /treatment_type|payment_parts|vr\.procedure,\s*$/m);
   assert.match(summariesRoute, /recordsPaymentsRepo\.patientSummaries/);
   assert.match(summariesRoute, /serializePatientSummary/);

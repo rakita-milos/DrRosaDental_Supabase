@@ -30,7 +30,7 @@ function formatDate(rawDate) {
 
 function paymentIsDebt(record) {
   const payment = String(record.paymentStatus || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  return Number(record.amountDue || 0) > 0 && ["dugovanje", "delimično"].includes(payment);
+  return ["dugovanje", "delimično"].includes(payment) || Number(record.amountDue || 0) > 0;
 }
 
 function isToday(rawDate) {
@@ -154,6 +154,27 @@ function renderDueSummary(records) {
   if (debtorsCountEl) debtorsCountEl.textContent = uniqueDebtors;
 }
 
+function renderDebtorSummaryCount(debtorSummaries) {
+  const debtorsCountEl = document.getElementById("debtors-count");
+  if (debtorsCountEl) debtorsCountEl.textContent = String(debtorSummaries.filter(debtor => debtor.hasDebt).length);
+}
+
+function normalizeDashboardDebtorSummary(row) {
+  return {
+    patient: row.patient || row.patient_name || "-",
+    patientId: row.patientId || row.patient_id,
+    amounts: row.totalDebt || row.total_debt || {},
+    totalRsd: Object.entries(row.totalDebt || row.total_debt || {}).reduce((sum, [currency, amount]) => {
+      return sum + amountInRsd(Number(amount || 0), currency);
+    }, 0),
+    largestDebtRecord: {
+      id: row.representativeDebtRecordId || row.representative_debt_record_id,
+      patient: row.patient || row.patient_name || "-",
+      patientId: row.patientId || row.patient_id
+    }
+  };
+}
+
 function dashboardDebtorRows(records) {
   const debtors = new Map();
   records.filter(paymentIsDebt).forEach(record => {
@@ -185,10 +206,20 @@ function dashboardDebtorRows(records) {
     .slice(0, 5);
 }
 
-function renderDashboardDebtors(records) {
+function dashboardDebtorRowsFromSummaries(debtorSummaries) {
+  return debtorSummaries
+    .filter(debtor => debtor.hasDebt || Object.values(debtor.totalDebt || debtor.total_debt || {}).some(amount => Number(amount || 0) > 0))
+    .map(normalizeDashboardDebtorSummary)
+    .sort((a, b) => b.totalRsd - a.totalRsd)
+    .slice(0, 5);
+}
+
+function renderDashboardDebtors(records, debtorSummaries = null) {
   const container = document.getElementById("dashboard-debtors-list");
   if (!container) return;
-  const debtors = dashboardDebtorRows(records);
+  const debtors = Array.isArray(debtorSummaries)
+    ? dashboardDebtorRowsFromSummaries(debtorSummaries)
+    : dashboardDebtorRows(records);
   if (!debtors.length) {
     container.innerHTML = `
       <div class="dashboard-empty-state">
@@ -400,16 +431,18 @@ function renderDashboardAlerts({ patients, records, appointments }) {
   if (!document.getElementById("today-schedule-list")) return;
   if (!await requireAccess()) return;
   try {
-    const [patients, records, appointments, chairs] = await Promise.all([
+    const [patients, records, appointments, chairs, debtorSummaries] = await Promise.all([
       window.DrRosaApi.getPatients(),
       window.DrRosaApi.getRecords(),
       window.DrRosaApi.getAppointments(),
-      window.DrRosaApi.getChairs ? window.DrRosaApi.getChairs().catch(() => []) : []
+      window.DrRosaApi.getChairs ? window.DrRosaApi.getChairs().catch(() => []) : [],
+      window.DrRosaApi.getPatientSummaries ? window.DrRosaApi.getPatientSummaries({ payment: "debtors" }).catch(() => null) : null
     ]);
     renderDashboardStats({ patients, appointments, records, chairs });
-    renderDueSummary(records);
+    if (Array.isArray(debtorSummaries)) renderDebtorSummaryCount(debtorSummaries);
+    else renderDueSummary(records);
     renderTodaySchedule(appointments, records);
-    renderDashboardDebtors(records);
+    renderDashboardDebtors(records, debtorSummaries);
     renderDashboardAlerts({ patients, records, appointments });
   } catch (error) {
     renderDashboardStats({ patients: [], appointments: [], records: [], chairs: [] });

@@ -792,6 +792,10 @@ function setDefaultVisitDate() {
   inputs.lastVisit.value = todayInputDate();
 }
 
+function hasStandaloneVisitNote() {
+  return Boolean(inputs.note?.value.trim());
+}
+
 function availableCurrencyCodes() {
   const selectCodes = Array.from(inputs.currency?.options || []).map(option => option.value).filter(Boolean);
   const utilityCodes = currencyUtils?.currencyItems ? currencyUtils.currencyItems().map(item => item.value).filter(Boolean) : [];
@@ -1960,16 +1964,16 @@ form.addEventListener("submit", async (event) => {
   const patientNameValue = inputs.patient.value.trim();
   ensureDraftGeneralTreatmentAdded();
   const procedureActivityValue = generalTreatments[0]?.activity || inputs.procedureActivity.value.trim() || "";
-  const procedureForSave = currentCombinedTreatmentDescription({ includeDraft: false }) || "Rad po zubima";
+  const procedureForSave = currentCombinedTreatmentDescription({ includeDraft: false });
   const hasTreatments = hasToothTreatments();
   const hasGeneralSelection = hasGeneralTreatments({ includeDraft: false });
-  const finalTotal = currentFinalTotal();
+  const hasVisitNote = hasStandaloneVisitNote();
   updatePaymentCalculation({ render: false });
   const summary = paymentSummary();
   const amountDueValue = summary.debt;
   const amountPaidValue = summary.paid;
-  if (!patientNameValue || !inputs.lastVisit.value || (!hasGeneralSelection && !hasTreatments)) {
-    showAlert("Ispunite pacijenta, datum i dodajte rad na mapi zuba ili izaberite postupak bez mape zuba.", "error", { persist: true, scroll: true });
+  if (!patientNameValue || !inputs.lastVisit.value || (!hasGeneralSelection && !hasTreatments && !hasVisitNote)) {
+    showAlert("Ispunite pacijenta, datum i dodajte rad na mapi zuba, izaberite postupak bez mape zuba ili unesite napomenu.", "error", { persist: true, scroll: true });
     return;
   }
 
@@ -2027,8 +2031,8 @@ form.addEventListener("submit", async (event) => {
     doctorId: doctor?.id,
     patient: patientNameValue,
     lastVisit: inputs.lastVisit.value,
-    procedureActivity: procedureActivityValue,
-    procedure: procedureForSave || currentTreatmentDescription() || "Rad po zubima",
+    procedureActivity: procedureActivityValue || (hasVisitNote ? "Napomena" : ""),
+    procedure: procedureForSave || currentTreatmentDescription() || (hasVisitNote ? "Napomena" : "Rad po zubima"),
     doctor: inputs.doctor.value,
     status: inputs.status.value,
     paymentStatus: summary.status,
@@ -2065,6 +2069,7 @@ form.addEventListener("submit", async (event) => {
 (async function init() {
   setupEntryStepNavigation();
   setupProcedureFallbackToggle();
+  if (!recordParam) setDefaultVisitDate();
   if (!await requireAccess()) return;
   try {
     await procedureCatalog.loadFromApi?.();

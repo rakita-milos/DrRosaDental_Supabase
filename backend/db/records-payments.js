@@ -201,6 +201,17 @@ function patientSummariesSql(options = {}) {
         FROM matching_records
         WHERE amount_due > 0
         GROUP BY patient_id, currency
+      ),
+      ranked_debts AS (
+        SELECT
+          id,
+          patient_id,
+          ROW_NUMBER() OVER (
+            PARTITION BY patient_id
+            ORDER BY amount_due DESC, visit_date DESC, id DESC
+          ) AS debt_rank
+        FROM matching_records
+        WHERE amount_due > 0 OR lower(payment_status) IN ('dugovanje', 'delimično', 'delimicno')
       )
       SELECT
         p.id AS patient_id,
@@ -215,6 +226,12 @@ function patientSummariesSql(options = {}) {
           FROM debt_totals dt
           WHERE dt.patient_id = p.id
         ), '{}'::jsonb) AS total_debt,
+        (
+          SELECT rd.id
+          FROM ranked_debts rd
+          WHERE rd.patient_id = p.id AND rd.debt_rank = 1
+          LIMIT 1
+        ) AS representative_debt_record_id,
         COALESCE(array_agg(DISTINCT mr.currency) FILTER (WHERE mr.id IS NOT NULL), ARRAY[]::text[]) AS currencies,
         COALESCE(array_agg(DISTINCT mr.shift) FILTER (WHERE mr.id IS NOT NULL AND mr.shift IS NOT NULL), ARRAY[]::text[]) AS shifts
       FROM patients p

@@ -334,7 +334,7 @@ test('new entry syncs payment rows before adding another payment', () => {
 });
 
 test('new entry suggests remaining payment amount and converts row currency changes', () => {
-  assert.match(newEntryPageSource, /new-entry\.js\?v=patient-nav-visible-20260817/);
+  assert.match(newEntryPageSource, /new-entry\.js\?v=patient-note-save-20260818/);
   assert.match(newEntrySource, /function paymentPartAmountInVisitCurrency\(part\)/);
   assert.match(newEntrySource, /function remainingPaymentAmount\(\{ excludeIndex = null \} = \{\}\)/);
   assert.match(newEntrySource, /function suggestedPaymentPart\(\{ currency = paymentCurrency\(\) \} = \{\}\)/);
@@ -347,6 +347,16 @@ test('new entry suggests remaining payment amount and converts row currency chan
   assert.match(newEntrySource, /currencySelect\?\.addEventListener\("change", \(\) => \{/);
   assert.match(newEntrySource, /currencyUtils[\s\S]*\.convert\(amount, previousCurrency, nextCurrency\)/);
   assert.match(newEntrySource, /amountInput\.value = converted > 0 \? converted\.toFixed\(2\) : ""/);
+});
+
+test('new entry allows saving a patient visit with only a note and default date', () => {
+  assert.match(newEntrySource, /function setDefaultVisitDate\(\)/);
+  assert.match(newEntrySource, /if \(!recordParam\) setDefaultVisitDate\(\)/);
+  assert.match(newEntrySource, /function hasStandaloneVisitNote\(\)/);
+  assert.match(newEntrySource, /const hasVisitNote = hasStandaloneVisitNote\(\)/);
+  assert.match(newEntrySource, /!hasGeneralSelection && !hasTreatments && !hasVisitNote/);
+  assert.match(newEntrySource, /procedureActivity: procedureActivityValue \|\| \(hasVisitNote \? "Napomena" : ""\)/);
+  assert.match(newEntrySource, /procedure: procedureForSave \|\| currentTreatmentDescription\(\) \|\| \(hasVisitNote \? "Napomena" : "Rad po zubima"\)/);
 });
 
 test('new entry shows paginated previous patient payments separately from current payment rows', () => {
@@ -364,7 +374,8 @@ test('new entry shows paginated previous patient payments separately from curren
 });
 
 test('new entry adds debt payments only from indebted previous visit rows', () => {
-  assert.match(newEntryPageSource, /id="previous-debt-payment-form" class="previous-debt-payment-form" hidden/);
+  assert.match(newEntryPageSource, /id="previous-debt-payment-panel" class="previous-debt-payment-form" hidden/);
+  assert.match(newEntryPageSource, /<form id="previous-debt-payment-form" hidden><\/form>/);
   assert.match(newEntryPageSource, /id="previous-debt-record-id"/);
   assert.match(newEntrySource, /const hasDebt = Number\(item\.debt \|\| 0\) > 0\.009/);
   assert.match(newEntrySource, /index === 0 && hasDebt \? `<button type="button" class="secondary-btn previous-debt-payment-btn"/);
@@ -572,11 +583,15 @@ test('dashboard shows debtors above priorities with direct payment actions', () 
   assert.ok(debtorsPanelIndex > -1);
   assert.ok(prioritiesIndex > debtorsPanelIndex);
   assert.match(indexPageSource, /class="dashboard-side-stack"/);
-  assert.match(indexPageSource, /script\.js\?v=dashboard-debtors-20260815/);
+  assert.match(indexPageSource, /script\.js\?v=dashboard-debtors-persistent-20260818/);
+  assert.match(dashboardSource, /return \["dugovanje", "delimično"\]\.includes\(payment\) \|\| Number\(record\.amountDue \|\| 0\) > 0/);
   assert.match(dashboardSource, /function dashboardDebtorRows\(records\)/);
   assert.match(dashboardSource, /records\.filter\(paymentIsDebt\)/);
-  assert.match(dashboardSource, /function renderDashboardDebtors\(records\)/);
-  assert.match(dashboardSource, /renderDashboardDebtors\(records\)/);
+  assert.match(dashboardSource, /function dashboardDebtorRowsFromSummaries\(debtorSummaries\)/);
+  assert.match(dashboardSource, /function renderDashboardDebtors\(records, debtorSummaries = null\)/);
+  assert.match(dashboardSource, /window\.DrRosaApi\.getPatientSummaries\(\{ payment: "debtors" \}\)/);
+  assert.match(dashboardSource, /renderDashboardDebtors\(records, debtorSummaries\)/);
+  assert.match(serverSource, /representativeDebtRecordId: row\.representative_debt_record_id/);
   assert.match(dashboardSource, /new-entry\.html\?record=\$\{encodeURIComponent\(id\)\}&payment=debt#entry-details-section/);
   assert.match(dashboardSource, /class="dashboard-debtor-main"/);
   assert.match(dashboardSource, /class="dashboard-debtor-actions"/);

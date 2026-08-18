@@ -3221,6 +3221,7 @@ function serializePatientSummary(row) {
     visits: Number(row.visits || 0),
     hasDebt: Boolean(row.has_debt),
     totalDebt: row.total_debt || {},
+    representativeDebtRecordId: row.representative_debt_record_id ? Number(row.representative_debt_record_id) : null,
     currencies: Array.isArray(row.currencies) ? row.currencies.filter(Boolean) : [],
     shifts: Array.isArray(row.shifts) ? row.shifts.filter(Boolean) : []
   };
