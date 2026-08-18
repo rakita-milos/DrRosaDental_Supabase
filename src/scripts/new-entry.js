@@ -549,7 +549,7 @@ function openRecordInForm(record) {
     return;
   }
   inputs.patient.value = record.patient || "";
-  inputs.lastVisit.value = record.lastVisit || "";
+  setVisitDateValue(record.lastVisit || "");
   inputs.procedureActivity.value = record.procedureActivity || procedureCatalog.findActivityForProcedure(record.procedure);
   populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
   setSelectValue(inputs.procedure, record.procedure || "");
@@ -787,9 +787,38 @@ function todayInputDate() {
   return window.DrRosaDateUtils?.isoDateKey?.(new Date()) || new Date().toISOString().slice(0, 10);
 }
 
+function dateDisplayInputFor(input) {
+  if (!input?.id) return null;
+  return document.querySelector(`[data-drrosa-for="${input.id}"]`);
+}
+
+function syncDateDisplayInput(input) {
+  const displayInput = dateDisplayInputFor(input);
+  if (!displayInput) return;
+  displayInput.value = input.value ? formatDate(input.value) : "";
+  displayInput.setCustomValidity("");
+  displayInput.setAttribute("aria-invalid", "false");
+}
+
+function setVisitDateValue(value) {
+  if (!inputs.lastVisit) return;
+  inputs.lastVisit.value = value || "";
+  inputs.lastVisit.dispatchEvent(new Event("input", { bubbles: true }));
+  inputs.lastVisit.dispatchEvent(new Event("change", { bubbles: true }));
+  syncDateDisplayInput(inputs.lastVisit);
+}
+
 function setDefaultVisitDate() {
   if (!inputs.lastVisit || inputs.lastVisit.value) return;
-  inputs.lastVisit.value = todayInputDate();
+  setVisitDateValue(todayInputDate());
+}
+
+function ensureVisitDateBeforeSubmit() {
+  if (inputs.lastVisit?.value) {
+    syncDateDisplayInput(inputs.lastVisit);
+    return;
+  }
+  if (!recordParam) setDefaultVisitDate();
 }
 
 function hasStandaloneVisitNote() {
@@ -1950,6 +1979,8 @@ document.getElementById("existing-patients")?.addEventListener("keydown", event 
 document.addEventListener("click", event => {
   if (!event.target.closest(".patient-autocomplete-field")) closePatientSuggestions();
 });
+
+submitButton?.addEventListener("click", ensureVisitDateBeforeSubmit);
 
 form.addEventListener("input", updatePreview);
 form.addEventListener("invalid", (event) => {

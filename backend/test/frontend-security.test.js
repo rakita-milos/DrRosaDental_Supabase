@@ -334,7 +334,7 @@ test('new entry syncs payment rows before adding another payment', () => {
 });
 
 test('new entry suggests remaining payment amount and converts row currency changes', () => {
-  assert.match(newEntryPageSource, /new-entry\.js\?v=patient-note-save-20260818/);
+  assert.match(newEntryPageSource, /new-entry\.js\?v=visit-date-submit-sync-20260818/);
   assert.match(newEntrySource, /function paymentPartAmountInVisitCurrency\(part\)/);
   assert.match(newEntrySource, /function remainingPaymentAmount\(\{ excludeIndex = null \} = \{\}\)/);
   assert.match(newEntrySource, /function suggestedPaymentPart\(\{ currency = paymentCurrency\(\) \} = \{\}\)/);
@@ -352,6 +352,10 @@ test('new entry suggests remaining payment amount and converts row currency chan
 test('new entry allows saving a patient visit with only a note and default date', () => {
   assert.match(newEntrySource, /function setDefaultVisitDate\(\)/);
   assert.match(newEntrySource, /if \(!recordParam\) setDefaultVisitDate\(\)/);
+  assert.match(newEntrySource, /function syncDateDisplayInput\(input\)/);
+  assert.match(newEntrySource, /function ensureVisitDateBeforeSubmit\(\)/);
+  assert.match(newEntrySource, /submitButton\?\.addEventListener\("click", ensureVisitDateBeforeSubmit\)/);
+  assert.match(newEntrySource, /setVisitDateValue\(record\.lastVisit \|\| ""\)/);
   assert.match(newEntrySource, /function hasStandaloneVisitNote\(\)/);
   assert.match(newEntrySource, /const hasVisitNote = hasStandaloneVisitNote\(\)/);
   assert.match(newEntrySource, /!hasGeneralSelection && !hasTreatments && !hasVisitNote/);
