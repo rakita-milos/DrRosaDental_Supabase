@@ -3450,6 +3450,15 @@ main {
   overflow-wrap: anywhere;
 }
 
+.visit-note-cell {
+  min-width: 260px;
+  max-width: 520px;
+  white-space: pre-wrap;
+  color: #263746;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
 .patient-payment-details {
   margin-top: 6px;
 }

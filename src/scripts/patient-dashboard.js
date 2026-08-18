@@ -81,7 +81,13 @@ function recordDetailsUrl(record) {
 function recordVisitNote(record) {
   const note = String(record.note || record.notes || "").trim();
   if (!note || note === "-") return "";
-  return note.length > 220 ? `${note.slice(0, 217).trim()}...` : note;
+  return note;
+}
+
+function compactVisitNote(note, maxLength = 220) {
+  const text = String(note || "").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3)).trim()}...`;
 }
 
 function treatmentListForValue(treatments) {
@@ -474,6 +480,24 @@ function renderInternalComments() {
   `;
 }
 
+function renderVisitNotes(records) {
+  const body = document.getElementById("visit-notes-body");
+  if (!body) return;
+  const notes = [...records]
+    .map(record => ({ record, note: recordVisitNote(record) }))
+    .filter(item => item.note)
+    .sort((a, b) => String(b.record.lastVisit || "").localeCompare(String(a.record.lastVisit || "")));
+
+  body.innerHTML = notes.length ? notes.map(({ record, note }) => `
+    <tr>
+      <td>${escapeHtml(formatDate(record.lastVisit))}</td>
+      <td>${escapeHtml(record.procedure || "Poseta")}</td>
+      <td class="visit-note-cell">${escapeHtml(note)}</td>
+      <td><a class="secondary-btn" href="${escapeHtml(recordDetailsUrl(record))}">Uredi</a></td>
+    </tr>
+  `).join("") : `<tr><td colspan="4" class="empty-row">Nema upisanih napomena iz poseta.</td></tr>`;
+}
+
 function refreshPatientFirstScreen() {
   renderUpcomingAppointments(overviewAppointments, overviewPatientId);
   renderQuickDocuments();
@@ -521,6 +545,7 @@ function renderPatientOverview(patient, records, appointments, profile = {}) {
       renderSummaryLine("Sledeci termin", nextStart)
     ].join("");
   }
+  renderVisitNotes(records);
   refreshPatientFirstScreen();
 }
 
@@ -534,7 +559,7 @@ function renderPatientTimeline(records, nextAppointment, patientId) {
       title: record.procedure || "Poseta",
       meta: [record.doctor, record.status, record.paymentStatus].filter(Boolean).join(" / "),
       amount: recordPaymentSummary(record),
-      note: recordVisitNote(record),
+      note: compactVisitNote(recordVisitNote(record)),
       details: renderRecordPaymentDetails(record),
       href: recordDetailsUrl(record),
       recordId: record.id,

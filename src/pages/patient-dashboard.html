@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Karton pacijenta | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css?v=payment-history-table-20260812" />
+  <link rel="stylesheet" href="../styles/styles.css?v=visit-note-card-20260818" />
 </head>
 <body>
   <div class="app-shell">
@@ -168,6 +168,28 @@
             </div>
             <p id="medical-profile-message" class="form-alert" role="status"></p>
           </form>
+        </div>
+
+        <div class="patient-tab-panel active" id="visit-notes-card" data-patient-panel-group="clinical">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Evidencija poseta</p>
+              <h2>Napomene iz poseta</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Datum</th>
+                  <th>Postupak</th>
+                  <th>Napomena</th>
+                  <th>Akcije</th>
+                </tr>
+              </thead>
+              <tbody id="visit-notes-body"></tbody>
+            </table>
+          </div>
         </div>
 
         <div class="patient-tab-panel" id="initial-condition-card" data-patient-panel-group="teeth">
@@ -540,6 +562,6 @@
   <script src="../scripts/tooth-condition-editor.js"></script>
   <script src="../scripts/treatment-history.js"></script>
   <script src="../scripts/appointment-modal.js?v=patient-scheduler-20260804"></script>
-  <script src="../scripts/patient-dashboard.js?v=visit-note-timeline-20260818"></script>
+  <script src="../scripts/patient-dashboard.js?v=visit-note-card-20260818"></script>
 </body>
 </html>
