@@ -3305,6 +3305,10 @@ main {
   gap: 10px;
 }
 
+.visit-notes-panel {
+  margin-top: 16px;
+}
+
 .patient-focus-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

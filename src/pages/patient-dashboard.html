@@ -98,6 +98,27 @@
             </div>
           </div>
           <div id="patient-activity-timeline" class="patient-timeline"></div>
+          <section class="patient-focus-panel visit-notes-panel" id="visit-notes-card">
+            <div class="section-header">
+              <div>
+                <p class="eyebrow">Evidencija poseta</p>
+                <h2>Napomene iz poseta</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Datum</th>
+                    <th>Postupak</th>
+                    <th>Napomena</th>
+                    <th>Akcije</th>
+                  </tr>
+                </thead>
+                <tbody id="visit-notes-body"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
       </section>
 
@@ -168,28 +189,6 @@
             </div>
             <p id="medical-profile-message" class="form-alert" role="status"></p>
           </form>
-        </div>
-
-        <div class="patient-tab-panel active" id="visit-notes-card" data-patient-panel-group="clinical">
-          <div class="section-header">
-            <div>
-              <p class="eyebrow">Evidencija poseta</p>
-              <h2>Napomene iz poseta</h2>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Datum</th>
-                  <th>Postupak</th>
-                  <th>Napomena</th>
-                  <th>Akcije</th>
-                </tr>
-              </thead>
-              <tbody id="visit-notes-body"></tbody>
-            </table>
-          </div>
         </div>
 
         <div class="patient-tab-panel" id="initial-condition-card" data-patient-panel-group="teeth">

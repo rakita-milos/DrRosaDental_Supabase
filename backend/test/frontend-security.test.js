@@ -139,13 +139,15 @@ test('all records patient dropdown supports searchable custom select options', (
 });
 
 test('patient card lists visit-level notes from new entry records', () => {
-  assert.match(patientDashboardPageSource, /id="visit-notes-card"/);
+  assert.match(patientDashboardPageSource, /class="patient-focus-panel visit-notes-panel" id="visit-notes-card"/);
   assert.match(patientDashboardPageSource, /id="visit-notes-body"/);
+  assert.doesNotMatch(patientDashboardPageSource, /class="patient-tab-panel[^"]*" id="visit-notes-card"/);
   assert.match(patientDashboardSource, /function recordVisitNote\(record\)/);
   assert.match(patientDashboardSource, /record\.note \|\| record\.notes/);
   assert.match(patientDashboardSource, /function renderVisitNotes\(records\)/);
   assert.match(patientDashboardSource, /class="visit-note-cell"/);
   assert.match(patientDashboardSource, /renderVisitNotes\(records\)/);
+  assert.match(stylesSource, /\.visit-notes-panel[\s\S]*margin-top: 16px/);
   assert.match(stylesSource, /\.visit-note-cell[\s\S]*white-space: pre-wrap/);
 });
 
