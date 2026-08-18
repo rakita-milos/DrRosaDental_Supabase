@@ -189,6 +189,7 @@
     });
     document.getElementById("public-booking-form").addEventListener("submit", async event => {
       event.preventDefault();
+      if (!window.DrRosaForms?.validateRequiredTextFields(event.currentTarget)) return;
       const slot = document.getElementById("booking-slot").selectedOptions[0];
       const procedure = document.getElementById("booking-procedure").selectedOptions[0];
       const validationError = validateBookingForm();

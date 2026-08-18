@@ -15,6 +15,7 @@ function ensureTwoFactorField() {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!window.DrRosaForms?.validateRequiredTextFields(form, { messageTarget: errorMsg })) return;
 
   const email = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;

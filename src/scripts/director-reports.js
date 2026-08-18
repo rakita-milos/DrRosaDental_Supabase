@@ -656,6 +656,7 @@ async function refreshDoctorsAfterAdminChange(message) {
 async function saveDoctorAdmin(event) {
   event.preventDefault();
   const elements = doctorAdminElements();
+  if (!window.DrRosaForms?.validateRequiredTextFields(elements.form)) return;
   const payload = readDoctorForm();
   if (!payload.name) {
     showDoctorAdminMessage("Ime doktora je obavezno.", true);
@@ -1567,6 +1568,7 @@ function initializeCodebookAdmin() {
 
   elements.form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (!window.DrRosaForms?.validateRequiredTextFields(event.currentTarget)) return;
     let payload = readCodebookForm();
     if (!payload.value || !payload.label) {
       showCodebookMessage("Unesite šifru i naziv.", true);

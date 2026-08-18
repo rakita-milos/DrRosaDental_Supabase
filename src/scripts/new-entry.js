@@ -1955,6 +1955,7 @@ form.addEventListener("invalid", (event) => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!window.DrRosaForms?.validateRequiredTextFields(form, { messageTarget: alertBox })) return;
 
   const patientNameValue = inputs.patient.value.trim();
   ensureDraftGeneralTreatmentAdded();

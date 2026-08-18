@@ -76,6 +76,36 @@ test('patient create schema rejects missing first and last name', () => {
   assert.match(error.message, /last_name/);
 });
 
+test('required text schemas reject whitespace-only values', () => {
+  const patient = patientCreateSchema.validate({
+    first_name: '   ',
+    last_name: 'Kovac'
+  });
+  assert(patient.error instanceof Error);
+  assert.match(patient.error.message, /first_name/);
+
+  const record = recordCreateSchema.validate({
+    patient_id: 1,
+    doctor_id: 1,
+    visit_date: '   ',
+    procedure: 'Kontrola'
+  });
+  assert(record.error instanceof Error);
+  assert.match(record.error.message, /visit_date/);
+
+  const booking = publicBookingSchema.validate({
+    firstName: 'Ana',
+    lastName: '   ',
+    phone: '   ',
+    doctorId: 1,
+    procedureId: 1,
+    startsAt: '2026-08-18T10:00:00.000Z'
+  }, { abortEarly: false });
+  assert(booking.error instanceof Error);
+  assert.match(booking.error.message, /lastName/);
+  assert.match(booking.error.message, /phone/);
+});
+
 test('patient document schema validates file upload payload', () => {
   const { error } = patientDocumentSchema.validate({
     fileBase64: Buffer.from('hello').toString('base64'),

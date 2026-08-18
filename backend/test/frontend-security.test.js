@@ -32,6 +32,23 @@ test('shared frontend security helpers escape text and attributes', () => {
   assert.match(apiSource, /const \{ escapeHtml, escapeAttribute \} = window\.DrRosaSecurity/);
 });
 
+test('shared form validation rejects whitespace-only required text fields', () => {
+  assert.match(securitySource, /function validateRequiredTextFields\(form/);
+  assert.match(securitySource, /control\.value\.trim\(\)/);
+  assert.match(securitySource, /control\.setCustomValidity\(message\)/);
+  assert.match(securitySource, /window\.DrRosaForms = \{/);
+  [
+    newPatientSource,
+    newEntrySource,
+    calendarSource,
+    publicBookingSource,
+    directorReportsSource,
+    patientDashboardSource
+  ].forEach(source => {
+    assert.match(source, /DrRosaForms\?\.validateRequiredTextFields/);
+  });
+});
+
 test('session verification does not clear login state on navigation aborts', () => {
   assert.match(apiSource, /function apiError\(message, status\)/);
   assert.match(apiSource, /error\.status = status/);

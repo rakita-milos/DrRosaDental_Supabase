@@ -128,6 +128,7 @@ function continueWithNewEntry(savedPatient) {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!window.DrRosaForms?.validateRequiredTextFields(form, { messageTarget: formMessage })) return;
   if (form.dataset.drrosaBusy === "1") return;
   const submitButton = form.querySelector("button[type='submit']");
   const submitText = submitButton?.textContent;

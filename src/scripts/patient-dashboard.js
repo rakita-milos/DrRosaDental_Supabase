@@ -50,6 +50,7 @@ function formatMoney(amount, currency = "RSD") {
 async function runLockedFormSubmit(event, callback, loadingText = "Čuvanje...") {
   event.preventDefault();
   const form = event.currentTarget;
+  if (!window.DrRosaForms?.validateRequiredTextFields(form)) return;
   if (form.dataset.drrosaBusy === "1") return;
   const submitButton = form.querySelector("button[type='submit']");
   const submitText = submitButton?.textContent;

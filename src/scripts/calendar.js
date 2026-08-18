@@ -1086,6 +1086,7 @@
     });
     document.getElementById("appointment-form").addEventListener("submit", async event => {
       event.preventDefault();
+      if (!window.DrRosaForms?.validateRequiredTextFields(event.currentTarget, { messageTarget: document.getElementById("appointment-alert") })) return;
       if (event.currentTarget.dataset.drrosaBusy === "1") return;
       const submitButton = event.currentTarget.querySelector("button[type='submit']");
       const submitText = submitButton?.textContent;
