@@ -110,6 +110,41 @@ test("new entry: defaults visit date to today and keeps it editable", async ({ p
   await expect(page.locator("#last-visit")).toHaveValue("2026-07-06");
 });
 
+test("new entry: patientId visit with only a note ignores hidden debt payment date", async ({ page, request, baseURL }) => {
+  const stamp = Date.now();
+  const patient = {
+    firstName: `${TEST_PREFIX}${stamp}`,
+    lastName: "NoteOnly",
+    email: `e2e.new-entry.${stamp}.noteonly@example.com`
+  };
+  const created = await createPatient(request, baseURL, patient, "staff");
+  const fullName = `${patient.firstName} ${patient.lastName}`;
+  const note = `${TEST_PREFIX} note only ${stamp}`;
+
+  await authenticate(page, "staff");
+  await page.goto(`/src/pages/new-entry.html?patientId=${created.id}`);
+  await expect(page.locator("#patient-name")).toHaveValue(fullName);
+  await expect(page.locator("#last-visit")).not.toHaveValue("");
+  await page.locator("#note").fill(note);
+
+  const invalidControls = await page.locator("#new-entry-form").evaluate(form =>
+    Array.from(form.elements)
+      .filter(element => element.willValidate && !element.validity.valid)
+      .map(element => ({
+        id: element.id,
+        name: element.name,
+        value: element.value,
+        formId: element.form?.id || "",
+        dataFor: element.dataset?.drrosaFor || "",
+        validationMessage: element.validationMessage
+      }))
+  );
+  expect(invalidControls).toEqual([]);
+
+  await saveEntryButton(page).click();
+  await expectRecordWithNote(request, baseURL, fullName, note);
+});
+
 test("new entry: saves a fully populated visit without selecting teeth", async ({ page, request, baseURL }) => {
   const stamp = Date.now();
   const fullName = await createTestPatient(request, baseURL, stamp);

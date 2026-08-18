@@ -334,7 +334,7 @@ test('new entry syncs payment rows before adding another payment', () => {
 });
 
 test('new entry suggests remaining payment amount and converts row currency changes', () => {
-  assert.match(newEntryPageSource, /new-entry\.js\?v=visit-date-submit-sync-20260818/);
+  assert.match(newEntryPageSource, /new-entry\.js\?v=hidden-debt-form-validation-20260818/);
   assert.match(newEntrySource, /function paymentPartAmountInVisitCurrency\(part\)/);
   assert.match(newEntrySource, /function remainingPaymentAmount\(\{ excludeIndex = null \} = \{\}\)/);
   assert.match(newEntrySource, /function suggestedPaymentPart\(\{ currency = paymentCurrency\(\) \} = \{\}\)/);
@@ -381,6 +381,10 @@ test('new entry adds debt payments only from indebted previous visit rows', () =
   assert.match(newEntryPageSource, /id="previous-debt-payment-panel" class="previous-debt-payment-form" hidden/);
   assert.match(newEntryPageSource, /<form id="previous-debt-payment-form" hidden><\/form>/);
   assert.match(newEntryPageSource, /id="previous-debt-record-id"/);
+  assert.match(newEntrySource, /function setPreviousDebtPaymentControlsEnabled\(enabled\)/);
+  assert.match(newEntrySource, /setPreviousDebtPaymentControlsEnabled\(false\)/);
+  assert.match(newEntrySource, /setPreviousDebtPaymentControlsEnabled\(true\)/);
+  assert.match(newEntrySource, /if \(control\.form && control\.form !== form\) return/);
   assert.match(newEntrySource, /const hasDebt = Number\(item\.debt \|\| 0\) > 0\.009/);
   assert.match(newEntrySource, /index === 0 && hasDebt \? `<button type="button" class="secondary-btn previous-debt-payment-btn"/);
   assert.match(newEntrySource, /function openPreviousDebtPaymentForm\(record\)/);

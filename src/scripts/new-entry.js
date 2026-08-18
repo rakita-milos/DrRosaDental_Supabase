@@ -705,10 +705,11 @@ function openPreviousDebtPaymentForm(record) {
   renderDebtPaymentFormOptions(record);
   if (inputs.previousDebtRecordId) inputs.previousDebtRecordId.value = record.recordId || "";
   if (inputs.previousDebtPaymentAmount) inputs.previousDebtPaymentAmount.value = Number(record.debt || 0).toFixed(2);
-  if (inputs.previousDebtPaymentDate) inputs.previousDebtPaymentDate.value = record.visitDate || todayInputDate();
+  setDateInputValue(inputs.previousDebtPaymentDate, record.visitDate || todayInputDate());
   if (inputs.previousDebtPaymentContext) {
     inputs.previousDebtPaymentContext.textContent = `Poseta ${formatDate(record.visitDate)} - dug ${formatMoney(record.debt || 0, record.currency || "RSD")}`;
   }
+  setPreviousDebtPaymentControlsEnabled(true);
   if (inputs.previousDebtPaymentPanel) {
     inputs.previousDebtPaymentPanel.hidden = false;
     inputs.previousDebtPaymentAmount?.focus();
@@ -719,6 +720,7 @@ function closePreviousDebtPaymentForm() {
   selectedDebtPaymentRecord = null;
   if (inputs.previousDebtPaymentPanel) inputs.previousDebtPaymentPanel.hidden = true;
   inputs.previousDebtPaymentForm?.reset();
+  setPreviousDebtPaymentControlsEnabled(false);
 }
 
 async function loadPreviousPaymentsPage(page = patientPaymentHistory.page, { prefetch = false } = {}) {
@@ -800,12 +802,16 @@ function syncDateDisplayInput(input) {
   displayInput.setAttribute("aria-invalid", "false");
 }
 
+function setDateInputValue(input, value) {
+  if (!input) return;
+  input.value = value || "";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  syncDateDisplayInput(input);
+}
+
 function setVisitDateValue(value) {
-  if (!inputs.lastVisit) return;
-  inputs.lastVisit.value = value || "";
-  inputs.lastVisit.dispatchEvent(new Event("input", { bubbles: true }));
-  inputs.lastVisit.dispatchEvent(new Event("change", { bubbles: true }));
-  syncDateDisplayInput(inputs.lastVisit);
+  setDateInputValue(inputs.lastVisit, value);
 }
 
 function setDefaultVisitDate() {
@@ -823,6 +829,19 @@ function ensureVisitDateBeforeSubmit() {
 
 function hasStandaloneVisitNote() {
   return Boolean(inputs.note?.value.trim());
+}
+
+function setPreviousDebtPaymentControlsEnabled(enabled) {
+  [
+    inputs.previousDebtPaymentAmount,
+    inputs.previousDebtPaymentCurrency,
+    inputs.previousDebtPaymentMethod,
+    inputs.previousDebtPaymentDate,
+    dateDisplayInputFor(inputs.previousDebtPaymentDate)
+  ].filter(Boolean).forEach(control => {
+    control.disabled = !enabled;
+    if (!enabled) control.setCustomValidity("");
+  });
 }
 
 function availableCurrencyCodes() {
@@ -1985,6 +2004,7 @@ submitButton?.addEventListener("click", ensureVisitDateBeforeSubmit);
 form.addEventListener("input", updatePreview);
 form.addEventListener("invalid", (event) => {
   const control = event.target;
+  if (control.form && control.form !== form) return;
   showAlert(`Proverite polje "${controlLabel(control)}": ${control.validationMessage}`, "error", { persist: true });
 }, true);
 
@@ -2100,6 +2120,8 @@ form.addEventListener("submit", async (event) => {
 (async function init() {
   setupEntryStepNavigation();
   setupProcedureFallbackToggle();
+  window.DrRosaDateUtils?.enhancePickers?.();
+  setPreviousDebtPaymentControlsEnabled(false);
   if (!recordParam) setDefaultVisitDate();
   if (!await requireAccess()) return;
   try {
