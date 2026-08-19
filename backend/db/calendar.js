@@ -383,6 +383,55 @@ function createPostgresCalendarRepository(pool) {
       return execute(pool, 'UPDATE google_calendar_settings SET last_google_pull_at = now(), updated_at = now() WHERE id = 1');
     },
 
+    saveGoogleWatchChannel({ channelId, resourceId, channelToken, expiresAt }) {
+      return execute(pool, `
+        UPDATE google_calendar_settings
+        SET watch_channel_id = ?, watch_resource_id = ?, watch_channel_token = ?,
+            watch_expires_at = ?, watch_last_message_number = NULL,
+            watch_status = 'active', last_webhook_at = NULL, updated_at = now()
+        WHERE id = 1
+      `, [channelId, resourceId, channelToken, expiresAt]);
+    },
+
+    saveGoogleWatchPending({ channelId, channelToken }) {
+      return execute(pool, `
+        UPDATE google_calendar_settings
+        SET watch_channel_id = ?, watch_resource_id = NULL, watch_channel_token = ?,
+            watch_expires_at = NULL, watch_last_message_number = NULL,
+            watch_status = 'inactive', last_webhook_at = NULL, updated_at = now()
+        WHERE id = 1
+      `, [channelId, channelToken]);
+    },
+
+    updateGoogleWatchStatus({ status } = {}) {
+      const safeStatus = ['inactive', 'active', 'expired', 'stopped', 'error'].includes(status) ? status : 'error';
+      return execute(pool, `
+        UPDATE google_calendar_settings
+        SET watch_status = ?, updated_at = now()
+        WHERE id = 1
+      `, [safeStatus]);
+    },
+
+    markGoogleWatchStopped() {
+      return execute(pool, `
+        UPDATE google_calendar_settings
+        SET watch_status = 'stopped', watch_channel_id = NULL, watch_resource_id = NULL,
+            watch_channel_token = NULL, watch_expires_at = NULL,
+            watch_last_message_number = NULL, updated_at = now()
+        WHERE id = 1
+      `);
+    },
+
+    markGoogleWebhookReceived({ messageNumber = null, status = 'active' } = {}) {
+      const safeStatus = ['inactive', 'active', 'expired', 'stopped', 'error'].includes(status) ? status : 'active';
+      return execute(pool, `
+        UPDATE google_calendar_settings
+        SET watch_last_message_number = COALESCE(?, watch_last_message_number),
+            watch_status = ?, last_webhook_at = now(), updated_at = now()
+        WHERE id = 1
+      `, [messageNumber, safeStatus]);
+    },
+
     updateGoogleSettings(settings) {
       return execute(pool, `
         INSERT INTO google_calendar_settings (

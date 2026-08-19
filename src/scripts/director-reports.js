@@ -1719,11 +1719,22 @@ function googleOAuthAuthorizeUrl() {
 function renderGoogleSummary(settings) {
   const summary = document.getElementById("google-sync-summary");
   if (!summary) return;
+  const watch = settings.googleWatch || {};
+  const watchStatusLabel = {
+    active: "Aktivan",
+    inactive: "Neaktivan",
+    expired: "Istekao",
+    stopped: "Zaustavljen",
+    error: "Greska"
+  }[watch.status] || "Neaktivan";
   summary.innerHTML = `
     <div class="sync-pill"><strong>Status</strong><span>${settings.syncEnabled ? "Uključeno" : "Isključeno"}</span></div>
     <div class="sync-pill"><strong>Nalog</strong><span>${escapeHtml(settings.connectedEmail || "Nije povezan")}</span></div>
     <div class="sync-pill"><strong>Kalendar</strong><span>${escapeHtml(settings.calendarName || settings.calendarId || "-")}</span></div>
     <div class="sync-pill"><strong>OAuth</strong><span>${settings.oauthConnected ? "Povezan" : "Nije povezan"}</span></div>
+    <div class="sync-pill"><strong>Auto sync</strong><span>${watchStatusLabel}</span></div>
+    <div class="sync-pill"><strong>Watch vazi do</strong><span>${watch.expiresAt ? formatDate(watch.expiresAt) : "-"}</span></div>
+    <div class="sync-pill"><strong>Poslednji Google signal</strong><span>${watch.lastWebhookAt ? formatDate(watch.lastWebhookAt) : "-"}</span></div>
     <div class="sync-pill"><strong>Red</strong><span>${Number(settings.pendingSyncItems || 0)} otvoreno</span></div>
     <div class="sync-pill"><strong>Poslednja sinhronizacija</strong><span>${settings.lastSyncAt ? formatDate(settings.lastSyncAt) : "-"}</span></div>
     <div class="sync-pill"><strong>Google pull</strong><span>${settings.lastGooglePullAt ? formatDate(settings.lastGooglePullAt) : "Nije pokrenut"}</span></div>
@@ -1820,6 +1831,27 @@ function initializeGoogleCalendarSettings() {
       await loadGoogleCalendarSettings();
     } catch (error) {
       showGoogleMessage(error.message || "Google izmene nisu povučene.", true);
+    }
+  });
+
+  document.getElementById("google-renew-watch")?.addEventListener("click", async () => {
+    try {
+      const result = await window.DrRosaApi.renewGoogleCalendarWatch();
+      const expiresAt = result.expiresAt || result.settings?.googleWatch?.expiresAt;
+      showGoogleMessage(`Google auto sync je obnovljen${expiresAt ? ` do ${formatDate(expiresAt)}` : ""}.`);
+      await loadGoogleCalendarSettings();
+    } catch (error) {
+      showGoogleMessage(error.message || "Google auto sync nije obnovljen.", true);
+    }
+  });
+
+  document.getElementById("google-stop-watch")?.addEventListener("click", async () => {
+    try {
+      await window.DrRosaApi.stopGoogleCalendarWatch();
+      showGoogleMessage("Google auto sync je zaustavljen.");
+      await loadGoogleCalendarSettings();
+    } catch (error) {
+      showGoogleMessage(error.message || "Google auto sync nije zaustavljen.", true);
     }
   });
 

@@ -7,6 +7,12 @@
       "includeFiles": "backend/database.postgres.sql"
     }
   },
+  "crons": [
+    {
+      "path": "/api/calendar-sync/google/cron",
+      "schedule": "*/15 * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/src/pages/director-panel.html",

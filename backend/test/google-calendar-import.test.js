@@ -13,6 +13,7 @@ const apiSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts'
 const calendarSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'scripts', 'calendar.js'), 'utf8');
 const calendarPageSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'pages', 'calendar.html'), 'utf8');
 const stylesSource = readFileSync(path.join(__dirname, '..', '..', 'src', 'styles', 'styles.css'), 'utf8');
+const vercelSource = readFileSync(path.join(__dirname, '..', '..', 'vercel.json'), 'utf8');
 
 test('Google pull imports external calendar events instead of filtering them out', () => {
   assert.match(serverSource, /async function importAppointmentFromGoogleEvent\(event, times, colorContext\)/);
@@ -206,6 +207,31 @@ test('Calendar Google sync can run through short async job steps to avoid Vercel
   assert.match(calendarSource, /limit: 25/);
   assert.match(calendarSource, /runGoogleSyncJob\(job\.id\)/);
   assert.doesNotMatch(calendarSource, /limit: 100,\s*\n\s*complete: true/);
+});
+
+test('Google Calendar auto sync watch can start from webhook and cron fallback', () => {
+  assert.match(schemaSource, /watch_channel_id TEXT/);
+  assert.match(schemaSource, /watch_resource_id TEXT/);
+  assert.match(schemaSource, /watch_channel_token TEXT/);
+  assert.match(schemaSource, /watch_expires_at TIMESTAMPTZ/);
+  assert.match(schemaSource, /watch_last_message_number BIGINT/);
+  assert.match(schemaSource, /last_webhook_at TIMESTAMPTZ/);
+  assert.match(calendarRepoSource, /saveGoogleWatchChannel/);
+  assert.match(calendarRepoSource, /saveGoogleWatchPending/);
+  assert.match(calendarRepoSource, /markGoogleWebhookReceived/);
+  assert.match(serverSource, /registerGoogleCalendarWatch/);
+  assert.match(serverSource, /events\/watch/);
+  assert.match(serverSource, /pendingInitialSync/);
+  assert.match(serverSource, /app\.post\('\/api\/calendar-sync\/google\/webhook'/);
+  assert.match(serverSource, /x-goog-channel-id/);
+  assert.match(serverSource, /x-goog-resource-id/);
+  assert.match(serverSource, /x-goog-message-number/);
+  assert.match(serverSource, /startGooglePullJobWithLock\(\{ userId: null/);
+  assert.match(serverSource, /app\.get\('\/api\/calendar-sync\/google\/cron'/);
+  assert.match(vercelSource, /\/api\/calendar-sync\/google\/cron/);
+  assert.match(apiSource, /renewGoogleCalendarWatch/);
+  assert.match(directorReportsSource, /googleWatch/);
+  assert.match(directorPanelSource, /google-renew-watch/);
 });
 
 test('Calendar page Google sync refreshes the visible date range instead of using incremental token mode', () => {

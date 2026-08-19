@@ -412,6 +412,14 @@
     return request("/calendar-sync/google/status");
   }
 
+  async function renewGoogleCalendarWatch() {
+    return request("/director/google-calendar/watch/renew", { method: "POST" });
+  }
+
+  async function stopGoogleCalendarWatch() {
+    return request("/director/google-calendar/watch/stop", { method: "POST" });
+  }
+
   async function getNotifications({ sinceId = 0, limit = 20, latest = false } = {}) {
     const query = new URLSearchParams();
     if (sinceId) query.set("sinceId", sinceId);
@@ -1007,6 +1015,8 @@
     pullGoogleCalendarChanges,
     stepGoogleCalendarSync,
     getGoogleCalendarSyncStatus,
+    renewGoogleCalendarWatch,
+    stopGoogleCalendarWatch,
     getNotifications,
     testGoogleCalendarSync,
     exchangeGoogleCalendarCode,

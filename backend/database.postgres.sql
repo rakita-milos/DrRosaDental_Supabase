@@ -204,6 +204,13 @@ CREATE TABLE IF NOT EXISTS google_calendar_settings (
   last_sync_at TIMESTAMPTZ,
   events_sync_token TEXT,
   last_google_pull_at TIMESTAMPTZ,
+  watch_channel_id TEXT,
+  watch_resource_id TEXT,
+  watch_channel_token TEXT,
+  watch_expires_at TIMESTAMPTZ,
+  watch_last_message_number BIGINT,
+  watch_status TEXT NOT NULL DEFAULT 'inactive' CHECK (watch_status IN ('inactive', 'active', 'expired', 'stopped', 'error')),
+  last_webhook_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );

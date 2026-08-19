@@ -1377,7 +1377,16 @@ function publicGoogleSettings(settings) {
     defaultReminderMinutes: Number(settings.default_reminder_minutes || 1440),
     lastSyncAt: settings.last_sync_at,
     lastGooglePullAt: settings.last_google_pull_at,
-    googlePullConfigured: Boolean(settings.events_sync_token)
+    googlePullConfigured: Boolean(settings.events_sync_token),
+    googleWatch: {
+      channelId: settings.watch_channel_id || null,
+      resourceId: settings.watch_resource_id || null,
+      expiresAt: settings.watch_expires_at || null,
+      lastMessageNumber: settings.watch_last_message_number ? Number(settings.watch_last_message_number) : null,
+      status: settings.watch_status || 'inactive',
+      lastWebhookAt: settings.last_webhook_at || null,
+      configured: Boolean(settings.watch_channel_id && settings.watch_resource_id && settings.watch_channel_token)
+    }
   };
 }
 
@@ -1440,6 +1449,105 @@ async function callGoogleCalendar(settings, method, path, payload) {
     throw error;
   }
   return data;
+}
+
+function googleCalendarWebhookUrl(req = null) {
+  const configured = cleanText(process.env.GOOGLE_CALENDAR_WEBHOOK_URL, { max: 500 });
+  if (configured) return configured;
+  const publicUrl = cleanText(process.env.PUBLIC_APP_URL || process.env.APP_URL || process.env.API_URL, { max: 500 });
+  if (publicUrl) return `${publicUrl.replace(/\/+$/, '')}/api/calendar-sync/google/webhook`;
+  const vercelUrl = cleanText(process.env.VERCEL_URL, { max: 255 });
+  if (vercelUrl) return `https://${vercelUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/api/calendar-sync/google/webhook`;
+  if (req) return `${req.protocol}://${req.get('host')}/api/calendar-sync/google/webhook`;
+  return null;
+}
+
+function googleCalendarCronAuthorized(req) {
+  const secret = process.env.GOOGLE_CALENDAR_CRON_SECRET || process.env.CRON_SECRET;
+  if (!secret) return false;
+  const authorization = String(req.headers.authorization || '');
+  const bearer = authorization.toLowerCase().startsWith('bearer ') ? authorization.slice(7) : null;
+  return timingSafeSecretEqual(req.headers['x-cron-secret'], secret)
+    || timingSafeSecretEqual(bearer, secret);
+}
+
+function googleWatchExpiringSoon(settings, windowMs = 24 * 60 * 60 * 1000) {
+  if (!settings?.watch_expires_at) return true;
+  return new Date(settings.watch_expires_at).getTime() - Date.now() <= windowMs;
+}
+
+function googleWatchRequestReady(settings) {
+  return Boolean(
+    settings?.sync_enabled
+    && settings.sync_direction === 'two_way'
+    && settings.connected_email
+    && settings.calendar_id
+  );
+}
+
+async function stopGoogleCalendarWatch(settings) {
+  if (!settings?.watch_channel_id || !settings?.watch_resource_id) return { stopped: false };
+  try {
+    await callGoogleCalendar(settings, 'POST', '/channels/stop', {
+      id: settings.watch_channel_id,
+      resourceId: settings.watch_resource_id
+    });
+    await calendarRepo.markGoogleWatchStopped();
+    return { stopped: true };
+  } catch (error) {
+    await calendarRepo.updateGoogleWatchStatus({ status: 'error' });
+    return { stopped: false, error: error.message || 'Google watch stop failed' };
+  }
+}
+
+async function registerGoogleCalendarWatch({ req = null, force = false } = {}) {
+  const settings = await calendarRepo.googleSettings();
+  if (!googleWatchRequestReady(settings)) {
+    const error = new Error('Two-way Google Calendar sync must be enabled before auto sync watch can start.');
+    error.status = 400;
+    throw error;
+  }
+
+  if (!force && settings.watch_status === 'active' && settings.watch_channel_id && settings.watch_resource_id && !googleWatchExpiringSoon(settings)) {
+    return { renewed: false, settings: publicGoogleSettings(settings) };
+  }
+
+  if (settings.watch_channel_id && settings.watch_resource_id) {
+    await stopGoogleCalendarWatch(settings);
+  }
+
+  const address = googleCalendarWebhookUrl(req);
+  if (!address || !/^https:\/\//i.test(address)) {
+    const error = new Error('Google Calendar webhook URL must be configured as a public HTTPS URL.');
+    error.status = 400;
+    throw error;
+  }
+
+  const channelId = crypto.randomUUID();
+  const channelToken = crypto.randomBytes(32).toString('hex');
+  await calendarRepo.saveGoogleWatchPending({ channelId, channelToken });
+  const calendarId = encodeURIComponent(settings.calendar_id);
+  const payload = {
+    id: channelId,
+    type: 'web_hook',
+    address,
+    token: channelToken,
+    params: { ttl: '604800' }
+  };
+  const watch = await callGoogleCalendar(settings, 'POST', `/calendars/${calendarId}/events/watch`, payload);
+  const expiresAt = watch.expiration ? new Date(Number(watch.expiration)).toISOString() : null;
+  await calendarRepo.saveGoogleWatchChannel({
+    channelId,
+    resourceId: watch.resourceId,
+    channelToken,
+    expiresAt
+  });
+  return {
+    renewed: true,
+    channelId,
+    resourceId: watch.resourceId,
+    expiresAt
+  };
 }
 
 function googleCalendarRouteStatus(error) {
@@ -4950,6 +5058,75 @@ app.get('/api/calendar-sync/google/status', authenticateToken, requirePermission
   res.json({ latest: serializeGoogleSyncJob(await calendarRepo.latestGoogleSyncJob()) });
 }));
 
+app.post('/api/calendar-sync/google/webhook', asyncRoute(async (req, res) => {
+  const settings = await calendarRepo.googleSettings();
+  const channelId = req.get('x-goog-channel-id');
+  const channelToken = req.get('x-goog-channel-token');
+  const resourceId = req.get('x-goog-resource-id');
+  const resourceState = String(req.get('x-goog-resource-state') || '').toLowerCase();
+  const messageNumber = positiveInteger(req.get('x-goog-message-number'));
+
+  const pendingInitialSync = resourceState === 'sync'
+    && settings?.watch_channel_id
+    && settings.watch_channel_token
+    && !settings.watch_resource_id
+    && timingSafeSecretEqual(channelId, settings.watch_channel_id)
+    && timingSafeSecretEqual(channelToken, settings.watch_channel_token);
+
+  if (
+    !pendingInitialSync
+    && (
+    !settings?.watch_channel_id
+    || !settings.watch_resource_id
+    || !settings.watch_channel_token
+    || !timingSafeSecretEqual(channelId, settings.watch_channel_id)
+    || !timingSafeSecretEqual(channelToken, settings.watch_channel_token)
+    || !timingSafeSecretEqual(resourceId, settings.watch_resource_id)
+    )
+  ) {
+    return res.status(401).json({ error: 'Unauthorized Google Calendar webhook.' });
+  }
+
+  await calendarRepo.markGoogleWebhookReceived({ messageNumber, status: 'active' });
+  if (resourceState === 'sync') {
+    return res.status(202).json({ accepted: true, state: 'sync' });
+  }
+  if (messageNumber && settings.watch_last_message_number && messageNumber <= Number(settings.watch_last_message_number)) {
+    return res.status(202).json({ accepted: true, duplicate: true });
+  }
+
+  const request = { reset: false, limit: 25, complete: false, mode: 'incremental' };
+  const started = await startGooglePullJobWithLock({ userId: null, req: null, request });
+  let step = null;
+  if (!started.alreadyRunning) {
+    try {
+      step = await processGooglePullJobStep({ jobId: started.job.id, userId: null, req: null });
+    } catch (error) {
+      console.error('Google webhook sync step error:', error);
+    }
+  }
+  res.status(202).json({ accepted: true, state: resourceState || 'exists', job: started.job, step });
+}));
+
+app.post('/api/director/google-calendar/watch/renew', authenticateToken, requireDirector, asyncRoute(async (req, res) => {
+  try {
+    const result = await registerGoogleCalendarWatch({ req, force: true });
+    await auditLog({ userId: req.user.id, action: 'google_calendar_watch_renewed', entityType: 'google_calendar', entityId: 1, req, metadata: result });
+    res.json({ ...result, settings: publicGoogleSettings(await calendarRepo.googleSettings()) });
+  } catch (error) {
+    console.error('Google Calendar watch renew error:', error);
+    await calendarRepo.updateGoogleWatchStatus({ status: 'error' }).catch(() => {});
+    res.status(googleCalendarRouteStatus(error)).json({ error: error.message || 'Google Calendar watch renew failed' });
+  }
+}));
+
+app.post('/api/director/google-calendar/watch/stop', authenticateToken, requireDirector, asyncRoute(async (req, res) => {
+  const settings = await calendarRepo.googleSettings();
+  const result = await stopGoogleCalendarWatch(settings);
+  await auditLog({ userId: req.user.id, action: 'google_calendar_watch_stopped', entityType: 'google_calendar', entityId: 1, req, metadata: result });
+  res.json({ ...result, settings: publicGoogleSettings(await calendarRepo.googleSettings()) });
+}));
+
 app.get('/api/notifications', authenticateToken, asyncRoute(async (req, res) => {
   const sinceId = positiveInteger(req.query.since_id ?? req.query.sinceId) || 0;
   const limit = Math.max(1, Math.min(50, Number(req.query.limit || 20)));
@@ -4982,6 +5159,41 @@ app.post('/api/calendar-sync/daily-google-pull', googleSyncLimiter, validateBody
       logLabel: 'Daily Google Calendar pull error:'
     });
   }
+}));
+
+app.get('/api/calendar-sync/google/cron', googleSyncLimiter, asyncRoute(async (req, res) => {
+  if (!googleCalendarCronAuthorized(req)) return res.status(401).json({ error: 'Unauthorized' });
+  const result = { watch: null, step: null, started: null };
+  const settings = await calendarRepo.googleSettings();
+
+  if (googleWatchRequestReady(settings) && (settings.watch_status !== 'active' || googleWatchExpiringSoon(settings))) {
+    try {
+      result.watch = await registerGoogleCalendarWatch({ req, force: true });
+    } catch (error) {
+      await calendarRepo.updateGoogleWatchStatus({ status: 'error' }).catch(() => {});
+      result.watch = { error: error.message || 'Google Calendar watch renew failed' };
+    }
+  }
+
+  const running = await calendarRepo.latestRunningGoogleSyncJob();
+  if (running) {
+    try {
+      result.step = await processGooglePullJobStep({ jobId: running.id, userId: null, req: null });
+    } catch (error) {
+      result.step = { error: error.message || 'Google Calendar sync step failed' };
+    }
+  } else if (googleWatchRequestReady(settings) && settings.watch_status === 'active') {
+    const lastPull = settings.last_google_pull_at ? new Date(settings.last_google_pull_at).getTime() : 0;
+    if (!lastPull || Date.now() - lastPull > 30 * 60 * 1000) {
+      result.started = await startGooglePullJobWithLock({
+        userId: null,
+        req: null,
+        request: { reset: false, limit: 25, complete: false, mode: 'incremental' }
+      });
+    }
+  }
+
+  res.json(result);
 }));
 
 app.get('/api/director/public-booking/settings', authenticateToken, requireDirector, async (_req, res) => {
