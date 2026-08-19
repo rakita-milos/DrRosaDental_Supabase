@@ -25,3 +25,4 @@ tests/playwright/.backend-backups/
 tests/playwright/.backend-data/
 tests/playwright/.scanner-inbox/
 tests/playwright/.uploads/
+.vercel
