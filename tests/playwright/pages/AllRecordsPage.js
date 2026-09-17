@@ -104,7 +104,9 @@ class AllRecordsPage {
 
   async openPatient(name) {
     await this.filterByPatient(name);
-    await this.tableBody.getByRole("link", { name: "Otvori" }).click();
+    const row = this.tableBody.locator("tr", { hasText: name }).first();
+    await expect(row).toBeVisible();
+    await row.getByRole("link", { name: "Otvori" }).click();
     await expect(this.page).toHaveURL(/patient-dashboard\.html/);
   }
 

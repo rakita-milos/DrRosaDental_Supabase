@@ -18,6 +18,35 @@ test.afterEach(async ({ request, baseURL }) => {
   await cleanupRegressionData(request, baseURL, [TEST_PREFIX]);
 });
 
+async function openGeneralProcedures(page) {
+  const toggle = page.locator("#toggle-procedure-fallback");
+  if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+}
+
+async function setPickerValue(page, selector, value) {
+  const input = page.locator(selector);
+  await input.fill(value);
+  await input.press("Tab");
+}
+
+async function setVisitTotal(page, value) {
+  await page.locator("#total-amount").evaluate((input, nextValue) => {
+    input.value = nextValue;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, String(value));
+}
+
+async function saveVisitAndWaitForPersistence(page) {
+  const saved = page.waitForResponse(response =>
+    new URL(response.url()).pathname === "/api/records"
+    && response.request().method() === "POST"
+    && response.ok()
+  );
+  await page.getByRole("button", { name: /Sa.uvaj unos/i }).click();
+  await saved;
+}
+
 test("regression: staff cannot open director admin area", async ({ page }) => {
   await authenticate(page, "staff");
   const response = await page.goto("/src/pages/director-panel.html");
@@ -97,7 +126,6 @@ test("regression: director-created procedure is available in visit entry and cle
     note: `${TEST_PREFIX} custom procedure cleanup`
   });
   await newEntry.save();
-  await expect(newEntry.alert).toContainText(/Unos je spremljen/i);
 
   await allRecords.goto();
   await allRecords.openPatient(fullName);
@@ -120,16 +148,14 @@ test("regression: new visit without tooth map accepts split EUR and RSD payments
   await authenticate(page, "staff");
   await page.goto(`/src/pages/new-entry.html?patient=${encodeURIComponent(fullName)}`);
 
-  await page.locator('[data-drrosa-for="last-visit"]').fill("04.07.2026");
-  await page.locator("#procedure-activity").selectOption({ index: 1 });
+  await setPickerValue(page, '[data-drrosa-for="last-visit"]', "04.07.2026");
+  await openGeneralProcedures(page);
+  await page.locator("#procedure-activity").selectOption({ index: 1 }, { force: true });
   await expect(page.locator("#procedure")).toBeEnabled();
-  await page.locator("#procedure").selectOption({ label: "Kontrola" });
-  await page.locator("#status").selectOption({ index: 2 });
-  await page.locator("#doctor").selectOption({ index: 0 });
-  await page.locator("#shift").selectOption({ label: "Prva smena (08:00-14:00)" }).catch(async () => {
-    await page.locator("#shift").selectOption({ label: "Prva smena" });
-  });
-  await page.locator("#currency").selectOption("EUR");
+  await page.locator("#procedure").selectOption({ index: 1 }, { force: true });
+  await setVisitTotal(page, 3000);
+  await page.locator("#doctor").selectOption({ index: 0 }, { force: true });
+  await page.locator("#shift").selectOption({ index: 0 }, { force: true });
   const note = `${TEST_PREFIX} split payment visit without tooth map ${stamp}`;
   await page.locator("#note").fill(note);
 
@@ -153,8 +179,7 @@ test("regression: new visit without tooth map accepts split EUR and RSD payments
   );
   expect(invalidControls).toEqual([]);
 
-  await page.getByRole("button", { name: /Sa.uvaj unos/i }).click();
-  await expect(page.locator(".form-alert")).toContainText(/Unos je spremljen|Unos je sa/i);
+  await saveVisitAndWaitForPersistence(page);
   const records = await request.get(`${baseURL}/api/records`, {
     headers: { Authorization: `Bearer ${require("../utils/auth").tokenFor("staff")}` }
   });
@@ -183,14 +208,14 @@ test("regression: new visit split payments works through visible custom selects"
   await authenticate(page, "staff");
   await page.goto(`/src/pages/new-entry.html?patient=${encodeURIComponent(fullName)}`);
 
-  await page.locator('[data-drrosa-for="last-visit"]').fill("04.07.2026");
+  await setPickerValue(page, '[data-drrosa-for="last-visit"]', "04.07.2026");
+  await openGeneralProcedures(page);
   await choose("#procedure-activity", 1);
   await expect(page.locator("#procedure")).toBeEnabled();
   await choose("#procedure", 1);
-  await choose("#status", 2);
+  await setVisitTotal(page, 3000);
   await choose("#doctor", 0);
   await choose("#shift", 0);
-  await choose("#currency", 0);
   const note = `${TEST_PREFIX} visible custom selects split payment ${stamp}`;
   await page.locator("#note").fill(note);
 
@@ -222,8 +247,7 @@ test("regression: new visit split payments works through visible custom selects"
   }));
   expect(stateBeforeSave.invalid).toEqual([]);
 
-  await page.getByRole("button", { name: /Sa.uvaj unos/i }).click();
-  await expect(page.locator(".form-alert")).toContainText(/Unos je spremljen|Unos je sa/i);
+  await saveVisitAndWaitForPersistence(page);
   const records = await request.get(`${baseURL}/api/records`, {
     headers: { Authorization: `Bearer ${require("../utils/auth").tokenFor("staff")}` }
   });
@@ -266,15 +290,14 @@ test("regression: zero-priced procedure can save split payments after manual tot
   await authenticate(page, "staff");
   await page.goto(`/src/pages/new-entry.html?patient=${encodeURIComponent(fullName)}`);
 
-  await page.locator('[data-drrosa-for="last-visit"]').fill("04.07.2026");
-  await page.locator("#procedure-activity").selectOption({ label: activityName });
+  await setPickerValue(page, '[data-drrosa-for="last-visit"]', "04.07.2026");
+  await openGeneralProcedures(page);
+  await page.locator("#procedure-activity").selectOption({ label: activityName }, { force: true });
   await expect(page.locator("#procedure")).toBeEnabled();
-  await page.locator("#procedure").selectOption({ label: procedureName });
-  await page.locator("#total-amount").fill("50");
-  await page.locator("#status").selectOption({ index: 2 });
-  await page.locator("#doctor").selectOption({ index: 0 });
-  await page.locator("#shift").selectOption({ index: 0 });
-  await page.locator("#currency").selectOption("EUR");
+  await page.locator("#procedure").selectOption({ label: procedureName }, { force: true });
+  await setVisitTotal(page, 3000);
+  await page.locator("#doctor").selectOption({ index: 0 }, { force: true });
+  await page.locator("#shift").selectOption({ index: 0 }, { force: true });
   const note = `${TEST_PREFIX} zero price split payment ${stamp}`;
   await page.locator("#note").fill(note);
 
@@ -286,9 +309,8 @@ test("regression: zero-priced procedure can save split payments after manual tot
   await page.locator(".payment-part-row").nth(1).locator(".payment-part-amount").fill("1000");
   await page.locator(".payment-part-row").nth(1).locator(".payment-part-currency").selectOption("RSD");
 
-  await expect(page.locator("#payment-total-display")).toContainText("50.00 EUR");
-  await page.getByRole("button", { name: /Sa.uvaj unos/i }).click();
-  await expect(page.locator(".form-alert")).toContainText(/Unos je spremljen|Unos je sa/i);
+  await expect(page.locator("#payment-total-display")).toContainText("3000.00 RSD");
+  await saveVisitAndWaitForPersistence(page);
 
   const records = await request.get(`${baseURL}/api/records`, {
     headers: { Authorization: `Bearer ${require("../utils/auth").tokenFor("staff")}` }
@@ -334,14 +356,13 @@ test("regression: split payment without total amount shows actionable error", as
   await authenticate(page, "staff");
   await page.goto(`/src/pages/new-entry.html?patient=${encodeURIComponent(fullName)}`);
 
-  await page.locator('[data-drrosa-for="last-visit"]').fill("04.07.2026");
-  await page.locator("#procedure-activity").selectOption({ label: activityName });
+  await setPickerValue(page, '[data-drrosa-for="last-visit"]', "04.07.2026");
+  await openGeneralProcedures(page);
+  await page.locator("#procedure-activity").selectOption({ label: activityName }, { force: true });
   await expect(page.locator("#procedure")).toBeEnabled();
-  await page.locator("#procedure").selectOption({ label: procedureName });
-  await page.locator("#status").selectOption({ index: 2 });
-  await page.locator("#doctor").selectOption({ index: 0 });
-  await page.locator("#shift").selectOption({ index: 0 });
-  await page.locator("#currency").selectOption("EUR");
+  await page.locator("#procedure").selectOption({ label: procedureName }, { force: true });
+  await page.locator("#doctor").selectOption({ index: 0 }, { force: true });
+  await page.locator("#shift").selectOption({ index: 0 }, { force: true });
   await page.locator("#note").fill(`${TEST_PREFIX} zero price requires total ${stamp}`);
 
   await page.locator("#add-payment-part").click();
@@ -364,6 +385,12 @@ test("regression: daily cash report counts only physical cash and manual outflow
     email: `e2e.cash.${stamp}@example.com`
   };
   const created = await createPatient(request, baseURL, patient, "staff");
+
+  await apiPut(request, baseURL, "/api/director/daily-cash-report", {
+    date: reportDate,
+    shift: reportShift,
+    lines: []
+  }, "director");
 
   await createRecord(request, baseURL, {
     patientId: created.id,

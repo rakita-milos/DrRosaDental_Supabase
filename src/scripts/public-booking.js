@@ -1,5 +1,5 @@
 (function () {
-  const state = { doctors: [], procedures: [], slots: [], captcha: { required: false, siteKey: null, token: "" } };
+  const state = { doctors: [], procedures: [], slots: [], slotsRequestId: 0, captcha: { required: false, siteKey: null, token: "" } };
 
   function today() {
     return new Date().toISOString().slice(0, 10);
@@ -142,6 +142,9 @@
     const date = document.getElementById("booking-date").value;
     const doctorId = document.getElementById("booking-doctor").value;
     if (!date || !doctorId) return;
+    const requestId = ++state.slotsRequestId;
+    const slotSelect = document.getElementById("booking-slot");
+    slotSelect.disabled = true;
     message("Ucitavam slobodne termine...");
     try {
       const data = await window.DrRosaApi.getPublicAvailability({
@@ -149,10 +152,14 @@
         doctor_id: doctorId,
         duration: 30
       });
+      if (requestId !== state.slotsRequestId) return;
       state.slots = data.slots || [];
       renderSlots();
+      slotSelect.disabled = false;
       message(state.slots.length ? "Izaberite termin." : "Nema slobodnih termina za izabrani dan.", !state.slots.length);
     } catch (error) {
+      if (requestId !== state.slotsRequestId) return;
+      slotSelect.disabled = false;
       message(error.message || "Termini nisu učitani.", true);
     }
   }

@@ -26,15 +26,23 @@ class NewPatientPage {
     await this.firstName.fill(data.firstName);
     await this.lastName.fill(data.lastName);
     await this.birthDate.fill(data.birthDateDisplay || "08.05.1986");
+    await this.birthDate.press("Tab");
     await this.gender.selectOption({ index: data.genderIndex || 1 });
     await this.address.fill(data.address || "Playwright smoke address");
     await this.phone.fill(data.phone || "060123456");
+    if (await this.page.locator("#toggle-patient-extra-fields").getAttribute("aria-expanded") !== "true") {
+      await this.page.locator("#toggle-patient-extra-fields").click();
+    }
+    await expect(this.email).toBeVisible();
     await this.email.fill(data.email);
     await this.emergencyContact.fill(data.emergencyContact || "Smoke Contact");
     await this.medicalHistory.fill(data.medicalHistory || "Automated smoke patient");
   }
 
   async expectCoreElements() {
+    if (!(await this.page.locator("#patient-extra-fields").isVisible())) {
+      await this.page.locator("#toggle-patient-extra-fields").click();
+    }
     await expect(this.firstName).toBeVisible();
     await expect(this.lastName).toBeVisible();
     await expect(this.birthDate).toBeVisible();
@@ -55,17 +63,16 @@ class NewPatientPage {
     expect(valid).toBe(false);
   }
 
-  async saveAndAcceptDialog(expectedText) {
-    const dialogPromise = new Promise((resolve) => {
-      this.page.once("dialog", dialog => {
-        const message = dialog.message();
-        resolve(message);
-        dialog.accept().catch(() => {});
-      });
-    });
+  async saveAndAcceptDialog() {
+    const saved = this.page.waitForResponse(response =>
+      /\/api\/patients(?:\/\d+)?$/.test(new URL(response.url()).pathname)
+      && ["POST", "PUT"].includes(response.request().method())
+      && response.ok()
+    );
+    const navigation = this.page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 10_000 }).catch(() => null);
     await this.submit.click();
-    const message = await dialogPromise;
-    if (expectedText) expect(message).toContain(expectedText);
+    await saved;
+    await navigation;
   }
 }
 

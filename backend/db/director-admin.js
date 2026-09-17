@@ -149,6 +149,7 @@ function createPostgresDirectorAdminRepository(pool) {
 
     saveDailyCashReport({ reportId, lines, notes, userId }) {
       return withTransaction(pool, async (client) => {
+        await execute(client, 'DELETE FROM daily_cash_report_lines WHERE report_id = ?', [reportId]);
         for (const line of lines) {
           await execute(client, `
             INSERT INTO daily_cash_report_lines (report_id, item_value, item_label, line_type, currency, amount, notes)

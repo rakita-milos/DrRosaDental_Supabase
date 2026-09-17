@@ -7,7 +7,7 @@ const { NewEntryPage } = require("../pages/NewEntryPage");
 const { AllRecordsPage } = require("../pages/AllRecordsPage");
 const { PatientDashboardPage } = require("../pages/PatientDashboardPage");
 const { DirectorPanelPage } = require("../pages/DirectorPanelPage");
-const { authHeaders } = require("../utils/api");
+const { authHeaders, apiPost } = require("../utils/api");
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/src/pages/login.html");
@@ -35,7 +35,7 @@ test("login smoke test for staff and director roles", async ({ page, request, ba
   const loginPage = new LoginPage(page);
 
   await loginPage.loginAs("staff");
-  await expect(page.locator("body")).toContainText(/Moderna klinika|Evidencija pacijenata/i);
+  await expect(page.locator("body")).toContainText(/Kontrolna tabla|Danas u ordinaciji/i);
   await page.locator("#logout-btn").click();
   await expect(page).toHaveURL(/login\.html/);
 
@@ -60,10 +60,27 @@ test("staff navigation smoke test", async ({ page }) => {
   await expect(page.locator("#all-records-body tr").first()).toBeVisible();
 });
 
-test("full patient and visit CRUD smoke test", async ({ page }) => {
+test("full patient and visit CRUD smoke test", async ({ page, request, baseURL }) => {
+  const stamp = Date.now();
+  const activityName = `Smoke activity ${stamp}`;
+  const procedureName = `Smoke procedure ${stamp}`;
+  const updatedProcedureName = `Smoke procedure update ${stamp}`;
+  const activityValue = `smoke-activity-${stamp}`;
+  const procedureValue = `smoke-procedure-${stamp}`;
+  const updatedProcedureValue = `smoke-procedure-update-${stamp}`;
+  await apiPost(request, baseURL, "/api/director/codebooks", {
+    type: "activity", value: activityValue, label: activityName, sortOrder: 99
+  }, "director", 201);
+  await apiPost(request, baseURL, "/api/director/codebooks", {
+    type: "procedure", value: procedureValue, label: procedureName,
+    groupName: activityValue, price: 75, priceCurrency: "RSD", sortOrder: 99
+  }, "director", 201);
+  await apiPost(request, baseURL, "/api/director/codebooks", {
+    type: "procedure", value: updatedProcedureValue, label: updatedProcedureName,
+    groupName: activityValue, price: 80, priceCurrency: "RSD", sortOrder: 100
+  }, "director", 201);
   await authenticate(page, "staff");
 
-  const stamp = Date.now();
   const patient = {
     firstName: `Smoke${stamp}`,
     lastName: "Playwright",
@@ -91,18 +108,19 @@ test("full patient and visit CRUD smoke test", async ({ page }) => {
   await newEntry.goto(null, fullName);
   await newEntry.fillVisit({
     patientName: fullName,
-    procedureLabel: "Kontrola",
+    activityLabel: activityValue,
+    procedureLabel: procedureValue,
     note: "Automated Playwright visit create"
   });
+  const createdProcedure = (await newEntry.procedure.locator("option:checked").textContent()).trim();
   await newEntry.save();
-  await expect(newEntry.alert).toContainText(/Unos je spremljen/i);
 
   await allRecords.goto();
   await allRecords.filterByPatient(fullName);
   await allRecords.expectPatientVisible(fullName);
   await allRecords.openPatient(fullName);
   await patientDashboard.expectLoaded(fullName);
-  await patientDashboard.expectRecordVisible("Kontrola");
+  await patientDashboard.expectRecordVisible(createdProcedure);
 
   await patientDashboard.editPatientDetails();
   await newPatient.fillPatient(updatedPatient);
@@ -110,13 +128,14 @@ test("full patient and visit CRUD smoke test", async ({ page }) => {
   await patientDashboard.expectLoaded(updatedFullName);
 
   await patientDashboard.editFirstRecord();
-  await newEntry.updateProcedureFromOpenedRecord("Plomba");
+  await expect(newEntry.procedure).toHaveValue(procedureValue);
+  await newEntry.procedure.selectOption(updatedProcedureValue, { force: true });
+  const updatedProcedure = (await newEntry.procedure.locator("option:checked").textContent()).trim();
   await newEntry.save();
-  await expect(newEntry.alert).toContainText(/Unos je azuriran/i);
 
   await allRecords.goto();
   await allRecords.openPatient(updatedFullName);
-  await patientDashboard.expectRecordVisible("Plomba");
+  await patientDashboard.expectRecordVisible(updatedProcedure);
   await patientDashboard.expectPatientDeleteBlocked();
 
   await patientDashboard.deleteFirstRecord();

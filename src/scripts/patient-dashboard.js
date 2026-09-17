@@ -1044,7 +1044,7 @@ function documentPayloadFromForm() {
     documentType: document.getElementById("document-type").value,
     title: document.getElementById("document-title").value,
     documentDate: document.getElementById("document-date").value,
-    visitRecordId: document.getElementById("document-visit").value,
+    visitRecordId: Number(document.getElementById("document-visit").value) || null,
     description: document.getElementById("document-description").value,
     imagingModality: document.getElementById("document-imaging-modality").value,
     toothNumber: document.getElementById("document-tooth-number").value,
@@ -1070,7 +1070,9 @@ function fillDocumentForm(documentRow) {
   document.getElementById("document-id").value = documentRow.id;
   document.getElementById("document-type").value = documentRow.documentType || "other";
   document.getElementById("document-title").value = documentRow.title || "";
-  document.getElementById("document-date").value = documentRow.documentDate || documentRow.acquisitionDate || "";
+  const documentDate = document.getElementById("document-date");
+  documentDate.value = documentRow.documentDate || documentRow.acquisitionDate || "";
+  documentDate.dispatchEvent(new Event("change", { bubbles: true }));
   document.getElementById("document-imaging-modality").value = documentRow.imagingModality || "";
   document.getElementById("document-tooth-number").value = documentRow.toothNumber || "";
   document.getElementById("document-dicom-study-uid").value = documentRow.dicomStudyUid || "";
@@ -1968,6 +1970,7 @@ async function initializeClinicalSection(patientDetails, patientRecords, appoint
     }
   });
 
+  documentsBody.dataset.documentActionsReady = "1";
   documentsBody.addEventListener("click", async event => {
     const viewButton = event.target.closest(".view-document-btn");
     const editButton = event.target.closest(".edit-document-btn");

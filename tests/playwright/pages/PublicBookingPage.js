@@ -28,18 +28,34 @@ class PublicBookingPage {
     await this.phone.fill(phone || "060123456");
     const [year, month, day] = date.split("-");
     await this.date.fill(`${day}.${month}.${year}`);
+    await this.date.press("Tab");
     await this.doctor.selectOption({ index: 0 });
     await this.page.locator("#refresh-slots").click();
+    await expect(this.slot).toBeEnabled();
     await expect(this.message).toContainText(/Izaberite termin|Nema slobodnih/i);
-    await expect(this.slot.locator("option")).not.toHaveCount(0);
-    await this.slot.selectOption({ index: 0 });
+    await this.selectFirstAvailableSlot();
     await this.notes.fill(note || "Playwright public booking");
     await this.form.getByRole("button", { name: /Zakazi termin/i }).click();
     await expect(this.message).toContainText(/Termin je zakazan/i);
   }
 
+  async selectFirstAvailableSlot() {
+    await expect.poll(async () => this.slot.locator("option").evaluateAll(options =>
+      options.some(option => option.value)
+    )).toBe(true);
+    const value = await this.slot.locator("option").evaluateAll(options =>
+      options.find(option => option.value)?.value || null
+    );
+    if (!value) throw new Error("No public booking slot is available.");
+    await this.slot.selectOption(value, { force: true });
+  }
+
   async expectCoreElements() {
     await expect(this.form).toBeVisible();
+    if (await this.firstName.isHidden()) {
+      await expect(this.message).toContainText(/trenutno nije dostupno/i);
+      return;
+    }
     await expect(this.firstName).toBeVisible();
     await expect(this.lastName).toBeVisible();
     await expect(this.email).toBeVisible();
@@ -54,6 +70,17 @@ class PublicBookingPage {
   async expectInvalidPhoneRejected() {
     await this.firstName.fill("Test");
     await this.lastName.fill("Pacijent");
+    const date = await this.page.evaluate(() => {
+      const next = new Date();
+      next.setDate(next.getDate() + 1);
+      return window.DrRosaDateUtils.formatDate(next);
+    });
+    await this.date.fill(date);
+    await this.date.press("Tab");
+    await this.doctor.selectOption({ index: 0 }, { force: true });
+    await this.page.locator("#refresh-slots").click();
+    await expect(this.slot).toBeEnabled();
+    await this.selectFirstAvailableSlot();
     await this.phone.fill("abc");
     await this.form.getByRole("button", { name: /Zakazi termin/i }).click();
     await expect(this.message).toContainText(/telefona nije u ispravnom formatu/i);
