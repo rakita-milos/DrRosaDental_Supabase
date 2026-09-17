@@ -141,7 +141,7 @@ function createPostgresClinicalRepository(pool) {
       await execute(pool, `
         UPDATE patient_consents
         SET treatment_plan_id = ?, consent_type = ?, title = ?, body = ?, signer_name = ?,
-            signature_data = ?, signed_at = ?, updated_at = now()
+            signature_data = ?, signed_at = ?
         WHERE id = ?
       `, [consent.treatmentPlanId, consent.consentType, consent.title, consent.body, consent.signerName, consent.signatureData, consent.signedAt, id]);
       return this.findConsent(id);
