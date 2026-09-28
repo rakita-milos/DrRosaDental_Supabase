@@ -97,7 +97,6 @@ test("director daily cash export includes debtor details", async ({ page, reques
     input.value = value;
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, "2026-05-11");
-  await page.locator("#daily-cash-shift").selectOption("Prva smena");
   await page.locator("#daily-cash-load").click();
   await expect(page.locator("#daily-cash-debts-table")).toContainText(fullName);
 

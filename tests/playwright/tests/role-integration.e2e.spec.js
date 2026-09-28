@@ -110,9 +110,10 @@ test("director codebook changes become available to staff entry workflow", async
   await authenticate(page, "staff");
   const newEntry = new NewEntryPage(page);
   await newEntry.goto();
-  await newEntry.activity.selectOption({ label: activityName });
+  await page.locator("#toggle-procedure-fallback").click();
+  await newEntry.activity.selectOption({ label: activityName }, { force: true });
   await expect(newEntry.procedure).toBeEnabled();
-  await newEntry.procedure.selectOption({ label: procedureName });
+  await newEntry.procedure.selectOption({ label: procedureName }, { force: true });
   await expect(newEntry.procedure).toHaveValue(procedureName);
   await expect.poll(async () => page.evaluate((name) => window.DrRosaProcedureCatalog.getPrice(name), procedureName)).toBe(99);
 });

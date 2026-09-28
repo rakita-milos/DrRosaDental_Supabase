@@ -1,7 +1,7 @@
 const { test, expect } = require("@playwright/test");
 const { authenticate } = require("../utils/auth");
 const { cleanupRegressionData } = require("../utils/cleanup");
-const { createPatient } = require("../utils/api");
+const { createPatient, apiPut } = require("../utils/api");
 const { LoginPage } = require("../pages/LoginPage");
 const { DashboardPage } = require("../pages/DashboardPage");
 const { CalendarPage } = require("../pages/CalendarPage");
@@ -78,7 +78,7 @@ test("page objects expose core elements for every application page", async ({ pa
   await directorPanel.expectCoreElements();
 });
 
-test("failure paths: login, required fields and page validation reject bad input", async ({ page }) => {
+test("failure paths: login, required fields and page validation reject bad input", async ({ page, request, baseURL }) => {
   const login = new LoginPage(page);
   await login.expectRejectedLogin();
 
@@ -97,8 +97,11 @@ test("failure paths: login, required fields and page validation reject bad input
   await calendar.expectRequiredValidation();
 
   const publicBooking = new PublicBookingPage(page);
+  const feature = await apiPut(request, baseURL, "/api/director/public-booking/settings", { enabled: true }, "director");
+  expect(feature.configuredEnabled).toBe(true);
   await publicBooking.goto();
   await publicBooking.expectInvalidPhoneRejected();
+  await apiPut(request, baseURL, "/api/director/public-booking/settings", { enabled: false }, "director");
 });
 
 test("failure paths: protected director functionality blocks staff and validates codebook form", async ({ page }) => {

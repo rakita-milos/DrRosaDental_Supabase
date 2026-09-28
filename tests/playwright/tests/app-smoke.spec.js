@@ -1,8 +1,9 @@
 const { test, expect } = require("@playwright/test");
 const { authenticate } = require("../utils/auth");
+const { apiPut } = require("../utils/api");
 
 const STAFF_PAGES = [
-  { path: "/src/pages/index.html", heading: /Dr Rosa|Moderna klinika/i },
+  { path: "/src/pages/index.html", heading: /Kontrolna tabla|Danas u ordinaciji/i },
   { path: "/src/pages/calendar.html", heading: /Kalendar termina/i },
   { path: "/src/pages/new-entry.html", heading: /Dodaj pregled/i },
   { path: "/src/pages/new-patient.html", heading: /Unos novog pacijenta/i },
@@ -19,12 +20,14 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => localStorage.clear());
 });
 
-test("public booking page is unavailable while the feature is disabled", async ({ page }) => {
+test("public booking page is unavailable while the feature is disabled", async ({ page, request, baseURL }) => {
+  await apiPut(request, baseURL, "/api/director/public-booking/settings", { enabled: false }, "director");
   await page.goto("/src/pages/public-booking.html");
   await expect(page.locator("#public-booking-form")).toBeVisible();
   await expect(page.locator("#booking-message")).toContainText("Onlajn zakazivanje trenutno nije dostupno.");
   await expect(page.locator("#booking-first-name")).toBeHidden();
   await expect(page.locator("#booking-slot")).toBeHidden();
+  await apiPut(request, baseURL, "/api/director/public-booking/settings", { enabled: true }, "director");
 });
 
 test.describe("page smoke by role", () => {
@@ -47,11 +50,10 @@ test.describe("page smoke by role", () => {
   }
 });
 
-test("unauthenticated users are redirected away from protected pages", async ({ page }) => {
-  for (const entry of DIRECTOR_PAGES) {
-    await page.evaluate(() => localStorage.clear()).catch(() => {});
-    await page.goto(entry.path);
-    await expect(page).toHaveURL(/login\.html/);
+test("unauthenticated users cannot call protected APIs", async ({ request }) => {
+  for (const endpoint of ["/api/records", "/api/director/codebooks"]) {
+    const response = await request.get(endpoint);
+    expect(response.status()).toBe(401);
   }
 });
 
@@ -83,7 +85,7 @@ test("director can move through the main menu without losing the session", async
   ];
 
   for (const item of menuFlow) {
-    await page.getByRole("link", { name: item.name }).click();
+    await page.getByLabel("Glavna navigacija").getByRole("link", { name: item.name, exact: true }).click();
     await expect(page).toHaveURL(item.url);
     await expect(page.locator("body")).toContainText(item.text);
     await expect(page.locator("body")).not.toContainText(/login|No token provided|Director access required/i);

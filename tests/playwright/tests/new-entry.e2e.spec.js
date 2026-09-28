@@ -54,7 +54,7 @@ async function fillBasicVisit(page, { note, date = "2026-07-06", total = "120" }
   await openGeneralProcedures(page);
   await page.locator("#procedure-activity").selectOption({ index: 1 }, { force: true });
   await expect(page.locator("#procedure")).toBeEnabled();
-  await page.locator("#procedure").selectOption({ label: "Kontrola" }, { force: true });
+  await page.locator("#procedure").selectOption({ index: 1 }, { force: true });
   await page.locator("#doctor").selectOption({ index: 0 }, { force: true });
   await page.locator("#shift").selectOption({ index: 0 }, { force: true });
   await setFormValue(page, "#total-amount", total);
@@ -107,6 +107,7 @@ test("new entry: defaults visit date to today and keeps it editable", async ({ p
   await expect(page.locator("#last-visit")).toHaveValue(today);
 
   await page.locator('[data-drrosa-for="last-visit"]').fill("06.07.2026");
+  await page.locator('[data-drrosa-for="last-visit"]').press("Tab");
   await expect(page.locator("#last-visit")).toHaveValue("2026-07-06");
 });
 
@@ -195,10 +196,10 @@ test("new entry: tooth map treatment can be added and saved", async ({ page, req
   await expect(page.locator("#tooth-treatment-panel")).toBeVisible();
   await page.locator("#treatment-activity").selectOption({ index: 1 }, { force: true });
   await expect(page.locator("#treatment-type")).toBeEnabled();
-  await page.locator("#treatment-type").selectOption({ label: "Kontrola" }, { force: true });
+  await page.locator("#treatment-type").selectOption({ index: 1 }, { force: true });
   await page.locator("#treatment-note").fill("Rad na zubu 11");
   await page.locator("#save-treatment").click();
-  await expect(page.locator("#teeth-summary")).toContainText(/Zub 11|Kontrola/);
+  await expect(page.locator("#teeth-summary")).toContainText(/Zub 11/);
 
   await page.locator('[data-drrosa-for="last-visit"]').fill("06.07.2026");
   await page.locator("#doctor").selectOption({ index: 0 }, { force: true });

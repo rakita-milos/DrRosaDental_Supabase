@@ -21,7 +21,10 @@ DB_CLIENT
 DATABASE_URL
 PG_SEARCH_PATH
 PGSSL
-UPLOAD_DIR
+DOCUMENT_STORAGE_DRIVER
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+DOCUMENT_STORAGE_BUCKET
 SCANNER_IMPORT_DIR
 STAFF_DEFAULT_PERMISSIONS
 ```
@@ -38,7 +41,7 @@ Notes:
 - `DATABASE_URL` is the Supabase PostgreSQL connection string.
 - `PG_SEARCH_PATH` should be `app,public` for the Supabase schema in this repo.
 - Supabase PostgreSQL backups are managed outside the application by Supabase or a `pg_dump`/restore maintenance workflow.
-- `UPLOAD_DIR`, `SCANNER_IMPORT_DIR` and `STAFF_DEFAULT_PERMISSIONS` are required in production so live deploys do not inherit development defaults.
+- Production document uploads require `DOCUMENT_STORAGE_DRIVER=supabase`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and a private `DOCUMENT_STORAGE_BUCKET`. `UPLOAD_DIR` is local development/test-only storage and must not be used for a Vercel production deployment.
 - `STAFF_DEFAULT_PERMISSIONS` is a comma-separated allow-list, for example `patients:read,patients:write,records:read,records:write,calendar:read,calendar:write,documents:read,documents:write`.
 
 ## Commands
@@ -47,10 +50,12 @@ Notes:
 cd backend
 npm.cmd install
 npm.cmd start
-npm.cmd run db:postgres:init
+npm.cmd run db:migrate:local
 ```
 
-`npm run db:postgres:init` applies `database.postgres.sql` to the Supabase database configured by `DATABASE_URL`.
+`npm run db:migrate:local` accepts only an explicitly local `drrosa_test` database and keeps a migration ledger. It must never be used for Supabase production.
+
+Before a reviewed production migration, run the read-only `npm run db:preflight:runtime` against the intended database, resolve every reported integrity error, migrate legacy document objects to private Storage with count/hash verification, take a verified backup, then apply the committed Supabase migrations through the approved deployment workflow.
 
 ## Auth
 

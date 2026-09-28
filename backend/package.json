@@ -11,7 +11,10 @@
     "dev": "nodemon server.js",
     "test": "node --test test/*.test.js",
     "seed:demo": "node scripts/seed-demo-data.js",
-    "db:postgres:init": "node scripts/init-postgres-schema.js"
+    "seed:runtime": "node scripts/seed-runtime-data.js",
+    "db:migrate:local": "node scripts/apply-local-migrations.js --allow-local",
+    "db:preflight:runtime": "node scripts/preflight-runtime-migration.js",
+    "db:postgres:init": "npm run db:migrate:local"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

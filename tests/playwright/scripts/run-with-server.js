@@ -1,17 +1,13 @@
 const { spawn } = require("child_process");
 const path = require("path");
-const { readEnv } = require("../utils/env");
+const { requireTestDatabaseUrl, assertSafeTestDatabase } = require("../utils/test-database-safety");
 
 const rootDir = path.join(__dirname, "../../..");
 const testsDir = path.join(rootDir, "tests/playwright");
 const backendDir = path.join(rootDir, "backend");
 const playwrightCli = require.resolve("@playwright/test/cli");
-const backendEnv = readEnv();
-const databaseUrl = process.env.DATABASE_URL || backendEnv.DATABASE_URL;
-
-if (!databaseUrl) {
-  throw new Error("Set DATABASE_URL to a PostgreSQL test database before running Playwright with the bundled backend.");
-}
+const databaseUrl = requireTestDatabaseUrl(process.env);
+assertSafeTestDatabase({ databaseUrl, env: process.env });
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || process.env.APP_BASE_URL || "http://localhost:3010";
 const parsedBaseUrl = new URL(baseURL);
@@ -24,14 +20,17 @@ const serverEnv = {
   PORT: testPort,
   DB_CLIENT: "postgres",
   DATABASE_URL: databaseUrl,
+  DOCUMENT_STORAGE_DRIVER: process.env.DOCUMENT_STORAGE_DRIVER || "local",
   UPLOAD_DIR: process.env.UPLOAD_DIR || "../tests/playwright/.uploads",
   SCANNER_IMPORT_DIR: process.env.SCANNER_IMPORT_DIR || "../tests/playwright/.scanner-inbox",
   CORS_ORIGIN: process.env.CORS_ORIGIN || `${baseURL},${parsedBaseUrl.origin}`,
   TRUST_PROXY: process.env.TRUST_PROXY || "loopback",
-  JWT_SECRET: process.env.JWT_SECRET || backendEnv.JWT_SECRET,
-  INITIAL_DIRECTOR_PASSWORD: process.env.INITIAL_DIRECTOR_PASSWORD || backendEnv.INITIAL_DIRECTOR_PASSWORD,
-  INITIAL_STAFF_PASSWORD: process.env.INITIAL_STAFF_PASSWORD || backendEnv.INITIAL_STAFF_PASSWORD,
-  LOGIN_RATE_LIMIT_MAX: process.env.LOGIN_RATE_LIMIT_MAX || "1000"
+  JWT_SECRET: process.env.JWT_SECRET,
+  INITIAL_DIRECTOR_PASSWORD: process.env.INITIAL_DIRECTOR_PASSWORD,
+  INITIAL_STAFF_PASSWORD: process.env.INITIAL_STAFF_PASSWORD,
+  LOGIN_RATE_LIMIT_MAX: process.env.LOGIN_RATE_LIMIT_MAX || "1000",
+  PUBLIC_BOOKING_READ_RATE_LIMIT_MAX: process.env.PUBLIC_BOOKING_READ_RATE_LIMIT_MAX || "1000",
+  PUBLIC_BOOKING_RATE_LIMIT_MAX: process.env.PUBLIC_BOOKING_RATE_LIMIT_MAX || "1000"
 };
 
 async function waitForHealth(timeoutMs = 20_000) {

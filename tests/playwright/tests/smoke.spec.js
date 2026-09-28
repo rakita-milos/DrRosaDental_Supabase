@@ -7,7 +7,7 @@ const { NewEntryPage } = require("../pages/NewEntryPage");
 const { AllRecordsPage } = require("../pages/AllRecordsPage");
 const { PatientDashboardPage } = require("../pages/PatientDashboardPage");
 const { DirectorPanelPage } = require("../pages/DirectorPanelPage");
-const { authHeaders, apiPost } = require("../utils/api");
+const { authHeaders, apiDelete, apiPost } = require("../utils/api");
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/src/pages/login.html");
@@ -145,7 +145,7 @@ test("full patient and visit CRUD smoke test", async ({ page, request, baseURL }
   await allRecords.expectPatientHidden(updatedFullName);
 });
 
-test("director panel reports smoke test", async ({ page }) => {
+test("director panel reports smoke test", async ({ page, request, baseURL }) => {
   await authenticate(page, "director");
   const directorPanel = new DirectorPanelPage(page);
   await directorPanel.goto();
@@ -169,6 +169,19 @@ test("director panel reports smoke test", async ({ page }) => {
   await directorPanel.expectCurrencyFormFields();
   await directorPanel.expectPaymentStatusSimpleFields();
   await directorPanel.expectActivitySimpleFields();
-  await directorPanel.expectCurrencyCodeLockedOnEdit();
+  const currencyCode = `X${String(Date.now()).slice(-2)}`;
+  const currencyLabel = `SMOKE currency ${currencyCode}`;
+  const currency = await apiPost(request, baseURL, "/api/director/codebooks", {
+    type: "currency",
+    value: currencyCode,
+    label: currencyLabel,
+    sortOrder: 99,
+    metadata: { exchangeRate: 2, rateDate: "2026-09-16", rateBase: currencyCode, rateCurrency: "RSD", rateSource: "manual" }
+  }, "director", 201);
+  try {
+    await directorPanel.expectCurrencyCodeLockedOnEdit({ code: currencyCode, label: currencyLabel });
+  } finally {
+    await apiDelete(request, baseURL, `/api/director/codebooks/${currency.id}`, "director");
+  }
   await directorPanel.createEditAndDeleteActivity(`Test delatnost ${Date.now()}`, `Izmenjena delatnost ${Date.now()}`);
 });

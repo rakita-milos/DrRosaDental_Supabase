@@ -49,6 +49,13 @@ test('shared form validation rejects whitespace-only required text fields', () =
   });
 });
 
+test('patient timeline binds record deletion once through its delegated click handler', () => {
+  const bindings = patientDashboardSource.match(/activityTimeline\.addEventListener\("click", async event =>/g) || [];
+  assert.equal(bindings.length, 1);
+  assert.match(patientDashboardSource, /await window\.DrRosaApi\.deleteRecord\(deleteButton\.dataset\.recordId\)/);
+  assert.doesNotMatch(patientDashboardSource, /document\.querySelectorAll\("\.delete-record-btn"\)\.forEach/);
+});
+
 test('session verification does not clear login state on navigation aborts', () => {
   assert.match(apiSource, /function apiError\(message, status\)/);
   assert.match(apiSource, /error\.status = status/);
@@ -555,6 +562,7 @@ test('patient document edit shows existing file preview and supports optional re
   assert.match(patientDashboardSource, /function renderCurrentDocumentFile\(documentRow\)/);
   assert.match(patientDashboardSource, /Postojeci fajl ostaje sacuvan ako ne odaberete novi/);
   assert.match(patientDashboardSource, /document-file-label"\)\.textContent = "Novi fajl, samo ako zelite da zamenite postojeci"/);
+  assert.match(patientDashboardSource, /visitRecordId: Number\(document\.getElementById\("document-visit"\)\.value\) \|\| null/);
   assert.match(patientDashboardSource, /function documentFilePayload\(file\)/);
   assert.match(patientDashboardSource, /fileBase64: await fileToBase64\(file\)/);
   assert.match(patientDashboardSource, /const replacementPayload = file \? await documentFilePayload\(file\) : \{\}/);

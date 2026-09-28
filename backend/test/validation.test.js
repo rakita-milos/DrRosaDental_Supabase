@@ -5,9 +5,12 @@ const {
   changePasswordSchema,
   patientCreateSchema,
   patientDocumentSchema,
+  paymentPartAppendSchema,
   importScanSchema,
   recordCreateSchema,
   publicBookingSchema,
+  appointmentWriteSchema,
+  appointmentStatusSchema,
   googlePullSchema,
   medicalProfileSchema,
   documentUpdateSchema,
@@ -186,6 +189,68 @@ test('record create schema accepts general treatments without tooth map', () => 
   });
   assert.equal(error, undefined);
   assert.equal(value.generalTreatments.length, 2);
+});
+
+test('payment part append schema requires a positive amount and preserves payment details', () => {
+  const valid = paymentPartAppendSchema.validate({
+    amount: 1250,
+    currency: 'RSD',
+    paymentMethod: 'Gotovina',
+    paymentDate: '2026-09-16'
+  });
+  assert.equal(valid.error, undefined);
+  assert.equal(valid.value.amount, 1250);
+  assert.equal(valid.value.currency, 'RSD');
+  assert.equal(valid.value.paymentMethod, 'Gotovina');
+
+  for (const amount of [0, -1]) {
+    const result = paymentPartAppendSchema.validate({ amount });
+    assert(result.error instanceof Error);
+    assert.match(result.error.message, /amount/);
+  }
+
+  const missing = paymentPartAppendSchema.validate({ currency: 'RSD' });
+  assert(missing.error instanceof Error);
+  assert.match(missing.error.message, /amount/);
+});
+
+test('appointment write schema validates identifiers, duration and status boundaries', () => {
+  const valid = appointmentWriteSchema.validate({
+    patient_id: 1,
+    doctor_id: 2,
+    chair_id: 3,
+    procedure_name: 'Kontrola',
+    starts_at: '2026-09-16T08:00:00.000Z',
+    duration_minutes: 30,
+    status: 'confirmed'
+  });
+  assert.equal(valid.error, undefined);
+  assert.equal(valid.value.duration_minutes, 30);
+  assert.equal(valid.value.status, 'confirmed');
+
+  const invalid = appointmentWriteSchema.validate({
+    patient_id: 0,
+    doctor_id: -1,
+    chair_id: 'ordinacija',
+    duration_minutes: 4,
+    status: 'unknown'
+  }, { abortEarly: false });
+  assert(invalid.error instanceof Error);
+  assert.match(invalid.error.message, /patient_id/);
+  assert.match(invalid.error.message, /doctor_id/);
+  assert.match(invalid.error.message, /chair_id/);
+  assert.match(invalid.error.message, /duration_minutes/);
+  assert.match(invalid.error.message, /status/);
+});
+
+test('appointment status schema accepts only supported non-empty statuses', () => {
+  assert.equal(appointmentStatusSchema.validate({ status: 'completed' }).error, undefined);
+
+  for (const payload of [{}, { status: '' }, { status: 'deleted' }, { status: 42 }]) {
+    const result = appointmentStatusSchema.validate(payload);
+    assert(result.error instanceof Error);
+    assert.match(result.error.message, /status/);
+  }
 });
 
 test('public booking schema accepts camelCase booking payload', () => {

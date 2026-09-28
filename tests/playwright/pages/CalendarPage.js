@@ -20,7 +20,7 @@ class CalendarPage {
     this.status = page.locator("#appointment-status");
     this.procedure = page.locator("#appointment-procedure");
     this.notes = page.locator("#appointment-notes");
-    this.save = page.getByRole("button", { name: /Sacuvaj termin/i });
+    this.save = page.locator('#appointment-form button[type="submit"]');
     this.dismiss = page.getByRole("button", { name: /Odustani/i });
     this.createVisit = page.locator("#create-visit-btn");
     this.cancelAppointment = page.locator("#cancel-appointment-btn");

@@ -7,15 +7,19 @@ class DirectorPanelPage {
   }
 
   async goto() {
+    const recordsLoaded = this.page.waitForResponse(response =>
+      response.url().includes("/api/records") && response.request().method() === "GET" && response.ok()
+    );
     await this.page.goto("/src/pages/director-panel.html");
+    await recordsLoaded;
   }
 
   async expectCoreElements() {
     await expect(this.page.locator("body")).toContainText(/Direktor panel|Finansijski/i);
     await expect(this.reportsGrid).toBeVisible();
     await expect(this.reportsGrid).toContainText(/Finansijski/i);
-    await expect(this.reportsGrid).toContainText(/Admin sifarnici/i);
-    await expect(this.reportsGrid).toContainText(/Backup i sigurnost/i);
+    await expect(this.reportsGrid).toContainText(/Admin šifarnici|Admin sifarnici/i);
+    await expect(this.reportsGrid).toContainText(/Rezervne kopije i bezbednost|Backup i sigurnost/i);
   }
 
   async expectCodebookValidation() {
@@ -71,8 +75,10 @@ class DirectorPanelPage {
     await expect(this.page.locator("#codebook-value-field")).toBeHidden();
     await this.page.locator("#codebook-label").fill(value);
     await this.page.locator("#codebook-sort").fill("99");
-    await this.page.locator("#shift-time-from").fill("09:00");
-    await this.page.locator("#shift-time-to").fill("17:00");
+    await this.page.locator('[data-drrosa-for="shift-time-from"]').fill("09:00");
+    await this.page.locator('[data-drrosa-for="shift-time-from"]').press("Tab");
+    await this.page.locator('[data-drrosa-for="shift-time-to"]').fill("17:00");
+    await this.page.locator('[data-drrosa-for="shift-time-to"]').press("Tab");
     await this.page.locator('input[name="shift-days"][value="monday"]').check();
     await this.page.locator('input[name="shift-days"][value="wednesday"]').check();
     await this.page.getByRole("button", { name: "Sačuvaj šifru" }).click();
@@ -121,11 +127,13 @@ class DirectorPanelPage {
     await expect(this.page.locator("#codebook-price-header")).toBeHidden();
   }
 
-  async expectCurrencyCodeLockedOnEdit() {
+  async expectCurrencyCodeLockedOnEdit({ code, label }) {
+    await this.page.reload();
+    await this.openCodebookAdmin();
     await this.openCodebookType("currency");
-    const firstRow = this.page.locator("#codebook-table tr").first();
-    const code = await firstRow.locator("td").first().innerText();
-    await firstRow.getByRole("button", { name: "Uredi" }).click();
+    const row = this.page.locator("#codebook-table tr", { hasText: label }).first();
+    await expect(row).toBeVisible();
+    await row.getByRole("button", { name: "Uredi" }).click();
     await expect(this.page.locator("#codebook-value")).toHaveValue(code.trim());
     await expect(this.page.locator("#codebook-value")).toBeDisabled();
   }

@@ -773,6 +773,25 @@ const escapeHtml = window.DrRosaSecurity.escapeHtml;
 const clinicalSection = document.getElementById("patient-clinical-section");
 const medicalForm = document.getElementById("medical-profile-form");
 const documentForm = document.getElementById("document-form");
+
+if (activityTimeline) {
+  activityTimeline.addEventListener("click", async event => {
+    const button = event.target.closest(".timeline-group-btn");
+    if (button) {
+      activatePatientGroup(button.dataset.patientGroup);
+      return;
+    }
+    const deleteButton = event.target.closest(".delete-record-btn");
+    if (!deleteButton) return;
+    if (!confirm("Da li ste sigurni da želite da obrišete ovaj zapis iz istorije pacijenta?")) return;
+    try {
+      await window.DrRosaApi.deleteRecord(deleteButton.dataset.recordId);
+      window.location.reload();
+    } catch (error) {
+      alert(error.message || "Zapis nije obrisan.");
+    }
+  });
+}
 const documentsBody = document.getElementById("patient-documents-body");
 let invoiceItemsDraft = [];
 let loadedDocuments = [];
@@ -1868,25 +1887,6 @@ async function initializeClinicalSection(patientDetails, patientRecords, appoint
     const labels = ["documents", "advanced patient workflows", "clinical workflows"];
     console.error(`Patient ${labels[index]} load error:`, result.reason);
   });
-  if (activityTimeline) {
-    activityTimeline.addEventListener("click", async event => {
-      const button = event.target.closest(".timeline-group-btn");
-      if (button) {
-        activatePatientGroup(button.dataset.patientGroup);
-        return;
-      }
-      const deleteButton = event.target.closest(".delete-record-btn");
-      if (!deleteButton) return;
-      if (!confirm("Da li ste sigurni da želite da obrišete ovaj zapis iz istorije pacijenta?")) return;
-      try {
-        await window.DrRosaApi.deleteRecord(deleteButton.dataset.recordId);
-        window.location.reload();
-      } catch (error) {
-        alert(error.message || "Zapis nije obrisan.");
-      }
-    });
-  }
-
   medicalForm.addEventListener("submit", async event => {
     await runLockedFormSubmit(event, async () => {
       try {
@@ -2108,19 +2108,6 @@ async function initializeClinicalSection(patientDetails, patientRecords, appoint
     renderEmpty("Nema zapisa za ovog pacijenta.");
     return;
   }
-
-  document.querySelectorAll(".delete-record-btn").forEach(button => {
-    button.addEventListener("click", async event => {
-      event.stopPropagation();
-      if (!confirm("Da li ste sigurni da želite da obrišete ovaj zapis iz istorije pacijenta?")) return;
-      try {
-        await window.DrRosaApi.deleteRecord(button.dataset.recordId);
-        window.location.reload();
-      } catch (error) {
-        alert(error.message || "Zapis nije obrisan.");
-      }
-    });
-  });
 
 })();
 

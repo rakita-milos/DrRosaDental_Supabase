@@ -15,11 +15,13 @@ function createPool(connectionString = process.env.DATABASE_URL) {
   }
 
   const sslEnabled = process.env.PGSSL !== 'false';
+  const sslCa = String(process.env.PGSSL_CA || '').replace(/\\n/g, '\n').trim();
+  const rejectUnauthorized = process.env.PGSSL_REJECT_UNAUTHORIZED === 'true';
 
   return new Pool({
     connectionString: sslEnabled ? stripSslConnectionParams(connectionString) : connectionString,
-    ssl: sslEnabled ? { rejectUnauthorized: false } : false,
-    max: Number(process.env.PG_POOL_MAX || 10),
+    ssl: sslEnabled ? { rejectUnauthorized, ...(sslCa ? { ca: sslCa } : {}) } : false,
+    max: Number(process.env.PG_POOL_MAX || 1),
     idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 30000),
     connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS || 10000),
     options: `-c search_path=${searchPath}`

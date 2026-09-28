@@ -25,7 +25,7 @@ const { createClinicalRepository } = require('./db/clinical');
 const { createBillingRepository } = require('./db/billing');
 const { createRuntimeSettingsRepository } = require('./db/runtime-settings');
 const { createStartupSeedRepository } = require('./db/startup-seed');
-const { createPool, initializePostgresSchema } = require('./db/postgres');
+const { createPool } = require('./db/postgres');
 const { asyncRoute, sendError } = require('./route-utils');
 const { registerSystemRoutes } = require('./routes/system-routes');
 const {
@@ -35,6 +35,8 @@ const {
   sendAppointmentConflictError
 } = require('./services/appointment-service');
 const { createGoogleCalendarSyncService } = require('./services/google-calendar-sync-service');
+const { createDocumentStorage, normalizeDriver } = require('./services/document-storage-service');
+const { clinicDateFromInstant } = require('./utils/clinic-time');
 const {
   validateBody,
   loginSchema,
@@ -95,6 +97,8 @@ function hasPublicRuntimeOrigin() {
 }
 
 const requiresProductionReadiness = isProduction || flagEnabled(process.env.REQUIRE_PRODUCTION_READY);
+const documentStorageDriver = normalizeDriver(process.env.DOCUMENT_STORAGE_DRIVER || (isProduction ? 'supabase' : 'local'));
+const uploadRoot = path.resolve(__dirname, process.env.UPLOAD_DIR || './uploads');
 
 if (!isProduction && hasPublicRuntimeOrigin()) {
   throw new Error('Public API_URL/CORS_ORIGIN requires NODE_ENV=production before startup.');
@@ -111,11 +115,36 @@ function requireProductionEnv(name) {
 }
 
 requireProductionEnv('CORS_ORIGIN');
-requireProductionEnv('UPLOAD_DIR');
 requireProductionEnv('SCANNER_IMPORT_DIR');
 requireProductionEnv('STAFF_DEFAULT_PERMISSIONS');
 requireProductionEnv('TRUST_PROXY');
 requireProductionEnv('DATABASE_URL');
+if (requiresProductionReadiness && process.env.PGSSL === 'false') {
+  throw new Error('Production PostgreSQL connections must use TLS. Set PGSSL=true.');
+}
+if (requiresProductionReadiness && process.env.PGSSL_REJECT_UNAUTHORIZED !== 'true') {
+  throw new Error('Production PostgreSQL TLS must verify the server certificate. Set PGSSL_REJECT_UNAUTHORIZED=true.');
+}
+requireProductionEnv('PGSSL_CA');
+if (requiresProductionReadiness && Number(process.env.PG_POOL_MAX || 1) > 1) {
+  throw new Error('PG_POOL_MAX must be 1 in the serverless production runtime.');
+}
+if (requiresProductionReadiness && documentStorageDriver !== 'supabase') {
+  throw new Error('Production document storage must use DOCUMENT_STORAGE_DRIVER=supabase. Local /tmp uploads are not durable.');
+}
+if (documentStorageDriver === 'supabase') {
+  requireProductionEnv('SUPABASE_URL');
+  requireProductionEnv('SUPABASE_SERVICE_ROLE_KEY');
+  requireProductionEnv('DOCUMENT_STORAGE_BUCKET');
+}
+
+const documentStorage = createDocumentStorage({
+  driver: documentStorageDriver,
+  localRoot: uploadRoot,
+  supabaseUrl: process.env.SUPABASE_URL,
+  serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  bucket: process.env.DOCUMENT_STORAGE_BUCKET || 'patient-documents'
+});
 
 let pgPool = createPool();
 const authSessions = createAuthSessionRepository({ pgPool });
@@ -323,10 +352,7 @@ async function seedDatabase() {
 
 async function ensureRuntimeReady() {
   if (!runtimeReadyPromise) {
-    runtimeReadyPromise = (async () => {
-      await initializePostgresSchema(pgPool);
-      await seedDatabase();
-    })();
+    runtimeReadyPromise = pgPool.query('SELECT 1');
   }
   return runtimeReadyPromise;
 }
@@ -2470,19 +2496,7 @@ const DOCUMENT_TYPES = new Set(['rtg', 'ortopan', 'photo', 'finding', 'lab', 'co
 const ALLOWED_DOCUMENT_MIME = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'application/dicom', 'application/octet-stream']);
 const ALLOWED_SCAN_EXTENSIONS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.dcm', '.dicom']);
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
-const uploadRoot = path.resolve(__dirname, process.env.UPLOAD_DIR || './uploads');
 const scannerInboxDir = path.resolve(__dirname, process.env.SCANNER_IMPORT_DIR || './data/scanner-inbox');
-
-function storedDocumentPath(filePath) {
-  const resolved = path.resolve(String(filePath || ''));
-  const allowedRoot = `${uploadRoot}${path.sep}`;
-  if (resolved !== uploadRoot && !resolved.startsWith(allowedRoot)) {
-    const error = new Error('Document path is outside upload storage.');
-    error.status = 403;
-    throw error;
-  }
-  return resolved;
-}
 
 function normalizeDocumentType(value) {
   const type = cleanText(value, { max: 40 }) || 'other';
@@ -2576,12 +2590,6 @@ function documentMimeMatches({ declaredMime, detectedMime }) {
   return declaredMime === 'application/octet-stream' && detectedMime === 'application/dicom';
 }
 
-async function patientUploadDir(patientId) {
-  const dir = path.join(uploadRoot, 'patients', String(patientId));
-  await fsp.mkdir(dir, { recursive: true });
-  return dir;
-}
-
 function uniqueStoredFilename(originalFilename, mimeType) {
   const ext = safeExtension(originalFilename, mimeType);
   return `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
@@ -2606,12 +2614,11 @@ async function validateAndStorePatientDocumentFile({ patientId, originalFilename
   }
 
   const storedFilename = uniqueStoredFilename(originalFilename, detectedMime);
-  const targetPath = path.join(await patientUploadDir(patientId), storedFilename);
-  await fsp.writeFile(targetPath, buffer, { flag: 'wx' });
+  const stored = await documentStorage.store({ patientId, storedFilename, buffer, mimeType: detectedMime });
   return {
     originalFilename: cleanText(originalFilename, { max: 255, required: true }),
     storedFilename,
-    filePath: targetPath,
+    filePath: stored.filePath,
     mimeType: detectedMime,
     fileSize: buffer.length,
     fileHash: crypto.createHash('sha256').update(buffer).digest('hex')
@@ -2624,11 +2631,7 @@ async function savePatientDocument({ patientId, visitRecordId, documentType, tit
     error.status = 404;
     throw error;
   }
-  if (visitRecordId && !(await recordsPaymentsRepo.findRecordById(visitRecordId))) {
-    const error = new Error('Visit record not found');
-    error.status = 404;
-    throw error;
-  }
+  await assertVisitBelongsToPatient({ visitRecordId, patientId });
   const storedFile = await validateAndStorePatientDocumentFile({
     patientId,
     originalFilename,
@@ -2636,27 +2639,87 @@ async function savePatientDocument({ patientId, visitRecordId, documentType, tit
     buffer
   });
 
-  return serializeDocument(await patientDocumentsRepo.createDocument({
-    patientId,
-    visitRecordId: visitRecordId || null,
-    documentType: normalizeDocumentType(documentType),
-    title: cleanText(title || originalFilename, { max: 160, required: true }),
-    description: cleanText(description, { max: 1000 }),
-    documentDate: cleanText(documentDate, { max: 20 }),
-    originalFilename: storedFile.originalFilename,
-    storedFilename: storedFile.storedFilename,
-    filePath: storedFile.filePath,
-    mimeType: storedFile.mimeType,
-    fileSize: storedFile.fileSize,
-    fileHash: storedFile.fileHash,
-    source: source || 'upload',
-    uploadedBy: userId,
-    imagingModality: cleanText(imagingModality, { max: 40 }),
-    toothNumber: cleanText(toothNumber, { max: 40 }),
-    acquisitionDate: cleanText(acquisitionDate || documentDate, { max: 20 }),
-    dicomStudyUid: cleanText(dicomStudyUid, { max: 120 }),
-    claimAttachmentReady: normalizeBoolean(claimAttachmentReady)
-  }));
+  try {
+    return serializeDocument(await patientDocumentsRepo.createDocument({
+      patientId,
+      visitRecordId: visitRecordId || null,
+      documentType: normalizeDocumentType(documentType),
+      title: cleanText(title || originalFilename, { max: 160, required: true }),
+      description: cleanText(description, { max: 1000 }),
+      documentDate: cleanText(documentDate, { max: 20 }),
+      originalFilename: storedFile.originalFilename,
+      storedFilename: storedFile.storedFilename,
+      filePath: storedFile.filePath,
+      mimeType: storedFile.mimeType,
+      fileSize: storedFile.fileSize,
+      fileHash: storedFile.fileHash,
+      source: source || 'upload',
+      uploadedBy: userId,
+      imagingModality: cleanText(imagingModality, { max: 40 }),
+      toothNumber: cleanText(toothNumber, { max: 40 }),
+      acquisitionDate: cleanText(acquisitionDate || documentDate, { max: 20 }),
+      dicomStudyUid: cleanText(dicomStudyUid, { max: 120 }),
+      claimAttachmentReady: normalizeBoolean(claimAttachmentReady)
+    }));
+  } catch (error) {
+    await documentStorage.remove(storedFile.filePath).catch(cleanupError => console.error('Document cleanup after database failure:', cleanupError));
+    throw error;
+  }
+}
+
+function sendDocumentStorageError(res, error) {
+  const status = [403, 404, 409].includes(error?.status) ? error.status : 502;
+  const message = status === 409
+    ? error.message
+    : status === 404
+      ? 'File not found'
+      : 'Document storage is temporarily unavailable.';
+  return res.status(status).json({ error: message });
+}
+
+async function sendStoredDocument({ row, res, disposition }) {
+  try {
+    const buffer = await documentStorage.read(row.file_path);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', row.mime_type);
+    if (disposition === 'attachment') res.attachment(row.original_filename);
+    else res.setHeader('Content-Disposition', `inline; filename="${row.original_filename.replace(/"/g, '')}"`);
+    return res.send(buffer);
+  } catch (error) {
+    return sendDocumentStorageError(res, error);
+  }
+}
+
+async function assertVisitBelongsToPatient({ visitRecordId, patientId }) {
+  if (!visitRecordId) return null;
+  const visit = await recordsPaymentsRepo.findRecordById(visitRecordId);
+  if (!visit) {
+    const error = new Error('Visit record not found');
+    error.status = 404;
+    throw error;
+  }
+  if (Number(visit.patient_id) !== Number(patientId)) {
+    const error = new Error('Visit record does not belong to this patient');
+    error.status = 400;
+    throw error;
+  }
+  return visit;
+}
+
+async function assertInvoiceBelongsToPatient({ invoiceId, patientId }) {
+  if (!invoiceId) return null;
+  const invoice = await billingRepo.findInvoice(invoiceId);
+  if (!invoice) {
+    const error = new Error('Invoice not found');
+    error.status = 404;
+    throw error;
+  }
+  if (Number(invoice.patient_id) !== Number(patientId)) {
+    const error = new Error('Invoice does not belong to this patient');
+    error.status = 400;
+    throw error;
+  }
+  return invoice;
 }
 
 async function latestScannerFile() {
@@ -3061,16 +3124,7 @@ app.get('/api/documents/:id/view', authenticateToken, requirePermission('documen
     const documentId = positiveInteger(req.params.id);
     const row = await patientDocumentsRepo.findActiveById(documentId);
     if (!row) return res.status(404).json({ error: 'Document not found' });
-    const filePath = storedDocumentPath(row.file_path);
-    try {
-      await fsp.access(filePath);
-    } catch {
-      return res.status(404).json({ error: 'File not found' });
-    }
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Type', row.mime_type);
-    res.setHeader('Content-Disposition', `inline; filename="${row.original_filename.replace(/"/g, '')}"`);
-    res.sendFile(filePath);
+    return sendStoredDocument({ row, res, disposition: 'inline' });
   } catch (error) {
     console.error('View document error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -3082,14 +3136,7 @@ app.get('/api/documents/:id/download', authenticateToken, requirePermission('doc
     const documentId = positiveInteger(req.params.id);
     const row = await patientDocumentsRepo.findActiveById(documentId);
     if (!row) return res.status(404).json({ error: 'Document not found' });
-    const filePath = storedDocumentPath(row.file_path);
-    try {
-      await fsp.access(filePath);
-    } catch {
-      return res.status(404).json({ error: 'File not found' });
-    }
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.download(filePath, row.original_filename);
+    return sendStoredDocument({ row, res, disposition: 'attachment' });
   } catch (error) {
     console.error('Download document error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -3114,6 +3161,8 @@ app.put('/api/documents/:id', authenticateToken, requirePermission('documents:wr
     const documentId = positiveInteger(req.params.id);
     const current = await patientDocumentsRepo.findActiveById(documentId);
     if (!current) return res.status(404).json({ error: 'Dokument nije pronadjen' });
+    const visitRecordId = positiveInteger(req.body.visitRecordId || req.body.visit_record_id) || null;
+    await assertVisitBelongsToPatient({ visitRecordId, patientId: current.patient_id });
     let replacementFile = null;
     if (req.body.fileBase64) {
       const base64 = String(req.body.fileBase64 || '').replace(/^data:[^;]+;base64,/, '');
@@ -3125,8 +3174,10 @@ app.put('/api/documents/:id', authenticateToken, requirePermission('documents:wr
       });
     }
 
-    const updated = await patientDocumentsRepo.updateDocument(documentId, {
-      visitRecordId: positiveInteger(req.body.visitRecordId || req.body.visit_record_id) || null,
+    let updated;
+    try {
+      updated = await patientDocumentsRepo.updateDocument(documentId, {
+        visitRecordId,
       documentType: normalizeDocumentType(req.body.documentType || req.body.document_type || current.document_type),
       title: cleanText(req.body.title ?? current.title, { max: 160, required: true }),
       description: cleanText(req.body.description ?? current.description, { max: 1000 }),
@@ -3138,8 +3189,15 @@ app.put('/api/documents/:id', authenticateToken, requirePermission('documents:wr
       claimAttachmentReady: req.body.claimAttachmentReady === undefined && req.body.claim_attachment_ready === undefined
         ? current.claim_attachment_ready
         : normalizeBoolean(req.body.claimAttachmentReady ?? req.body.claim_attachment_ready),
-      ...(replacementFile || {})
-    });
+        ...(replacementFile || {})
+      });
+    } catch (error) {
+      if (replacementFile) await documentStorage.remove(replacementFile.filePath).catch(cleanupError => console.error('Replacement document cleanup failed:', cleanupError));
+      throw error;
+    }
+    if (replacementFile && current.file_path !== replacementFile.filePath) {
+      await documentStorage.remove(current.file_path).catch(cleanupError => console.error('Previous document cleanup failed:', cleanupError));
+    }
     await auditLog({ userId: req.user.id, action: 'document_updated', entityType: 'document', entityId: documentId, req });
     res.json(serializeDocument(updated));
   } catch (error) {
@@ -3704,7 +3762,7 @@ app.post('/api/appointments/:id/create-visit', authenticateToken, requirePermiss
     const visitId = await insertRecordTransaction({
       patient_id: appointment.patient_id,
       doctor_id: appointment.doctor_id,
-      visit_date: appointment.starts_at.slice(0, 10),
+      visit_date: clinicDateFromInstant(appointment.starts_at),
       procedure: appointment.procedure_name,
       status: 'Završeno',
       notes: appointment.notes || `Termin ${appointment.starts_at}`,
@@ -3780,7 +3838,7 @@ app.get('/api/public/booking/availability', publicBookingReadLimiter, requirePub
     });
     const available = [];
     for (const slot of slots) {
-      if (!(await appointmentConflict({ doctorId: slot.doctorId, chairId: slot.chairId, startsAt: slot.startsAt, endsAt: slot.endsAt }))) {
+      if (!(await appointmentService.conflict({ doctorId: slot.doctorId, chairId: slot.chairId, startsAt: slot.startsAt, endsAt: slot.endsAt }))) {
         const { _checkConflict, ...publicSlot } = slot;
         available.push(publicSlot);
       }
@@ -3831,7 +3889,7 @@ app.post('/api/public/booking', publicBookingWriteLimiter, requirePublicBookingE
     }
     if (!(await activeDoctorExists(doctorId))) return res.status(404).json({ error: 'Doktor nije pronadjen.' });
     if (!procedure) return res.status(404).json({ error: 'Postupak nije pronadjen.' });
-    const conflict = await appointmentConflict({ doctorId, chairId, startsAt, endsAt });
+    const conflict = await appointmentService.conflict({ doctorId, chairId, startsAt, endsAt });
     if (conflict) return res.status(409).json({ error: 'Termin vise nije slobodan.' });
 
     const responsePayload = await calendarRepo.createPublicBooking({
@@ -4411,11 +4469,13 @@ app.post('/api/patients/:id/invoices', authenticateToken, requirePermission('bil
     const items = Array.isArray(req.body.items) ? req.body.items : [];
     if (items.length === 0) return res.status(400).json({ error: 'Dodajte bar jednu stavku racuna.' });
     if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
+    const visitRecordId = positiveInteger(req.body.visitRecordId || req.body.visit_record_id);
+    await assertVisitBelongsToPatient({ visitRecordId, patientId });
 
     const invoice = await billingRepo.createInvoice({
       invoice: {
         patientId,
-        visitRecordId: positiveInteger(req.body.visitRecordId || req.body.visit_record_id),
+        visitRecordId,
         invoiceNumber: cleanText(req.body.invoiceNumber || await invoiceNumber(), { max: 80, required: true }),
         issueDate: cleanText(req.body.issueDate || req.body.issue_date || todayIsoDate(), { max: 20, required: true }),
         dueDate: cleanText(req.body.dueDate || req.body.due_date, { max: 20 }),
@@ -4439,7 +4499,7 @@ app.post('/api/patients/:id/invoices', authenticateToken, requirePermission('bil
     res.status(201).json(await serializeInvoice(invoice));
   } catch (error) {
     console.error('Create invoice error:', error);
-    res.status(500).json({ error: 'Racun nije sacuvan.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Racun nije sacuvan.' });
   }
 });
 
@@ -4556,10 +4616,14 @@ app.post('/api/patients/:id/insurance-claims', authenticateToken, requirePermiss
     const requestedAmount = money(req.body.requestedAmount || req.body.requested_amount);
     if (!provider) return res.status(400).json({ error: 'Unesite naziv osiguranja.' });
     if (requestedAmount <= 0) return res.status(400).json({ error: 'Unesite trazeni iznos veci od 0.' });
+    const visitRecordId = positiveInteger(req.body.visitRecordId || req.body.visit_record_id);
+    const invoiceId = positiveInteger(req.body.invoiceId || req.body.invoice_id);
+    await assertVisitBelongsToPatient({ visitRecordId, patientId });
+    await assertInvoiceBelongsToPatient({ invoiceId, patientId });
     const claim = await billingRepo.createClaim({
       patientId,
-      visitRecordId: positiveInteger(req.body.visitRecordId || req.body.visit_record_id),
-      invoiceId: positiveInteger(req.body.invoiceId || req.body.invoice_id),
+      visitRecordId,
+      invoiceId,
       provider,
       policyNumber: cleanText(req.body.policyNumber || req.body.policy_number, { max: 120 }),
       claimNumber: cleanText(req.body.claimNumber || req.body.claim_number, { max: 120 }),
@@ -4576,7 +4640,7 @@ app.post('/api/patients/:id/insurance-claims', authenticateToken, requirePermiss
     res.status(201).json(await serializeClaim(claim));
   } catch (error) {
     console.error('Create insurance claim error:', error);
-    res.status(500).json({ error: 'Zahtev za osiguranje nije sacuvan.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Zahtev za osiguranje nije sacuvan.' });
   }
 });
 
@@ -6119,4 +6183,4 @@ if (require.main === module) {
   startServer();
 }
 
-module.exports = { app, ensureRuntimeReady, get server() { return server; }, startServer };
+module.exports = { app, ensureRuntimeReady, seedDatabase, closePostgresPool, get server() { return server; }, startServer };

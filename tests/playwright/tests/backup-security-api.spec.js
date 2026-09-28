@@ -50,18 +50,37 @@ test("api: director sees PostgreSQL backup status and security status", async ({
 
   const staff = security.users.find(user => user.role === "staff");
   expect(staff).toBeTruthy();
+  const originalPermissions = [...(staff.permissions || [])];
+  const desiredPermissions = ["patients:read"];
   const permissionsResponse = await request.put(`${baseURL}/api/director/security/users/${staff.id}/permissions`, {
     headers: authHeaders("director"),
-    data: { permissions: staff.permissions || ["patients:read"] }
+    data: { permissions: desiredPermissions }
   });
-  expect(permissionsResponse.ok()).toBeTruthy();
-  expect(await permissionsResponse.json()).toHaveProperty("permissions");
+  expect(permissionsResponse.status()).toBe(200);
+  expect(await permissionsResponse.json()).toMatchObject({ id: staff.id, role: "staff", permissions: desiredPermissions });
+  let persistedSecurity = await request.get(`${baseURL}/api/director/security/status`, {
+    headers: authHeaders("director")
+  });
+  expect(persistedSecurity.status()).toBe(200);
+  expect((await persistedSecurity.json()).users.find(user => user.id === staff.id)?.permissions).toEqual(desiredPermissions);
 
   const invalidPermissionsResponse = await request.put(`${baseURL}/api/director/security/users/${staff.id}/permissions`, {
     headers: authHeaders("director"),
     data: { permissions: ["patients:read", "invalid:permission"] }
   });
   expect(invalidPermissionsResponse.status()).toBe(400);
+  expect(await invalidPermissionsResponse.json()).toHaveProperty("error", expect.stringContaining("invalid:permission"));
+  persistedSecurity = await request.get(`${baseURL}/api/director/security/status`, {
+    headers: authHeaders("director")
+  });
+  expect((await persistedSecurity.json()).users.find(user => user.id === staff.id)?.permissions).toEqual(desiredPermissions);
+
+  const restorePermissions = await request.put(`${baseURL}/api/director/security/users/${staff.id}/permissions`, {
+    headers: authHeaders("director"),
+    data: { permissions: originalPermissions }
+  });
+  expect(restorePermissions.status()).toBe(200);
+  expect((await restorePermissions.json()).permissions).toEqual(originalPermissions);
 
   const legalExport = await request.get(`${baseURL}/api/director/legal-export?limit=2`, {
     headers: authHeaders("director")
@@ -91,13 +110,18 @@ test("api: director endpoints reject signed tokens for users missing from the da
 
 test("api: login issues refresh token and failed login increments lockout counter", async ({ request, baseURL }) => {
   const credentials = credentialsFor("staff");
-  await request.post(`${baseURL}/api/director/security/users/2/reset-password`, {
+  const resetPassword = await request.post(`${baseURL}/api/director/security/users/2/reset-password`, {
     headers: authHeaders("director"),
     data: { newPassword: credentials.password }
   });
-  await request.post(`${baseURL}/api/director/security/users/2/unlock`, {
+  expect(resetPassword.status()).toBe(200);
+  expect(await resetPassword.json()).toEqual({ success: true });
+
+  const unlock = await request.post(`${baseURL}/api/director/security/users/2/unlock`, {
     headers: authHeaders("director")
   });
+  expect(unlock.status()).toBe(200);
+  expect(await unlock.json()).toEqual({ success: true });
 
   const badLogin = await request.post(`${baseURL}/api/auth/login`, {
     data: {
@@ -124,10 +148,18 @@ test("api: login issues refresh token and failed login increments lockout counte
   expect(refreshed.token).toBeTruthy();
   expect(refreshed.refreshToken).toBeTruthy();
 
-  await request.post(`${baseURL}/api/auth/logout`, {
+  const logout = await request.post(`${baseURL}/api/auth/logout`, {
     headers: { Authorization: `Bearer ${refreshed.token}` },
     data: { refreshToken: refreshed.refreshToken }
   });
+  expect(logout.status()).toBe(200);
+  expect(await logout.json()).toEqual({ success: true });
+
+  const revokedRefresh = await request.post(`${baseURL}/api/auth/refresh`, {
+    data: { refreshToken: refreshed.refreshToken }
+  });
+  expect(revokedRefresh.status()).toBe(401);
+  expect(await revokedRefresh.json()).toHaveProperty("error");
 });
 
 test("smoke: director opens backup and security panel", async ({ page }) => {

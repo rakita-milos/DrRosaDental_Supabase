@@ -43,35 +43,39 @@ test("smoke: authorized user creates appointment from calendar page and sees it 
   await page.locator("#appointment-patient").selectOption({ label: fullName });
   const [year, month, day] = appointmentDate.split("-");
   await page.locator('[data-drrosa-for="appointment-date"]').fill(`${day}.${month}.${year}`);
+  await page.locator('[data-drrosa-for="appointment-date"]').press("Tab");
   await page.locator('[data-drrosa-for="appointment-time"]').fill("10:15");
+  await page.locator('[data-drrosa-for="appointment-time"]').press("Tab");
   await page.locator("#appointment-duration").selectOption("45");
-  await page.locator("#appointment-procedure").selectOption({ label: "Kontrola" });
+  await page.locator("#appointment-procedure").selectOption({ index: 1 }, { force: true });
+  const appointmentTitle = `${TEST_PREFIX} termin ${stamp}`;
+  await page.locator("#appointment-title").fill(appointmentTitle);
   await page.locator("#appointment-notes").fill(`${TEST_PREFIX} UI smoke appointment`);
   await page.locator('#appointment-form button[type="submit"]').click();
 
   await expect(page.locator("#appointment-alert")).toContainText(/Termin je sa[cč]uvan/i);
-  await expect(page.locator("#calendar-board")).toContainText(`${TEST_PREFIX}${stamp} P.`);
+  await expect(page.locator("#calendar-board")).toContainText(appointmentTitle);
   await expect(page.locator("#calendar-board")).toContainText("10:15-11:00");
   await expect(page.locator(".week-grid")).toBeVisible();
 
   await page.getByRole("button", { name: /Odustani/i }).click();
   await expect(page.locator("#appointment-panel")).toBeHidden();
-  await page.getByRole("button", { name: new RegExp(`${TEST_PREFIX}${stamp} P\\.`) }).click();
+  await page.getByRole("button", { name: new RegExp(appointmentTitle) }).click();
   await expect(page.locator("#create-visit-btn")).toBeEnabled();
   await expect(page.getByRole("button", { name: /Otka[zž]i termin/i })).toBeEnabled();
   await page.getByRole("button", { name: /Odustani/i }).click();
   await expect(page.locator("#appointment-panel")).toBeHidden();
-  await expect(page.locator("#calendar-board")).toContainText(`${TEST_PREFIX}${stamp} P.`);
+  await expect(page.locator("#calendar-board")).toContainText(appointmentTitle);
 
   await page.locator("#calendar-view").selectOption("month");
   await expect(page.locator(".appointment-compact").first()).toBeVisible();
   await page.locator("#calendar-view").selectOption("day");
   await page.locator("#today-btn").click();
   await expect(page.locator(".day-chair-board")).toBeVisible();
-  await expect(page.locator(".day-chair-board")).toContainText(fullName);
+  await expect(page.locator(".day-chair-board")).toContainText(appointmentTitle);
 
-  await page.getByRole("button", { name: fullName }).click();
+  await page.getByRole("button", { name: new RegExp(appointmentTitle) }).click();
   await page.getByRole("button", { name: /Otka[zž]i termin/i }).click();
   await expect(page.locator("#appointment-panel")).toBeHidden();
-  await expect(page.locator("#calendar-board")).not.toContainText(fullName);
+  await expect(page.locator("#calendar-board")).not.toContainText(appointmentTitle);
 });

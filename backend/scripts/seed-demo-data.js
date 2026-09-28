@@ -1,6 +1,6 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-const { createPool, initializePostgresSchema } = require('../db/postgres');
+const { createPool } = require('../db/postgres');
 
 const marker = 'DEMO-SEED-2026-05';
 
@@ -12,7 +12,6 @@ async function main() {
   const pool = createPool();
 
   try {
-    await initializePostgresSchema(pool);
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -32,7 +31,7 @@ async function main() {
 async function seedDemoData(client) {
   const doctors = (await client.query('SELECT id, name FROM doctors ORDER BY id')).rows;
   if (doctors.length === 0) {
-    throw new Error('No doctors found. Start the backend once before seeding demo data.');
+    throw new Error('No doctors found. Run npm run seed:runtime before seeding demo data.');
   }
 
   const demoVisits = await client.query('SELECT id FROM visit_records WHERE notes LIKE $1', [`%${marker}%`]);
