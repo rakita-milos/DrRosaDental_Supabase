@@ -2,6 +2,7 @@ const { readEnv } = require("./env");
 const crypto = require("crypto");
 
 const backendEnv = readEnv();
+const sessionTokens = new Map();
 
 function credentialsFor(role = "staff") {
   const isDirector = role === "director";
@@ -37,13 +38,9 @@ function signTestToken(user) {
 }
 
 function tokenFor(role = "staff") {
-  const isDirector = role === "director";
-  return signTestToken({
-    id: isDirector ? 1 : 2,
-    email: isDirector ? "director@drosa.com" : "staff@drosa.com",
-    name: isDirector ? "Dr Rosa Basic" : "Ana - Medicinska sestra",
-    role
-  });
+  const token = sessionTokens.get(role) || process.env[`PLAYWRIGHT_${role.toUpperCase()}_TOKEN`];
+  if (!token) throw new Error(`Authenticate ${role} through the real login before requesting its access token.`);
+  return token;
 }
 
 async function authenticate(page, role = "staff") {
@@ -61,9 +58,14 @@ async function authenticate(page, role = "staff") {
     throw new Error(`Login setup failed for ${role}: ${response.status()}`);
   }
   const session = await response.json();
+  sessionTokens.set(role, session.token);
   await page.evaluate(({ session }) => {
     localStorage.setItem("drrosa-session", JSON.stringify({
       ...session.user,
+      sessionId: session.sessionId,
+      sessionExpiresAt: session.sessionExpiresAt,
+      idleExpiresAt: session.idleExpiresAt,
+      idleTimeoutMs: session.idleTimeoutMs,
       loginTime: new Date().toISOString(),
       refreshExpiresAt: session.refreshExpiresAt || null
     }));
@@ -71,26 +73,16 @@ async function authenticate(page, role = "staff") {
 }
 
 async function authenticateWithSignedToken(page, role = "staff") {
-  const credentials = credentialsFor(role);
-  const token = tokenFor(role);
-  const origin = new URL(page.url()).origin;
-  await page.context().addCookies([{
-    name: "drrosa_access",
-    value: token,
-    url: origin,
-    httpOnly: true,
-    sameSite: "Lax"
-  }]);
-  await page.evaluate(({ credentials }) => {
-    localStorage.setItem("drrosa-session", JSON.stringify({
-      id: credentials.role === "director" ? 1 : 2,
-      email: credentials.email,
-      name: credentials.role === "director" ? "Dr Rosa Basic" : "Ana - Medicinska sestra",
-      role: credentials.role,
-      loginTime: new Date().toISOString(),
-      refreshExpiresAt: null
-    }));
-  }, { credentials });
+  // Retain the helper name for existing suites, but never bypass server sessions.
+  const response = await page.request.post('/api/auth/login', { data: credentialsFor(role) });
+  if (!response.ok()) throw new Error(`Login setup failed for ${role}: ${response.status()}`);
+  const session = await response.json();
+  sessionTokens.set(role, session.token);
+  await page.evaluate(session => {
+    localStorage.setItem('drrosa-session', JSON.stringify({ ...session.user, sessionId: session.sessionId,
+      sessionExpiresAt: session.sessionExpiresAt, idleExpiresAt: session.idleExpiresAt, idleTimeoutMs: session.idleTimeoutMs,
+      loginTime: new Date().toISOString(), refreshExpiresAt: session.refreshExpiresAt }));
+  }, session);
 }
 
 module.exports = { authenticate, authenticateWithSignedToken, credentialsFor, tokenFor, signTestToken };

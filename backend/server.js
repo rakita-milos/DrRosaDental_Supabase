@@ -15,6 +15,7 @@ const bcryptHash = util.promisify(bcrypt.hash);
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { createAuthSessionRepository } = require('./db/auth-session');
+const { createSessionService, sessionError } = require('./services/session-service');
 const { createPatientsRepository } = require('./db/patients');
 const { createPatientDocumentsRepository } = require('./db/patient-documents');
 const { createRecordsPaymentsRepository } = require('./db/records-payments');
@@ -311,7 +312,17 @@ const googleSyncLimiter = createRateLimiter({
 });
 
 const ACCESS_TOKEN_TTL = process.env.ACCESS_TOKEN_TTL || '15m';
-const REFRESH_TOKEN_DAYS = Number(process.env.REFRESH_TOKEN_DAYS || 14);
+const SESSION_IDLE_MS = Number(process.env.SESSION_IDLE_MINUTES || 20) * 60000;
+const SESSION_ABSOLUTE_MS = Number(process.env.SESSION_ABSOLUTE_HOURS || 8) * 3600000;
+if (!Number.isFinite(SESSION_IDLE_MS) || !Number.isFinite(SESSION_ABSOLUTE_MS) ||
+    SESSION_IDLE_MS <= 0 || SESSION_ABSOLUTE_MS < SESSION_IDLE_MS) {
+  throw new Error('Session timeouts must be positive; absolute timeout must cover idle timeout.');
+}
+const sessionService = createSessionService({
+  repository: authSessions, refreshKey: JWT_SECRET,
+  idleTimeoutMs: SESSION_IDLE_MS, absoluteTimeoutMs: SESSION_ABSOLUTE_MS,
+  signAccessToken: row => createAccessToken({ id: row.user_id, email: row.email, name: row.name, role: row.role }, String(row.id))
+});
 const LOCKOUT_ATTEMPTS = Number(process.env.LOCKOUT_ATTEMPTS || 5);
 const LOCKOUT_MINUTES = Number(process.env.LOCKOUT_MINUTES || 15);
 
@@ -581,29 +592,36 @@ async function rotateDefaultPasswords() {
 async function authenticateToken(req, res, next) {
   const authHeader = req.headers.authorization;
   const cookies = parseCookies(req);
-  const token = (authHeader && authHeader.split(' ')[1]) || cookies.drrosa_access;
-
-  if (!token) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
+  let token = (authHeader && authHeader.split(' ')[1]) || cookies.drrosa_access;
+  const isProtectedAsset = ['/src/pages/director-panel.html', '/src/scripts/director-reports.js'].includes(req.path);
 
   try {
-    const tokenUser = jwt.verify(token, JWT_SECRET);
-    const user = await authSessions.findUserByIdEmail(
-      positiveInteger(tokenUser.id),
-      String(tokenUser.email || '').toLowerCase()
-    );
-    if (!user) return res.status(403).json({ error: 'Invalid token user' });
-    if (isUserLocked(user)) return res.status(423).json({ error: 'Account is temporarily locked. Try again later.' });
-    if (user.password_changed_at && tokenUser.iat && new Date(user.password_changed_at).getTime() > tokenUser.iat * 1000) {
-      return res.status(403).json({ error: 'Session expired after password change' });
+    let tokenUser;
+    try {
+      if (!token) throw sessionError('Access token required', 'ACCESS_EXPIRED');
+      tokenUser = jwt.verify(token, JWT_SECRET);
+    } catch (error) {
+      if (!isProtectedAsset || !['ACCESS_EXPIRED', 'TokenExpiredError'].includes(error.code || error.name)) throw error;
+      const restored = await sessionService.renew(cookies.drrosa_refresh);
+      writeSessionCookies(res, restored);
+      token = restored.accessToken;
+      tokenUser = jwt.verify(token, JWT_SECRET);
     }
+    if (!tokenUser.sid) throw sessionError('Prijavite se ponovo radi nove sigurnosne sesije.');
+    const activeSession = await sessionService.verify(tokenUser.sid, positiveInteger(tokenUser.id));
+    const user = { ...activeSession, id: activeSession.user_id };
+    if (user.email !== String(tokenUser.email || '').toLowerCase()) throw sessionError('Invalid token user');
     req.user = publicUser(user);
     req.user.permissions = permissionsForUser(user);
+    req.authSession = activeSession;
     next();
   } catch (error) {
-    if (error?.name === 'JsonWebTokenError' || error?.name === 'TokenExpiredError') {
-      return res.status(403).json({ error: 'Invalid token' });
+    if (error?.status || error?.name === 'JsonWebTokenError' || error?.name === 'TokenExpiredError') {
+      if (isProtectedAsset && (error.status === 401 || error.name === 'TokenExpiredError' || error.name === 'JsonWebTokenError')) {
+        return res.redirect('/src/pages/login.html?reason=session-ended');
+      }
+      const code = error.code || (error.name === 'TokenExpiredError' ? 'ACCESS_EXPIRED' : 'SESSION_ENDED');
+      return res.status(error.status || 401).json({ error: error.message || 'Invalid token', code });
     }
     console.error('Auth token error:', error);
     return res.status(500).json({ error: 'Server error' });
@@ -650,10 +668,6 @@ async function auditLog({ userId = null, action, entityType = null, entityId = n
   }
 }
 
-function hashToken(token) {
-  return crypto.createHash('sha256').update(token).digest('hex');
-}
-
 function parseCookies(req) {
   return String(req.headers.cookie || '')
     .split(';')
@@ -692,43 +706,33 @@ function tokenTtlMs(value) {
   return amount * multipliers[unit];
 }
 
-function createAccessToken(user) {
+function createAccessToken(user, sessionId) {
   return jwt.sign(
-    { id: user.id, email: user.email, name: user.name, role: user.role },
+    { id: user.id, email: user.email, name: user.name, role: user.role, sid: sessionId },
     JWT_SECRET,
     { expiresIn: ACCESS_TOKEN_TTL }
   );
 }
 
-async function createRefreshToken(userId, req) {
-  const token = crypto.randomBytes(48).toString('base64url');
-  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  await authSessions.createRefreshToken({
-    userId,
-    tokenHash: hashToken(token),
-    userAgent: cleanText(req.headers['user-agent'], { max: 255 }),
-    ipAddress: req.ip,
-    expiresAt
+async function issueSession(user, req, res) {
+  const session = await sessionService.create(user, {
+    userAgent: cleanText(req.headers['user-agent'], { max: 255 }), ipAddress: req.ip
   });
-  return { token, expiresAt };
+  writeSessionCookies(res, session);
+  return publicSession(session);
 }
 
-async function issueSession(user, req, res) {
-  const refresh = await createRefreshToken(user.id, req);
-  const accessToken = createAccessToken(user);
-  if (res) {
-    try {
-      res.cookie('drrosa_access', accessToken, cookieOptions(tokenTtlMs(ACCESS_TOKEN_TTL)));
-      res.cookie('drrosa_refresh', refresh.token, cookieOptions(REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000));
-    } catch (e) {
-      console.error('Failed to set refresh cookie', e);
-    }
-  }
-  return {
-    ...(isProduction ? {} : { token: accessToken, refreshToken: refresh.token }),
-    refreshExpiresAt: refresh.expiresAt,
-    user: publicUser(user)
-  };
+function writeSessionCookies(res, session) {
+  const remaining = Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now());
+  res.cookie('drrosa_access', session.accessToken, cookieOptions(Math.min(tokenTtlMs(ACCESS_TOKEN_TTL), remaining)));
+  res.cookie('drrosa_refresh', session.refreshToken, cookieOptions(remaining));
+  res.set('Cache-Control', 'no-store');
+}
+
+function publicSession(session) {
+  const { accessToken, refreshToken, ...metadata } = session;
+  return { ...metadata, refreshExpiresAt: session.sessionExpiresAt,
+    ...(isProduction ? {} : { token: accessToken, refreshToken }) };
 }
 
 function isUserLocked(user) {
@@ -2856,39 +2860,47 @@ app.post('/api/auth/login', loginLimiter, validateBody(loginSchema), async (req,
 });
 
 app.post('/api/auth/verify', authenticateToken, (req, res) => {
-  res.json({ valid: true, user: req.user });
+  res.set('Cache-Control', 'no-store');
+  res.json({ valid: true, ...sessionService.payload(req.authSession), user: req.user });
 });
+
+app.post('/api/auth/activity', authenticateToken, asyncRoute(async (req, res) => {
+  const session = await sessionService.activity(req.authSession.id, req.user.id);
+  res.set('Cache-Control', 'no-store');
+  res.json(session);
+}));
 
 app.post('/api/auth/refresh', async (req, res) => {
   try {
-    const refreshToken = String(req.body.refreshToken || parseCookies(req).drrosa_refresh || '');
-    if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });
-    const row = await authSessions.findRefreshSessionByTokenHash(hashToken(refreshToken));
-    if (!row || row.revoked_at || new Date(row.expires_at).getTime() <= Date.now()) {
-      return res.status(401).json({ error: 'Invalid refresh token' });
-    }
-    await authSessions.revokeRefreshTokenById(row.id);
-    const session = await issueSession({
-      id: row.user_id,
-      email: row.email,
-      name: row.name,
-      role: row.role,
-      two_factor_enabled: row.two_factor_enabled
-    }, req, res);
-    res.json(session);
+    const refreshToken = String(parseCookies(req).drrosa_refresh || (!isProduction && req.body?.refreshToken) || '');
+    const session = await sessionService.renew(refreshToken);
+    writeSessionCookies(res, session);
+    res.json(publicSession(session));
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ error: error.message, code: error.code });
     console.error('Refresh token error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-app.post('/api/auth/logout', authenticateToken, async (req, res) => {
+app.post('/api/auth/logout', async (req, res) => {
   try {
-    const refreshToken = String(req.body.refreshToken || parseCookies(req).drrosa_refresh || '');
-    if (refreshToken) {
-      await authSessions.revokeRefreshTokenByHash(hashToken(refreshToken));
+    const refreshToken = String(parseCookies(req).drrosa_refresh || (!isProduction && req.body?.refreshToken) || '');
+    let revoked = await sessionService.revoke(refreshToken);
+    if (!revoked) {
+      // An expired access JWT is still a signed identifier for logout only.
+      // This also closes the session if an old refresh response raced with logout.
+      const access = parseCookies(req).drrosa_access || req.headers.authorization?.split(' ')[1];
+      if (access) {
+        try {
+          const claims = jwt.verify(access, JWT_SECRET, { ignoreExpiration: true });
+          if (claims.sid && claims.id) revoked = await authSessions.revokeSessionById(claims.sid, claims.id);
+        } catch (error) {
+          if (!['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(error.name)) throw error;
+        }
+      }
     }
-    await auditLog({ userId: req.user.id, action: 'logout', entityType: 'user', entityId: req.user.id, req });
+    if (revoked) await auditLog({ userId: revoked.user_id, action: 'logout', entityType: 'session', entityId: revoked.id, req });
     try {
       res.clearCookie('drrosa_access', { path: '/' });
       res.clearCookie('drrosa_refresh', { path: '/' });
@@ -2897,6 +2909,7 @@ app.post('/api/auth/logout', authenticateToken, async (req, res) => {
     } catch (e) {
       // ignore
     }
+    res.set('Cache-Control', 'no-store');
     res.json({ success: true });
   } catch (error) {
     console.error('Logout error:', error);
@@ -4984,7 +4997,9 @@ app.get('/api/director/security/status', authenticateToken, requireDirector, asy
     const restoreTests = await directorReports.restoreTests(20);
     res.json({
       accessTokenTtl: ACCESS_TOKEN_TTL,
-      refreshTokenDays: REFRESH_TOKEN_DAYS,
+      refreshTokenDays: SESSION_ABSOLUTE_MS / 86400000,
+      sessionIdleMinutes: SESSION_IDLE_MS / 60000,
+      sessionAbsoluteHours: SESSION_ABSOLUTE_MS / 3600000,
       lockoutAttempts: LOCKOUT_ATTEMPTS,
       lockoutMinutes: LOCKOUT_MINUTES,
       users: users.map(serializeUserSecurity),
@@ -6118,6 +6133,7 @@ registerSystemRoutes(app, {
 
 app.use((err, _req, res, next) => {
   if (!err) return next();
+  if (err.status && err.code) return res.status(err.status).json({ error: err.message, code: err.code });
   if (err.message === 'CORS origin not allowed') {
     return res.status(403).json({ error: 'CORS origin not allowed' });
   }

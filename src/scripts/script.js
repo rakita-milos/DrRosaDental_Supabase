@@ -14,7 +14,7 @@ async function requireAccess(requiredRole) {
   if (logoutBtn) {
     logoutBtn.addEventListener("click", (event) => {
       event.preventDefault();
-      window.DrRosaApi.logout().finally(() => {
+      window.DrRosaApi.logout().catch(() => {}).finally(() => {
         window.location.href = "login.html";
       });
     });

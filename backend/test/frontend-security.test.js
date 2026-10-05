@@ -57,7 +57,7 @@ test('patient timeline binds record deletion once through its delegated click ha
 });
 
 test('session verification does not clear login state on navigation aborts', () => {
-  assert.match(apiSource, /function apiError\(message, status\)/);
+  assert.match(apiSource, /function apiError\(message, status, code\)/);
   assert.match(apiSource, /error\.status = status/);
   assert.match(apiSource, /function isAuthFailure\(error\)/);
   assert.match(apiSource, /if \(isAuthFailure\(error\)\) \{\s*clearSession\(\);[\s\S]*return null;\s*\}/);

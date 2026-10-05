@@ -1,9 +1,14 @@
 (function () {
   const API_BASE = window.DRROSA_API_BASE || "/api";
   const { escapeHtml, escapeAttribute } = window.DrRosaSecurity;
+  let refreshPromise = null;
+  let rescheduleLifecycle = () => {};
+  const authEpoch = () => localStorage.getItem('drrosa-auth-epoch') || '';
+  const advanceAuthEpoch = () => localStorage.setItem('drrosa-auth-epoch', `${Date.now()}-${Math.random()}`);
 
   function getSession() {
-    return JSON.parse(localStorage.getItem("drrosa-session") || "null");
+    try { return JSON.parse(localStorage.getItem("drrosa-session") || "null"); }
+    catch { return null; }
   }
 
   function syncDirectorNavigation(session = getSession()) {
@@ -17,13 +22,20 @@
   function setSession(data) {
     localStorage.removeItem("drrosa-refresh-token");
     localStorage.removeItem("drrosa-token");
+    const previous = getSession();
     const session = {
       ...(data.user || data),
-      loginTime: new Date().toISOString(),
-      refreshExpiresAt: data.refreshExpiresAt || null
+      loginTime: previous?.loginTime || new Date().toISOString(),
+      refreshExpiresAt: data.refreshExpiresAt || previous?.refreshExpiresAt || null,
+      sessionId: data.sessionId || previous?.sessionId || null,
+      sessionExpiresAt: data.sessionExpiresAt || previous?.sessionExpiresAt || null,
+      idleExpiresAt: data.idleExpiresAt || previous?.idleExpiresAt || null,
+      idleTimeoutMs: data.idleTimeoutMs || previous?.idleTimeoutMs || 1200000,
+      clockOffsetMs: data.serverTime ? Date.parse(data.serverTime) - Date.now() : previous?.clockOffsetMs || 0
     };
     localStorage.setItem("drrosa-session", JSON.stringify(session));
     syncDirectorNavigation(session);
+    rescheduleLifecycle();
   }
 
   function clearSession() {
@@ -34,33 +46,50 @@
     syncDirectorNavigation(null);
   }
 
-  function apiError(message, status) {
+  function apiError(message, status, code) {
     const error = new Error(message || "API request failed");
     if (status) error.status = status;
+    if (code) error.code = code;
     return error;
   }
 
   function isAuthFailure(error) {
-    return error?.status === 401 || error?.status === 403;
+    return ['SESSION_ENDED', 'REFRESH_REJECTED', 'ACCOUNT_LOCKED'].includes(error?.code);
   }
 
   async function refreshSession() {
-    // Server will read refresh token from httpOnly cookie when present.
-    const response = await fetch(`${API_BASE}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: 'include'
-    });
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) clearSession();
-      return null;
-    }
-    const data = await response.json();
-    setSession(data);
-    return data;
+    if (refreshPromise) return refreshPromise;
+    const epoch = authEpoch();
+    const renew = async () => {
+      if (authEpoch() !== epoch || localStorage.getItem('drrosa-logout-pending')) throw apiError('Prijava je promenjena.', 401, 'SESSION_CHANGED');
+      // A different tab may already have renewed the shared cookies while waiting.
+      const checked = await fetch(`${API_BASE}/auth/verify`, { method: 'POST', credentials: 'include', cache: 'no-store' });
+      const checkedData = await checked.json().catch(() => ({}));
+      if (checked.ok) {
+        if (authEpoch() !== epoch) throw apiError('Prijava je promenjena.', 401, 'SESSION_CHANGED');
+        setSession(checkedData);
+        return checkedData;
+      }
+      if (checked.status !== 401 || checkedData.code !== 'ACCESS_EXPIRED') {
+        throw apiError(checkedData.error, checked.status, checkedData.code);
+      }
+      const response = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', cache: 'no-store'
+      });
+      const data = await response.json().catch(() => ({}));
+      if (authEpoch() !== epoch) throw apiError('Prijava je promenjena.', 401, 'SESSION_CHANGED');
+      if (!response.ok) throw apiError(data.error, response.status, data.code);
+      setSession(data);
+      return data;
+    };
+    refreshPromise = (window.navigator?.locks
+      ? window.navigator.locks.request('drrosa-session-refresh', renew) : renew()).finally(() => { refreshPromise = null; });
+    return refreshPromise;
   }
 
   async function request(path, options = {}, retry = true) {
+    const epoch = authEpoch();
+    if (localStorage.getItem('drrosa-logout-pending')) throw apiError('Odjava čeka potvrdu servera.', 401, 'SESSION_CHANGED');
     const headers = {
       "Content-Type": "application/json",
       ...(options.headers || {})
@@ -73,16 +102,22 @@
       credentials: 'include'
     });
 
+    const data = await response.json().catch(() => ({}));
+    if (authEpoch() !== epoch) throw apiError('Prijava je promenjena.', 401, 'SESSION_CHANGED');
     if (!response.ok) {
-      if ((response.status === 401 || response.status === 403) && retry && path !== "/auth/refresh") {
-        const refreshed = await refreshSession();
-        if (refreshed) return request(path, options, false);
+      try {
+        if (response.status === 401 && data.code === 'ACCESS_EXPIRED' && retry) {
+          await refreshSession();
+          return request(path, options, false);
+        }
+        throw apiError(data.error || 'API request failed', response.status, data.code);
+      } catch (error) {
+        if (isAuthFailure(error) && authEpoch() === epoch) lockSession(error.message);
+        throw error;
       }
-      const message = await response.json().catch(() => ({}));
-      throw apiError(message.error || "API request failed", response.status);
     }
 
-    return response.json();
+    return data;
   }
 
   const cachedRequests = new Map();
@@ -139,7 +174,20 @@
     };
   }
 
-  async function login(email, password, role, twoFactorCode) {
+  function withAuthLock(work) {
+    return window.navigator?.locks ? window.navigator.locks.request('drrosa-session-refresh', work) : work();
+  }
+
+  function login(email, password, role, twoFactorCode) {
+    return withAuthLock(() => performLogin(email, password, role, twoFactorCode));
+  }
+
+  async function performLogin(email, password, role, twoFactorCode) {
+    if (localStorage.getItem('drrosa-logout-pending')) {
+      const cleanup = await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include', cache: 'no-store' });
+      if (!cleanup.ok) throw new Error('Prethodna odjava nije potvrđena. Pokušajte ponovo.');
+      localStorage.removeItem('drrosa-logout-pending');
+    }
     const response = await fetch(`${API_BASE}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -150,13 +198,21 @@
     if (!response.ok && data.requires2fa) return data;
     if (!response.ok) throw new Error(data.error || "API request failed");
     if (data.requires2fa) return data;
+    advanceAuthEpoch();
+    clearSession();
     setSession(data);
     return data.user;
   }
 
   async function logout() {
+    localStorage.setItem('drrosa-logout-pending', '1');
+    advanceAuthEpoch();
+    clearSession();
     try {
-      await request("/auth/logout", { method: "POST" }, false);
+      const response = await withAuthLock(() => fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include', cache: 'no-store' }));
+      if (!response.ok) throw apiError('Serverska odjava nije potvrđena.', response.status);
+      localStorage.removeItem('drrosa-logout-pending');
+      localStorage.setItem('drrosa-auth-event', JSON.stringify({ type: 'logout', at: Date.now() }));
     } finally {
       clearSession();
     }
@@ -170,6 +226,7 @@
   }
 
   async function verifySession(requiredRole) {
+    if (localStorage.getItem('drrosa-logout-pending')) { clearSession(); return null; }
     const session = getSession();
     if (!session) return null;
     if (requiredRole && session.role !== requiredRole) return null;
@@ -177,9 +234,10 @@
     try {
       const data = await request("/auth/verify", { method: "POST" });
       if (requiredRole && data.user.role !== requiredRole) return null;
-      setSession({ user: data.user });
+      setSession(data);
       return data.user;
     } catch (error) {
+      if (error.code === 'SESSION_CHANGED') return null;
       if (isAuthFailure(error)) {
         clearSession();
         return null;
@@ -190,6 +248,123 @@
       return session;
     }
   }
+
+  const sessionLock = window.createDrRosaSessionLock({ getSession, advanceAuthEpoch, clearSession, login });
+  const lockSession = (...args) => sessionLock.lock(...args);
+  const unlockSession = () => sessionLock.unlock();
+
+  async function reportActivity() {
+    const before = getSession();
+    if (!before) return;
+    const data = await request('/auth/activity', { method: 'POST' });
+    if (getSession()?.sessionId === before.sessionId) setSession({ ...data, user: before });
+  }
+
+  function initializeSessionLifecycle() {
+    let lastAttempt = 0;
+    let activityPending = false;
+    let lastInteraction = 0;
+    let activityTimer;
+    let deadlineTimer;
+    let lastKnownSession = getSession();
+    async function onActivity(event) {
+      if (!event.isTrusted || document.visibilityState === 'hidden' || !getSession()) return;
+      activityPending = true;
+      lastInteraction = Date.now();
+      await flushActivity();
+    }
+    async function flushActivity() {
+      if (!activityPending || !getSession()) return;
+      const send = async () => {
+        const session = getSession();
+        if (!session) return;
+        let shared;
+        try { shared = JSON.parse(localStorage.getItem('drrosa-activity') || 'null'); } catch {}
+        const last = shared?.sessionId === session.sessionId ? shared.at : lastAttempt;
+        if (last && last >= lastInteraction) { activityPending = false; return; }
+        const delay = 15000 - (Date.now() - (last || 0));
+        if (delay > 0) {
+          window.clearTimeout(activityTimer);
+          activityTimer = window.setTimeout(flushActivity, delay);
+          return;
+        }
+        lastAttempt = Date.now();
+        activityPending = false;
+        localStorage.setItem('drrosa-activity', JSON.stringify({sessionId:session.sessionId,at:lastAttempt}));
+        try { await reportActivity(); } catch { /* Server deadlines remain authoritative. */ }
+      };
+      if (window.navigator?.locks) await window.navigator.locks.request('drrosa-session-activity', send);
+      else await send();
+    }
+    ['pointerdown', 'keydown', 'input', 'scroll'].forEach(name => document.addEventListener(name, onActivity, { passive: true }));
+    function checkDeadline() {
+      const session = getSession();
+      if (!session) {
+        if (lastKnownSession) lockSession('Prijava je prekinuta. Prijavite se ponovo.', lastKnownSession);
+        return;
+      }
+      if (lastKnownSession && (lastKnownSession.id !== session.id || lastKnownSession.role !== session.role)) {
+        location.reload();
+        return;
+      }
+      lastKnownSession = session;
+      const serverNow = Date.now() + (session.clockOffsetMs || 0);
+      const deadline = Math.min(Date.parse(session.idleExpiresAt), Date.parse(session.sessionExpiresAt));
+      if (!Number.isFinite(deadline)) return;
+      if (serverNow >= deadline) { lockSession(); return; }
+      let warning = document.getElementById('drrosa-session-warning');
+      if (deadline - serverNow > 60000) { warning?.remove(); return; }
+      if (!warning) {
+        warning = document.createElement('p');
+        warning.id = 'drrosa-session-warning';
+        warning.className = 'session-warning';
+        warning.setAttribute('role', 'status');
+        document.body.appendChild(warning);
+      }
+      const absolute = Date.parse(session.sessionExpiresAt) <= Date.parse(session.idleExpiresAt);
+      warning.textContent = absolute
+        ? 'Prijava uskoro ističe zbog maksimalnog trajanja. Biće potrebna ponovna prijava.'
+        : 'Prijava uskoro ističe zbog neaktivnosti. Nastavite rad da produžite sesiju.';
+    }
+    window.addEventListener('storage', event => {
+      if (event.key === 'drrosa-session') {
+        rescheduleLifecycle();
+        const previous = event.oldValue ? JSON.parse(event.oldValue) : null;
+        const next = event.newValue ? JSON.parse(event.newValue) : null;
+        if (!next && previous) lockSession('Prijava je prekinuta u drugom tabu.', previous);
+        else if (next && sessionLock.user?.id === next.id && !localStorage.getItem('drrosa-logout-pending')) unlockSession();
+        else if (next && ((previous && previous.id !== next.id) || (sessionLock.user && sessionLock.user.id !== next.id))) location.reload();
+      }
+      if (event.key === 'drrosa-logout-pending' && event.newValue) lockSession('Odjava je pokrenuta u drugom tabu.');
+      if (event.key === 'drrosa-auth-event' && event.newValue) location.replace('login.html');
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'hidden') {
+        rescheduleLifecycle();
+        if (getSession()) verifySession().catch(() => {});
+      }
+    });
+    window.addEventListener('pageshow', event => {
+      rescheduleLifecycle();
+      if (event.persisted && getSession()) verifySession().catch(() => {});
+    });
+    function scheduleDeadline() {
+      window.clearTimeout(deadlineTimer);
+      checkDeadline();
+      const session = getSession();
+      if (!session) return;
+      const deadline = Math.min(Date.parse(session.idleExpiresAt), Date.parse(session.sessionExpiresAt));
+      const remaining = deadline - Date.now() - (session.clockOffsetMs || 0);
+      if (Number.isFinite(remaining) && remaining > 0) {
+        deadlineTimer = window.setTimeout(scheduleDeadline, remaining > 60000 ? remaining - 60000 : remaining);
+      }
+    }
+    rescheduleLifecycle = scheduleDeadline;
+    scheduleDeadline();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeSessionLifecycle);
+  else initializeSessionLifecycle();
 
   function queryString(params = {}) {
     const query = new URLSearchParams();

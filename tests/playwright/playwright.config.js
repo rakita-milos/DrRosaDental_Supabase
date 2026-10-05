@@ -4,6 +4,7 @@ const { defineConfig, devices } = require("@playwright/test");
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || process.env.APP_BASE_URL || "http://localhost:3010";
 
 module.exports = defineConfig({
+  globalSetup: path.join(__dirname, 'utils/session-setup.js'),
   testDir: path.join(__dirname, "tests"),
   timeout: 60_000,
   workers: 1,

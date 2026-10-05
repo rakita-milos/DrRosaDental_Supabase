@@ -26,3 +26,4 @@ tests/playwright/.backend-data/
 tests/playwright/.scanner-inbox/
 tests/playwright/.uploads/
 .vercel
+supabase/.temp/

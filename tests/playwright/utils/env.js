@@ -2,8 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 function readEnv(filePath = path.join(__dirname, "../../../backend/.env")) {
-  const fileEnv = fs
-    .readFileSync(filePath, "utf8")
+  const fileEnv = (fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : '')
     .split(/\r?\n/)
     .filter(line => line.includes("=") && !line.trim().startsWith("#"))
     .reduce((env, line) => {

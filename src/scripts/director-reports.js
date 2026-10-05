@@ -75,7 +75,7 @@ async function checkDirectorAccess() {
   }
 
   document.getElementById("logout-btn").addEventListener("click", () => {
-    window.DrRosaApi.logout().finally(() => {
+    window.DrRosaApi.logout().catch(() => {}).finally(() => {
       window.location.href = "login.html";
     });
   });

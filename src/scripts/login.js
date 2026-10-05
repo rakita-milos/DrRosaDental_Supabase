@@ -1,6 +1,10 @@
 const form = document.getElementById("login-form");
 const errorMsg = document.getElementById("error-msg");
 let pendingTwoFactor = false;
+if (localStorage.getItem('drrosa-logout-pending')) {
+  errorMsg.textContent = 'Aplikacija je lokalno zaključana. Serverska odjava čeka potvrdu; nova prijava će prvo pokušati da je završi.';
+  errorMsg.style.display = 'block';
+}
 
 function ensureTwoFactorField() {
   let field = document.getElementById("two-factor-code");
