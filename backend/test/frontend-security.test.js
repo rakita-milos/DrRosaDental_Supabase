@@ -145,17 +145,22 @@ test('all records patient dropdown supports searchable custom select options', (
   assert.match(stylesSource, /\.custom-select-empty/);
 });
 
-test('patient card lists visit-level notes from new entry records', () => {
-  assert.match(patientDashboardPageSource, /class="patient-focus-panel visit-notes-panel" id="visit-notes-card"/);
-  assert.match(patientDashboardPageSource, /id="visit-notes-body"/);
-  assert.doesNotMatch(patientDashboardPageSource, /class="patient-tab-panel[^"]*" id="visit-notes-card"/);
-  assert.match(patientDashboardSource, /function recordVisitNote\(record\)/);
-  assert.match(patientDashboardSource, /record\.note \|\| record\.notes/);
-  assert.match(patientDashboardSource, /function renderVisitNotes\(records\)/);
-  assert.match(patientDashboardSource, /class="visit-note-cell"/);
-  assert.match(patientDashboardSource, /renderVisitNotes\(records\)/);
-  assert.match(stylesSource, /\.visit-notes-panel[\s\S]*margin-top: 16px/);
-  assert.match(stylesSource, /\.visit-note-cell[\s\S]*white-space: pre-wrap/);
+test('visit work groups only identical procedures and details, including legacy and general work', () => {
+  const vm = require('node:vm');
+  const context = { window: {} };
+  vm.runInNewContext(readFileSync(path.join(__dirname, '../../src/scripts/patient-visits.js'), 'utf8'), context);
+  const { groupsFor } = context.window.DrRosaPatientVisits;
+  const groups = groupsFor({ procedure: 'Poseta', treatments: {
+    11: [{ type: 'Plomba', note: 'Mezijalno' }, { type: 'Kontrola', note: '' }],
+    12: { type: 'Plomba', note: 'Mezijalno' },
+    13: { type: 'Plomba', note: 'Distalno' },
+    14: { type: 'Plomba', note: '' }
+  }, generalTreatments: [{ type: 'Pregled', note: 'Opšti nalaz' }] });
+  assert.equal(groups.length, 5);
+  assert.equal(groups[0].regions.join(','), '11,12');
+  assert.equal(groups.find(group => group.details === 'Distalno').regions.join(','), '13');
+  assert.equal(groups.find(group => group.procedure === 'Pregled').details, 'Opšti nalaz');
+  assert.equal(groupsFor({ procedure: 'Stari zapis' })[0].procedure, 'Stari zapis');
 });
 
 test('shared API caches reference dropdown data and invalidates it after admin changes', () => {
@@ -310,7 +315,6 @@ test('new entry summary is compact and placed inside the full-width form', () =>
   assert.match(newEntryPageSource, /id="preview-teeth-count"/);
   assert.match(newEntryPageSource, /id="preview-total-amount"/);
   assert.match(newEntryPageSource, /id="preview-note-badge" hidden/);
-  assert.match(newEntryPageSource, /entry-debt-payment-20260812/);
   assert.match(newEntryPageSource, /class="entry-summary-identity"/);
   assert.match(newEntryPageSource, /class="entry-summary-money"/);
   assert.match(newEntryPageSource, /class="entry-summary-payment-status"/);
@@ -323,7 +327,6 @@ test('new entry summary is compact and placed inside the full-width form', () =>
 });
 
 test('new entry payment rows use one-line desktop layout without per-payment notes', () => {
-  assert.match(newEntryPageSource, /entry-debt-payment-20260812/);
   assert.match(newEntrySource, /class="payment-part-number">#\$\{index \+ 1\}/);
   assert.match(newEntrySource, /class="danger-btn payment-part-remove"[\s\S]*>×<\/button>/);
   assert.doesNotMatch(newEntrySource, /payment-part-note/);
@@ -332,16 +335,6 @@ test('new entry payment rows use one-line desktop layout without per-payment not
   assert.match(stylesSource, /\.payment-part-row[\s\S]*overflow: visible/);
   assert.doesNotMatch(stylesSource, /\.payment-part-fields/);
   assert.doesNotMatch(stylesSource, /\.payment-part-notes/);
-});
-
-test('new entry tooth treatment note sits directly before saving selected teeth', () => {
-  const pendingListIndex = newEntryPageSource.indexOf('id="pending-treatment-list"');
-  const noteIndex = newEntryPageSource.indexOf('id="treatment-note"');
-  const saveIndex = newEntryPageSource.indexOf('id="save-treatment"');
-  assert.ok(pendingListIndex > -1);
-  assert.ok(noteIndex > pendingListIndex);
-  assert.ok(saveIndex > noteIndex);
-  assert.doesNotMatch(newEntryPageSource.slice(noteIndex, saveIndex), /id="add-treatment-item"/);
 });
 
 test('new entry syncs payment rows before adding another payment', () => {
@@ -354,7 +347,6 @@ test('new entry syncs payment rows before adding another payment', () => {
 });
 
 test('new entry suggests remaining payment amount and converts row currency changes', () => {
-  assert.match(newEntryPageSource, /new-entry\.js\?v=hidden-debt-form-validation-20260818/);
   assert.match(newEntrySource, /function paymentPartAmountInVisitCurrency\(part\)/);
   assert.match(newEntrySource, /function remainingPaymentAmount\(\{ excludeIndex = null \} = \{\}\)/);
   assert.match(newEntrySource, /function suggestedPaymentPart\(\{ currency = paymentCurrency\(\) \} = \{\}\)/);

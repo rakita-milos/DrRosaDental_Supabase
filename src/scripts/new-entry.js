@@ -563,6 +563,10 @@ function openRecordInForm(record) {
   inputs.note.value = record.note === "-" ? "" : (record.note || "");
   teethTreatments = cloneTreatments(record.treatments, record.currency || paymentCurrency());
   generalTreatments = cloneGeneralTreatments(record.generalTreatments, record.currency || paymentCurrency());
+  // The stored procedure is a summary when structured work exists, not a new draft.
+  if (Object.keys(teethTreatments).length || generalTreatments.length || record.procedure === "Napomena") {
+    clearGeneralTreatmentInputs();
+  }
   const inferredTotal = Number(record.totalAmount || record.total_amount || 0) || Number(record.amountDue || 0) + Number(record.amountPaid || 0);
   inputs.totalAmount.value = inferredTotal > 0 ? inferredTotal.toFixed(2) : "";
   totalAmountTouched = inferredTotal > 0;
@@ -1399,6 +1403,8 @@ function clearTreatmentInputsAfterAdd() {
   treatmentNote.value = "";
   treatmentDiscount.value = "";
   treatmentDiscountType.value = "amount";
+  treatmentType.value = "";
+  treatmentType.dispatchEvent(new Event("drrosa-select-value"));
   updateTreatmentPricePreview();
 }
 
@@ -1420,7 +1426,7 @@ function renderPendingTreatmentItems() {
         <div>
           <strong>${escapeHtml(treatment.type)}</strong>
           <span>${escapeHtml(treatment.activity || "Bez delatnosti")}</span>
-          ${treatment.note ? `<small>${escapeHtml(treatment.note)}</small>` : ""}
+          <label>Detalji rada<textarea class="pending-treatment-note" rows="2">${escapeHtml(treatment.note || "")}</textarea></label>
         </div>
         <div class="pending-treatment-price">
           <span>${formatMoney(treatmentNetPrice(treatment), treatment.currency || paymentCurrency())} x ${selectedCount}</span>
@@ -1430,6 +1436,12 @@ function renderPendingTreatmentItems() {
       </div>
     `).join("")}
   `;
+  pendingTreatmentList.querySelectorAll(".pending-treatment-note").forEach(input => {
+    input.addEventListener("input", () => {
+      const index = Number(input.closest("[data-pending-treatment-index]").dataset.pendingTreatmentIndex);
+      pendingTreatmentItems[index].note = input.value;
+    });
+  });
   pendingTreatmentList.querySelectorAll(".pending-treatment-remove").forEach(button => {
     button.addEventListener("click", () => {
       const row = button.closest("[data-pending-treatment-index]");
@@ -1443,6 +1455,7 @@ function renderPendingTreatmentItems() {
 
 function resetPendingTreatmentBuilder() {
   pendingTreatmentItems = [];
+  clearTreatmentInputsAfterAdd();
   renderPendingTreatmentItems();
 }
 
@@ -1466,20 +1479,6 @@ function refreshSelectedTeethPanel() {
   const teeth = selectedTeethList();
   selectedToothSpan.textContent = teeth.length ? teeth.join(", ") : "-";
   teethPanel.style.display = teeth.length ? "block" : "none";
-
-  if (teeth.length === 1) {
-    const current = treatmentListForTooth(teeth[0]).at(-1);
-    treatmentActivity.value = current?.activity || procedureCatalog.findActivityForProcedure(current?.type) || treatmentActivity.value || "";
-    populateProcedureSelect(treatmentActivity, treatmentType, "Odaberi tretman");
-    treatmentType.value = current?.type || treatmentType.value || "";
-    treatmentDiscountType.value = normalizeDiscountType(current?.discountType || current?.discount_type);
-    treatmentDiscount.value = normalizeDiscountValue(current?.discountValue ?? current?.discount_value ?? current?.discount ?? "", treatmentDiscountType.value) || "";
-    treatmentNote.value = current?.note || "";
-  } else if (teeth.length > 1) {
-    treatmentDiscount.value = "";
-    treatmentDiscountType.value = "amount";
-    treatmentNote.value = "";
-  }
 
   updateTreatmentPricePreview();
   renderPendingTreatmentItems();
@@ -1540,7 +1539,12 @@ saveTreatmentBtn.addEventListener("click", () => {
     return;
   }
 
-  if (!pendingTreatmentItems.length && treatmentActivity.value && treatmentType.value) {
+  if (treatmentNote.value.trim() && !treatmentType.value) {
+    alert("Odaberite postupak za unete detalje rada ili izmenite detalje uz već dodati postupak.");
+    treatmentType.focus();
+    return;
+  }
+  if (treatmentActivity.value && treatmentType.value) {
     pendingTreatmentItems.push(treatmentFromCurrentInputs());
   }
 
@@ -1775,6 +1779,7 @@ function updateTeethSummary() {
   const currentDescription = currentTreatmentDescription();
   const currentHtml = treatments.length === 0 ? "" : `
     <h4>Odabrano za ovaj unos:</h4>
+    <p>Detalje rada možete izmeniti uz svaki postupak. Izmene potvrdite dugmetom „Sačuvaj unos”.</p>
     <div class="treatment-total-card">
       <span>Rađeno</span>
       <strong>${escapeHtml(currentDescription)}</strong>
@@ -1791,7 +1796,7 @@ function updateTeethSummary() {
         <strong>Zub ${escapeHtml(tooth)}:</strong> ${escapeHtml(treatment.type)}
         <div style="margin-top: 6px; font-weight: 700;">${formatMoney(treatment.price, treatment.currency || paymentCurrency())}</div>
         ${treatmentDiscountAmount(treatment) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${escapeHtml(treatmentDiscountLabel(treatment, treatment.currency || paymentCurrency()))}</div>` : ""}
-        ${treatment.note ? `<div style="margin-top: 6px;">${escapeHtml(treatment.note)}</div>` : ""}
+        <label>Detalji rada za zub ${escapeHtml(tooth)}<textarea class="saved-treatment-note" data-tooth="${escapeHtml(tooth)}" data-index="${index}" rows="2">${escapeHtml(treatment.note || "")}</textarea></label>
       </div>
       <button type="button" class="danger-btn remove-treatment" data-tooth="${escapeHtml(tooth)}" data-index="${index}">x</button>
     </div>
@@ -1818,6 +1823,11 @@ function updateTeethSummary() {
     </div>`;
 
   teethSummary.innerHTML = currentHtml + historyHtml;
+  teethSummary.querySelectorAll(".saved-treatment-note").forEach(input => {
+    input.addEventListener("input", () => {
+      treatmentListForTooth(input.dataset.tooth)[Number(input.dataset.index)].note = input.value;
+    });
+  });
   updateAmountDueLimit();
 
   document.querySelectorAll(".remove-treatment").forEach(btn => {

@@ -480,24 +480,6 @@ function renderInternalComments() {
   `;
 }
 
-function renderVisitNotes(records) {
-  const body = document.getElementById("visit-notes-body");
-  if (!body) return;
-  const notes = [...records]
-    .map(record => ({ record, note: recordVisitNote(record) }))
-    .filter(item => item.note)
-    .sort((a, b) => String(b.record.lastVisit || "").localeCompare(String(a.record.lastVisit || "")));
-
-  body.innerHTML = notes.length ? notes.map(({ record, note }) => `
-    <tr>
-      <td>${escapeHtml(formatDate(record.lastVisit))}</td>
-      <td>${escapeHtml(record.procedure || "Poseta")}</td>
-      <td class="visit-note-cell">${escapeHtml(note)}</td>
-      <td><a class="secondary-btn" href="${escapeHtml(recordDetailsUrl(record))}">Uredi</a></td>
-    </tr>
-  `).join("") : `<tr><td colspan="4" class="empty-row">Nema upisanih napomena iz poseta.</td></tr>`;
-}
-
 function refreshPatientFirstScreen() {
   renderUpcomingAppointments(overviewAppointments, overviewPatientId);
   renderQuickDocuments();
@@ -545,7 +527,7 @@ function renderPatientOverview(patient, records, appointments, profile = {}) {
       renderSummaryLine("Sledeci termin", nextStart)
     ].join("");
   }
-  renderVisitNotes(records);
+  window.DrRosaPatientVisits.mount(records);
   refreshPatientFirstScreen();
 }
 

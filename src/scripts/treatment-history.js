@@ -71,7 +71,7 @@
   function groupEntries(entries, formatMoney) {
     const groups = new Map();
     entries.forEach(item => {
-      const key = `${item.visitId}|${item.type || ""}`;
+      const key = JSON.stringify([item.visitId, item.type || "", item.note || "", item.currency || "RSD"]);
       if (!groups.has(key)) {
         groups.set(key, {
           date: item.date,

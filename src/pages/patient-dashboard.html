@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Karton pacijenta | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css?v=visit-note-card-20260818" />
+  <link rel="stylesheet" href="../styles/styles.css?v=patient-visits-20261009" />
 </head>
 <body>
   <div class="app-shell">
@@ -98,27 +98,6 @@
             </div>
           </div>
           <div id="patient-activity-timeline" class="patient-timeline"></div>
-          <section class="patient-focus-panel visit-notes-panel" id="visit-notes-card">
-            <div class="section-header">
-              <div>
-                <p class="eyebrow">Evidencija poseta</p>
-                <h2>Napomene iz poseta</h2>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Datum</th>
-                    <th>Postupak</th>
-                    <th>Napomena</th>
-                    <th>Akcije</th>
-                  </tr>
-                </thead>
-                <tbody id="visit-notes-body"></tbody>
-              </table>
-            </div>
-          </section>
         </section>
       </section>
 
@@ -130,13 +109,31 @@
           </div>
         </div>
         <div class="patient-tabs patient-group-tabs" role="tablist" aria-label="Grupe kartona pacijenta">
-          <button class="patient-group-tab active" type="button" data-patient-group="clinical">Klinika</button>
+          <button class="patient-group-tab active" type="button" data-patient-group="visits">Posete (<span id="patient-visits-count">0</span>)</button>
+          <button class="patient-group-tab" type="button" data-patient-group="clinical">Klinika</button>
           <button class="patient-group-tab" type="button" data-patient-group="teeth">Zubi</button>
           <button class="patient-group-tab" type="button" data-patient-group="documents">Dokumenti</button>
           <button class="patient-group-tab" type="button" data-patient-group="finance">Finansije</button>
           <button class="patient-group-tab" type="button" data-patient-group="admin">Administracija</button>
         </div>
-        <div class="patient-tab-panel active" id="medical-card" data-patient-panel-group="clinical">
+        <div class="patient-tab-panel active" id="visits-card" data-patient-panel-group="visits">
+          <div class="visit-filters">
+            <label>Pretraga istorije<input id="visits-search" type="search" placeholder="Postupak, detalji rada ili napomena" /></label>
+            <label>Zub / regija<select id="visits-tooth"><option value="">Svi zubi i regije</option></select></label>
+            <label>Od datuma<input id="visits-from" type="date" /></label>
+            <label>Do datuma<input id="visits-to" type="date" /></label>
+            <button id="visits-reset" class="secondary-btn" type="button">Poništi filtere</button>
+          </div>
+          <p id="visits-results" role="status" aria-live="polite"></p>
+          <div class="visit-list-heading" aria-hidden="true"><span>Datum</span><span>Doktor</span><span>Zubi/regija</span><span>Otvori</span></div>
+          <div id="patient-visits-list"></div>
+          <nav class="visit-pagination" aria-label="Strane poseta">
+            <button id="visits-prev" class="secondary-btn" type="button">Prethodna</button>
+            <span id="visits-page"></span>
+            <button id="visits-next" class="secondary-btn" type="button">Sledeća</button>
+          </nav>
+        </div>
+        <div class="patient-tab-panel" id="medical-card" data-patient-panel-group="clinical">
           <form id="medical-profile-form" class="admin-codebook-form">
             <div class="input-grid">
               <label>
@@ -560,8 +557,9 @@
   <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/tooth-condition-editor.js"></script>
-  <script src="../scripts/treatment-history.js"></script>
+  <script src="../scripts/treatment-history.js?v=details-groups-20261009"></script>
   <script src="../scripts/appointment-modal.js?v=patient-scheduler-20260804"></script>
-  <script src="../scripts/patient-dashboard.js?v=visit-note-card-20260818"></script>
+  <script src="../scripts/patient-visits.js?v=20261009"></script>
+  <script src="../scripts/patient-dashboard.js?v=patient-visits-20261009"></script>
 </body>
 </html>

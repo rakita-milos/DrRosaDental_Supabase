@@ -1679,7 +1679,7 @@ body.modal-open {
 
 .patient-group-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: repeat(6, minmax(100px, 1fr));
   gap: 8px;
   padding: 6px;
   border: 1px solid #d8e3ee;
@@ -3305,10 +3305,6 @@ main {
   gap: 10px;
 }
 
-.visit-notes-panel {
-  margin-top: 16px;
-}
-
 .patient-focus-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3452,15 +3448,6 @@ main {
   line-height: 1.42;
   font-weight: 650;
   overflow-wrap: anywhere;
-}
-
-.visit-note-cell {
-  min-width: 260px;
-  max-width: 520px;
-  white-space: pre-wrap;
-  color: #263746;
-  font-weight: 650;
-  line-height: 1.45;
 }
 
 .patient-payment-details {
@@ -7342,3 +7329,34 @@ td:nth-child(5) {
 .session-lock-card a{min-height:44px;display:flex;align-items:center;color:#006a67}.session-lock-card [hidden]{display:none}
 .session-lock-error{color:#a32020}.session-warning{position:fixed;bottom:16px;left:16px;right:16px;z-index:9999;padding:16px;background:#fff5cf;color:#1a2b3c;border:1px solid #876900;border-radius:8px}
 .session-lock-card :focus-visible{outline:3px solid #006a67;outline-offset:3px}
+/* Patient visit history */
+.saved-treatment-note, .pending-treatment-note { display: block; width: 100%; min-width: 0; margin-top: 6px; }
+.teeth-summary .treatment-item > div { flex: 1; min-width: 0; margin-right: 12px; }
+.visit-filters { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(130px, 1fr)) auto; gap: 12px; align-items: end; margin-bottom: 16px; }
+.visit-filters label { display: grid; gap: 6px; min-width: 0; }
+.visit-filters input, .visit-filters select { width: 100%; min-width: 0; box-sizing: border-box; }
+.visit-filters input[type="search"] { min-height: 44px; padding: 10px 12px; border: 1px solid #d7e0eb; border-radius: 8px; background: white; font: inherit; }
+.visit-list-heading, .visit-summary { display: grid; grid-template-columns: 1fr 1.4fr 1.6fr auto; align-items: center; gap: 16px; padding: 16px; }
+.visit-list-heading, .visit-work-heading { font-weight: 700; color: #526473; }
+.patient-visit { border: 1px solid #d9e3e8; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+.visit-summary { background: #f5f9fa; }
+.visit-summary > span, .visit-work > div { min-width: 0; overflow-wrap: anywhere; }
+.visit-summary small, .visit-work small { display: none; }
+.visit-detail { padding: 16px; }
+.visit-detail[hidden] { display: none; }
+.visit-work-heading, .visit-work { display: grid; grid-template-columns: 1fr 1.5fr 2fr; gap: 16px; padding: 12px 0; border-bottom: 1px solid #e3eaee; }
+.visit-work, .visit-note p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.visit-note { margin: 20px 0; }
+.visit-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 16px; margin-top: 20px; }
+@media (max-width: 1000px) { .visit-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+  .patient-group-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .visit-filters { grid-template-columns: minmax(0, 1fr); }
+  .visit-list-heading, .visit-work-heading { display: none; }
+  .visit-summary { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+  .visit-summary > span:nth-child(3) { grid-column: 1; }
+  .visit-summary button { grid-column: 2; grid-row: 1 / 4; }
+  .visit-summary small, .visit-work small { display: block; font-size: .75rem; color: #526473; margin-bottom: 4px; }
+  .visit-work { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .visit-detail { padding: 12px; }
+}
