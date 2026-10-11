@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Karton pacijenta | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css?v=patient-visits-20261009" />
+  <link rel="stylesheet" href="../styles/styles.css?v=primary-teeth-refactor-20261009" />
 </head>
 <body>
   <div class="app-shell">
@@ -118,6 +118,7 @@
         </div>
         <div class="patient-tab-panel active" id="visits-card" data-patient-panel-group="visits">
           <div class="visit-filters">
+            <label>Vrsta zuba<select id="visits-dentition"><option value="">Svi zubi</option><option value="permanent">Stalni zubi</option><option value="primary">Mlečni zubi</option></select></label>
             <label>Pretraga istorije<input id="visits-search" type="search" placeholder="Postupak, detalji rada ili napomena" /></label>
             <label>Zub / regija<select id="visits-tooth"><option value="">Svi zubi i regije</option></select></label>
             <label>Od datuma<input id="visits-from" type="date" /></label>
@@ -553,13 +554,15 @@
 
   <script src="../scripts/security-utils.js?v=required-trim-20260818"></script>
   <script src="../scripts/session-lock.js?v=session-refactor-20261005"></script>
-    <script src="../scripts/api.js?v=session-refactor-20261005"></script>
+    <script src="../scripts/api.js?v=primary-teeth-refactor-20261009"></script>
   <script src="../scripts/date-utils.js?v=manual-date-20260724"></script>
   <script src="../scripts/currency-utils.js"></script>
-  <script src="../scripts/tooth-condition-editor.js"></script>
-  <script src="../scripts/treatment-history.js?v=details-groups-20261009"></script>
+  <script src="../scripts/dental-notation.js?v=primary-teeth-refactor-20261009"></script>
+  <script src="../scripts/tooth-map.js?v=primary-teeth-refactor-20261009"></script>
+  <script src="../scripts/tooth-condition-editor.js?v=primary-teeth-refactor-20261009"></script>
+  <script src="../scripts/treatment-history.js?v=primary-teeth-refactor-20261009"></script>
   <script src="../scripts/appointment-modal.js?v=patient-scheduler-20260804"></script>
-  <script src="../scripts/patient-visits.js?v=20261009"></script>
-  <script src="../scripts/patient-dashboard.js?v=patient-visits-20261009"></script>
+  <script src="../scripts/patient-visits.js?v=primary-teeth-refactor-20261009"></script>
+  <script src="../scripts/patient-dashboard.js?v=primary-teeth-refactor-20261009"></script>
 </body>
 </html>

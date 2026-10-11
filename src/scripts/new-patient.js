@@ -31,6 +31,7 @@ const extraFieldsPanel = document.getElementById("patient-extra-fields");
 const patientId = new URLSearchParams(window.location.search).get("patient");
 const NEW_ENTRY_PATIENT_STORAGE_KEY = "drrosa-new-entry-patient";
 let initialConditionEditor;
+let createdPatientForRetry = null;
 
 function setFormMessage(message = "", type = "info") {
   if (!formMessage) return;
@@ -89,6 +90,7 @@ async function loadPatientForEdit() {
     setValue("medical-history", patient.medicalHistory || patient.medical_history);
     const chartEntries = await window.DrRosaApi.getClinicalChart(patientId);
     initialConditionEditor?.setEntries(window.DrRosaToothCondition.initialConditionsFromEntries(chartEntries));
+    initialConditionEditor?.setStateEvents(await window.DrRosaApi.getToothStates(patientId));
     setExtraFieldsOpen(hasAdditionalPatientDetails(patient, chartEntries));
   } catch (error) {
     alert(error.message || "Pacijent nije učitan.");
@@ -100,10 +102,16 @@ async function saveInitialConditionsForPatient(savedPatientId) {
   const entries = initialConditionEditor.getEntries();
   for (const entry of entries) {
     if (entry.id) continue;
-    await window.DrRosaApi.createClinicalChartEntry(
+    const saved = await window.DrRosaApi.createClinicalChartEntry(
       savedPatientId,
       window.DrRosaToothCondition.payloadFromEntry(entry)
     );
+    initialConditionEditor.setEntries(initialConditionEditor.getEntries().map(item => item.toothNumber === entry.toothNumber ? saved : item));
+  }
+  const events = initialConditionEditor.getStateEvents().filter(event => !event.id);
+  if (events.length) {
+    const saved = await window.DrRosaApi.addToothStates(savedPatientId, events);
+    initialConditionEditor.setStateEvents([...initialConditionEditor.getStateEvents().filter(event => event.id), ...saved]);
   }
 }
 
@@ -133,6 +141,7 @@ form.addEventListener("submit", async (event) => {
   const submitButton = form.querySelector("button[type='submit']");
   const submitText = submitButton?.textContent;
   form.dataset.drrosaBusy = "1";
+  initialConditionEditor?.setLocked(true);
   form.setAttribute("aria-busy", "true");
   if (submitButton) {
     submitButton.disabled = true;
@@ -162,12 +171,17 @@ form.addEventListener("submit", async (event) => {
       window.location.href = `patient-dashboard.html?patientId=${encodeURIComponent(savedPatient.id || patientId)}`;
       return;
     }
-    const savedPatient = await window.DrRosaApi.createPatient(patient);
+    const savedPatient = createdPatientForRetry
+      ? await window.DrRosaApi.updatePatient(createdPatientForRetry.id, patient)
+      : await window.DrRosaApi.createPatient(patient);
+    createdPatientForRetry = savedPatient;
+    initialConditionEditor?.setPatientId(savedPatient.id);
     await saveInitialConditionsForPatient(savedPatient.id);
     continueWithNewEntry(savedPatient);
   } catch (error) {
     alert(error.message || "Pacijent nije sačuvan. Proverite vezu sa serverom.");
   } finally {
+    initialConditionEditor?.setLocked(false);
     delete form.dataset.drrosaBusy;
     form.removeAttribute("aria-busy");
     if (submitButton) {
@@ -192,17 +206,20 @@ cancelBtn.addEventListener("click", () => {
   const editorRoot = document.getElementById("initial-condition-editor");
   if (editorRoot && window.DrRosaToothCondition) {
     initialConditionEditor = window.DrRosaToothCondition.createEditor(editorRoot, {
+      patientId,
+      onStateAdd: events => {
+        const id = patientId || createdPatientForRetry?.id;
+        return id ? window.DrRosaApi.addToothStates(id, events) : events;
+      },
       title: "Zateceno stanje zuba",
       emptyMessage: "Zateceno stanje mozete uneti odmah ili kasnije iz kartona pacijenta.",
-      onAdd: patientId
-        ? payload => window.DrRosaApi.createClinicalChartEntry(patientId, payload)
-        : null,
-      onUpdate: patientId
-        ? (entryId, payload) => window.DrRosaApi.updateClinicalChartEntry(entryId, payload)
-        : null,
-      onRemove: patientId
-        ? entry => window.DrRosaApi.deleteClinicalChartEntry(entry.id)
-        : null
+      onAdd: (payload, entry) => {
+        const id = patientId || createdPatientForRetry?.id;
+        return id ? window.DrRosaApi.createClinicalChartEntry(id, payload) : entry;
+      },
+      onUpdate: (entryId, payload, entry) => patientId || createdPatientForRetry?.id
+        ? window.DrRosaApi.updateClinicalChartEntry(entryId, payload) : entry,
+      onRemove: entry => entry.id ? window.DrRosaApi.deleteClinicalChartEntry(entry.id) : undefined
     });
   }
   setExtraFieldsOpen(false);

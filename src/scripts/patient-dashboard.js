@@ -1586,7 +1586,7 @@ function fillConsentForm(consent) {
   document.getElementById("patient-consent-form").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-async function initializeClinicalWorkflows(patientId) {
+async function initializeClinicalWorkflows(patientId, patientRecords = []) {
   async function refreshClinicalChart() {
     const entries = await window.DrRosaApi.getClinicalChart(patientId);
     initialConditionEditor?.setEntries(window.DrRosaToothCondition.initialConditionsFromEntries(entries));
@@ -1699,6 +1699,9 @@ async function initializeClinicalWorkflows(patientId) {
   const initialConditionRoot = document.getElementById("patient-initial-condition-editor");
   if (initialConditionRoot && window.DrRosaToothCondition) {
     initialConditionEditor = window.DrRosaToothCondition.createEditor(initialConditionRoot, {
+      patientId,
+      treatments: window.DrRosaTreatmentHistory.entriesFromRecords(patientRecords, { patientId }),
+      onStateAdd: events => window.DrRosaApi.addToothStates(patientId, events),
       title: "Zateceno stanje zuba",
       emptyMessage: "Nema unetog zatecenog stanja za ovog pacijenta.",
       onAdd: payload => window.DrRosaApi.createClinicalChartEntry(patientId, payload),
@@ -1707,7 +1710,8 @@ async function initializeClinicalWorkflows(patientId) {
     });
   }
 
-  await Promise.all([refreshClinicalChart(), refreshClinicalNotes(), refreshConsents()]);
+  await Promise.all([refreshClinicalChart(), refreshClinicalNotes(), refreshConsents(),
+    window.DrRosaApi.getToothStates(patientId).then(events => initialConditionEditor?.setStateEvents(events))]);
 }
 
 async function initializeAdvancedWorkflows(patientId) {
@@ -1862,7 +1866,7 @@ async function initializeClinicalSection(patientDetails, patientRecords, appoint
   const workflowResults = await Promise.allSettled([
     loadDocuments(patientId),
     initializeAdvancedWorkflows(patientId),
-    initializeClinicalWorkflows(patientId)
+    initializeClinicalWorkflows(patientId, patientRecords)
   ]);
   workflowResults.forEach((result, index) => {
     if (result.status === "fulfilled") return;

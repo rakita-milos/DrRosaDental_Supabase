@@ -828,6 +828,7 @@
 
   function resetForm(date = new Date(), options = {}) {
     openPanel();
+    renderAppointmentClinicalLinks(null);
     const context = document.getElementById("appointment-patient-context");
     const patientSelect = document.getElementById("appointment-patient");
     if (context) {
@@ -853,6 +854,37 @@
     setAlert("");
   }
 
+  function renderAppointmentClinicalLinks(patientId, recordId, canCreateVisit = false) {
+    const root = document.getElementById('appointment-clinical-links');
+    if (!root) return;
+    root.hidden = !patientId;
+    root.innerHTML = patientId ? `<a class="secondary-btn" href="patient-dashboard.html?patientId=${encodeURIComponent(patientId)}">Karton pacijenta</a>
+      ${recordId ? `<a class="secondary-btn" href="new-entry.html?patientId=${encodeURIComponent(patientId)}&record=${encodeURIComponent(recordId)}">Otvori posetu</a>`
+        : canCreateVisit ? '<button type="button" class="secondary-btn" data-open-appointment-visit>Kreiraj i otvori posetu</button>' : ''}` : '';
+  }
+  let creatingAppointmentVisit = false;
+  async function createAppointmentVisit(openVisit = false) {
+    const appointmentId = document.getElementById('appointment-id').value;
+    if (!appointmentId || creatingAppointmentVisit) return;
+    creatingAppointmentVisit = true;
+    try {
+      const visit = await window.DrRosaApi.createVisitFromAppointment(appointmentId);
+      if (openVisit) {
+        window.location.href = `new-entry.html?record=${encodeURIComponent(visit.id)}`;
+        return;
+      }
+      setAlert('Poseta je kreirana iz termina.', 'success');
+      await loadAppointments();
+      editAppointment(appointmentId);
+    } catch (error) {
+      setAlert(error.message, 'error');
+    } finally { creatingAppointmentVisit = false; }
+  }
+  document.getElementById('appointment-clinical-links').addEventListener('click', event => {
+    if (event.target.closest('[data-open-appointment-visit]')) createAppointmentVisit(true);
+  });
+  document.getElementById('appointment-patient').addEventListener('change', event => renderAppointmentClinicalLinks(event.target.value));
+
   function applyPatientQueryPreset() {
     if (!patientIdParam && !patientNameParam) return;
     const patient = patientIdParam
@@ -863,6 +895,7 @@
     const patientSelect = document.getElementById("appointment-patient");
     const context = document.getElementById("appointment-patient-context");
     patientSelect.value = patient.id;
+    renderAppointmentClinicalLinks(patient.id);
     patientSelect.classList.add("locked-patient-input");
     if (context) {
       context.hidden = false;
@@ -884,10 +917,12 @@
     if (!appointment) return;
     openPanel();
     const starts = parseLocalDateTime(appointment.startsAt);
+    const isGoogleOnlyEvent = isGoogleNoteEvent(appointment);
     document.getElementById("appointment-panel-title").textContent = "Izmena termina";
     document.getElementById("appointment-id").value = appointment.id;
     document.getElementById("appointment-title").value = appointment.googleTitle || appointment.procedureName || "";
     document.getElementById("appointment-patient").value = appointment.patientId;
+    renderAppointmentClinicalLinks(appointment.patientId, appointment.visitRecordId, appointment.status !== 'cancelled' && !isGoogleOnlyEvent);
     document.getElementById("appointment-doctor").value = appointment.doctorId;
     document.getElementById("appointment-chair").value = appointment.chairId;
     document.getElementById("appointment-procedure").value = appointment.procedureId || "";
@@ -897,7 +932,6 @@
     document.getElementById("appointment-status").value = appointment.status;
     document.getElementById("appointment-notes").value = appointment.notes || "";
     renderGooglePatientMatchMessage(appointment);
-    const isGoogleOnlyEvent = isGoogleNoteEvent(appointment);
     document.getElementById("create-visit-btn").disabled = Boolean(appointment.visitRecordId) || appointment.status === "cancelled" || isGoogleOnlyEvent;
     document.getElementById("cancel-appointment-btn").hidden = false;
     document.getElementById("cancel-appointment-btn").disabled = appointment.status === "cancelled";
@@ -1134,18 +1168,7 @@
       await loadAppointments();
       closePanel();
     });
-    document.getElementById("create-visit-btn").addEventListener("click", async () => {
-      const appointmentId = document.getElementById("appointment-id").value;
-      if (!appointmentId) return;
-      try {
-        await window.DrRosaApi.createVisitFromAppointment(appointmentId);
-        setAlert("Poseta je kreirana iz termina.", "success");
-        await loadAppointments();
-        editAppointment(appointmentId);
-      } catch (error) {
-        setAlert(error.message, "error");
-      }
-    });
+    document.getElementById("create-visit-btn").addEventListener("click", () => createAppointmentVisit());
   }
 
   (async function initCalendar() {

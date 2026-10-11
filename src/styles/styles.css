@@ -5429,6 +5429,31 @@ td:nth-child(5) {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 16px 34px rgba(15, 44, 84, 0.08);
 }
 
+.dentition-panel[hidden], #dentition-switch-notice[hidden] { display: none !important; }
+.dentition-tabs { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.dentition-tabs .active { color: #fff; background: #2465a3; border-color: #2465a3; }
+.tooth-details { margin-top: 28px; border-top: 1px solid #dfe8f1; padding-top: 20px; }
+.tooth-state-legend, .tooth-state-current { display: flex; flex-wrap: wrap; gap: 8px; }
+.tooth-map-history-legend { color: #92400e; font-size: .9rem; }
+.tooth-state-legend span, .tooth-state-current span { padding: 6px 10px; border: 1px solid #dfe8f1; border-radius: 8px; }
+.tooth-state-current { margin-bottom: 18px; }
+.tooth-state-form { margin: 16px 0; }
+.tooth-state-save, .tooth-new-work { margin: 0 8px 16px 0; }
+.tooth-state-legend [data-presence='present'] { border-color: #15803d; }
+.tooth-state-legend [data-presence='unerupted'] { background: #dbeafe; }
+.tooth-state-legend [data-presence='exfoliated'],
+.tooth-state-legend [data-presence='extracted'] { border-style: dashed; background: #f1f5f9; }
+.condition-map .dentition-panel { overflow-x: auto; }
+.tooth-details table { width: 100%; }
+.tooth-map-mobile-hint { display: none; }
+@media (max-width: 640px) {
+  .dentition-tabs > button { flex: 1; }
+  .tooth-state-current span { font-size: 13px; }
+  .tooth-map-mobile-hint { display: block; font-size: 13px; color: #52657a; }
+  .condition-map .dentition-panel, #entry-tooth-map .dentition-panel { justify-content: flex-start; }
+  .condition-map .ortomapa, #entry-tooth-map .ortomapa { width: 600px; min-width: 600px; max-width: none; }
+}
+
 .ortomapa {
   flex: 0 0 auto;
   width: min(82%, 860px);
@@ -5476,7 +5501,7 @@ td:nth-child(5) {
 }
 
 .tooth-surface {
-  fill: url(#tooth-natural);
+  fill: var(--tooth-natural, url(#tooth-natural));
   stroke: #244a75;
   stroke-width: 2.1;
   filter: drop-shadow(0 8px 9px rgba(15, 44, 84, 0.14));
@@ -5517,7 +5542,7 @@ td:nth-child(5) {
 }
 
 .tooth-node.treated .tooth-surface {
-  fill: url(#gradient-treated);
+  fill: var(--gradient-treated, url(#gradient-treated));
   stroke: #1891f0;
   stroke-width: 3;
 }
@@ -5575,6 +5600,13 @@ td:nth-child(5) {
 .tooth-node.initial-condition .tooth-groove {
   stroke: #1891f0;
 }
+
+.tooth-node[data-extraction-history='true'] .tooth-surface { stroke: #b45309; stroke-width: 2; stroke-dasharray: 3 2; }
+.tooth-node[data-extraction-history='true'] .tooth-number { fill: #92400e; }
+.tooth-node[data-presence='exfoliated'] .tooth-surface,
+.tooth-node[data-presence='extracted'] .tooth-surface { opacity: .3; stroke-dasharray: 4 3; }
+.tooth-node[data-presence='unerupted'] .tooth-surface { fill: #dbeafe; stroke-dasharray: 2 3; }
+.tooth-node[data-presence='present'] .tooth-surface { stroke: #15803d; }
 
 .tooth-node.selected .tooth-surface {
   stroke: #f59e0b;
@@ -7332,7 +7364,7 @@ td:nth-child(5) {
 /* Patient visit history */
 .saved-treatment-note, .pending-treatment-note { display: block; width: 100%; min-width: 0; margin-top: 6px; }
 .teeth-summary .treatment-item > div { flex: 1; min-width: 0; margin-right: 12px; }
-.visit-filters { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(130px, 1fr)) auto; gap: 12px; align-items: end; margin-bottom: 16px; }
+.visit-filters { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(180px, 2fr) repeat(3, minmax(110px, 1fr)) auto; gap: 12px; align-items: end; margin-bottom: 16px; }
 .visit-filters label { display: grid; gap: 6px; min-width: 0; }
 .visit-filters input, .visit-filters select { width: 100%; min-width: 0; box-sizing: border-box; }
 .visit-filters input[type="search"] { min-height: 44px; padding: 10px 12px; border: 1px solid #d7e0eb; border-radius: 8px; background: white; font: inherit; }

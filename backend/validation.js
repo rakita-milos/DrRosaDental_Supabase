@@ -1,4 +1,18 @@
 const Joi = require('joi');
+const dental = require('../src/scripts/dental-notation');
+
+const fdiTooth = Joi.string().trim().custom((value, helpers) => dental.isTooth(value) ? value : helpers.error('any.invalid'));
+const toothStateWriteSchema = Joi.object({
+  events: Joi.array().min(1).max(52).items(Joi.object({
+    toothNumber: fdiTooth.required(),
+    presence: Joi.string().valid(...Object.keys(dental.presenceLabels)).required(),
+    effectiveDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).custom((value, helpers) => {
+      const date = new Date(`${value}T12:00:00Z`);
+      return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : helpers.error('any.invalid');
+    }).required(),
+    notes: Joi.string().trim().max(1000).allow('').default('')
+  }).custom((value, helpers) => value.presence === 'exfoliated' && dental.typeOf(value.toothNumber) !== 'primary' ? helpers.error('any.invalid') : value)).required()
+});
 
 const ALLOWED_DOCUMENT_MIME = [
   'application/pdf',
@@ -76,8 +90,8 @@ const patientDocumentSchema = Joi.object({
 });
 
 const treatmentSchema = Joi.object({
-  tooth: optionalText(20).optional(),
-  toothNumber: optionalText(20).optional(),
+  tooth: fdiTooth.allow('', null, '__general__').optional(),
+  toothNumber: fdiTooth.allow('', null, '__general__').optional(),
   type: optionalText(255).optional(),
   treatmentType: optionalText(255).optional(),
   status: optionalText(80).optional(),
@@ -132,8 +146,9 @@ const recordCreateSchema = Joi.object({
   generalTreatments: Joi.array().items(treatmentSchema).optional(),
   general_treatments: Joi.array().items(treatmentSchema).optional(),
   treatments: Joi.alternatives().try(
-    Joi.array().items(treatmentSchema),
-    Joi.object().pattern(Joi.string().max(20), Joi.alternatives().try(treatmentSchema, Joi.array().items(treatmentSchema)))
+    Joi.array().items(treatmentSchema.or('tooth', 'toothNumber')),
+    Joi.object().pattern(/^.*$/s, Joi.alternatives().try(treatmentSchema, Joi.array().items(treatmentSchema)))
+      .custom((value, helpers) => Object.keys(value).every(key => dental.isTooth(key) || key === '__general__') ? value : helpers.error('any.invalid'))
   ).optional().allow(null)
 });
 
@@ -269,7 +284,16 @@ const documentUpdateSchema = Joi.object({
   claim_attachment_ready: Joi.boolean().optional()
 }).with('fileBase64', ['originalFilename', 'mimeType']);
 
-const recordUpdateSchema = recordCreateSchema.fork(['patient_id', 'doctor_id', 'visit_date'], schema => schema.optional());
+// Existing records can retain legacy labels. The route compares them with the
+// persisted visit before allowing the update; newly introduced labels remain FDI.
+const legacyTreatmentSchema = treatmentSchema.keys({ tooth: optionalText(20), toothNumber: optionalText(20) });
+const recordUpdateSchema = recordCreateSchema.fork(['patient_id', 'doctor_id', 'visit_date'], schema => schema.optional()).keys({
+  treatments: Joi.alternatives().try(
+    Joi.array().items(legacyTreatmentSchema.or('tooth', 'toothNumber')),
+    Joi.object().pattern(/^.*$/s, Joi.alternatives().try(legacyTreatmentSchema, Joi.array().items(legacyTreatmentSchema)))
+      .custom((value, helpers) => Object.keys(value).every(key => key.trim().length > 0 && key.length <= 20) ? value : helpers.error('any.invalid'))
+  ).optional().allow(null)
+});
 
 const publicBookingSettingsSchema = Joi.object({
   enabled: Joi.boolean().truthy(1, '1', 'true').falsy(0, '0', 'false').required()
@@ -352,6 +376,7 @@ const dailyCashReportSchema = Joi.object({
 }).or('date', 'reportDate');
 
 module.exports = {
+  toothStateWriteSchema,
   validateBody,
   loginSchema,
   changePasswordSchema,

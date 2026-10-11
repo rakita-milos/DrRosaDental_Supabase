@@ -444,7 +444,7 @@ test('patient dashboard tabs initialize before async clinical workflows', () => 
   assert.match(patientDashboardSource, /panel\.setAttribute\("role", "tabpanel"\)/);
   assert.match(patientDashboardSource, /clinicalSection\.style\.display = "block";\s*initializePatientGroupTabs\(\);/);
   assert.match(patientDashboardSource, /const workflowResults = await Promise\.allSettled\(\[/);
-  assert.match(patientDashboardSource, /loadDocuments\(patientId\),\s*initializeAdvancedWorkflows\(patientId\),\s*initializeClinicalWorkflows\(patientId\)/);
+  assert.match(patientDashboardSource, /loadDocuments\(patientId\),\s*initializeAdvancedWorkflows\(patientId\),\s*initializeClinicalWorkflows\(patientId, patientRecords\)/);
   assert.doesNotMatch(patientDashboardSource, /await loadDocuments\(patientId\);\s*await initializeAdvancedWorkflows\(patientId\);\s*await initializeClinicalWorkflows\(patientId\);\s*document\.querySelectorAll\("\.patient-group-tab"\)/);
 });
 

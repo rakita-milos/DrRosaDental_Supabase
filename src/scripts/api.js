@@ -720,6 +720,13 @@
     return request(`/patients/${patientId}/clinical-chart`);
   }
 
+  async function getToothStates(patientId) {
+    return request(`/patients/${patientId}/tooth-states`);
+  }
+  async function addToothStates(patientId, events) {
+    return request(`/patients/${patientId}/tooth-states`, { method: 'POST', body: JSON.stringify({ events }) });
+  }
+
   async function createClinicalChartEntry(patientId, entry) {
     return request(`/patients/${patientId}/clinical-chart`, {
       method: "POST",
@@ -1210,6 +1217,8 @@
     getPerioCharts,
     createPerioChart,
     getClinicalChart,
+    getToothStates,
+    addToothStates,
     createClinicalChartEntry,
     updateClinicalChartEntry,
     deleteClinicalChartEntry,

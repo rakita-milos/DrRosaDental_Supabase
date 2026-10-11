@@ -27,7 +27,7 @@
     const rows = [...records].sort((a, b) => String(b.lastVisit || "").localeCompare(String(a.lastVisit || "")) || Number(b.id || 0) - Number(a.id || 0))
       .map((record, index) => ({ record, key: String(index), groups: groupsFor(record) }));
     const byId = id => document.getElementById(id);
-    const search = byId("visits-search"), tooth = byId("visits-tooth"), from = byId("visits-from"), to = byId("visits-to");
+    const search = byId("visits-search"), tooth = byId("visits-tooth"), from = byId("visits-from"), to = byId("visits-to"), dentition = byId('visits-dentition');
     byId("patient-visits-count").textContent = rows.length;
     const regions = [...new Set(rows.flatMap(row => row.groups.flatMap(group => group.regions)))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     tooth.innerHTML = '<option value="">Svi zubi i regije</option>' + regions.map(region => `<option value="${escape(region)}">${escape(region)}</option>`).join("");
@@ -39,6 +39,7 @@
         const searchable = [record.procedure, note(record.note || record.notes), ...groups.flatMap(group => [group.procedure, group.details])].join(" ");
         return (!query || fold(searchable).includes(query))
           && (!tooth.value || groups.some(group => group.regions.includes(tooth.value)))
+          && (!dentition.value || groups.some(group => group.regions.some(region => window.DrRosaDental.typeOf(region) === dentition.value)))
           && (!from.value || date >= from.value) && (!to.value || date <= to.value);
       });
     }
@@ -77,13 +78,13 @@
       render();
       byId("patient-visits-list").querySelector(`[data-open-visit="${button.dataset.openVisit}"]`)?.focus({ preventScroll: true });
     };
-    [search, tooth, from, to].forEach(input => {
+    [search, tooth, from, to, dentition].forEach(input => {
       const filter = () => { page = 1; render(true); };
       input.oninput = filter;
       input.onchange = filter;
     });
     byId("visits-reset").onclick = () => {
-      [search, tooth, from, to].forEach(input => { input.value = ""; input.dispatchEvent(new Event("change", { bubbles: true })); });
+      [search, tooth, from, to, dentition].forEach(input => { input.value = ""; input.dispatchEvent(new Event("change", { bubbles: true })); });
       page = 1; render(true);
     };
     byId("visits-prev").onclick = () => { page--; render(true); };

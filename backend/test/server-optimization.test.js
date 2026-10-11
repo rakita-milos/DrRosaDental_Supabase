@@ -3,7 +3,7 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const { test } = require('node:test');
 
-const serverSource = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+const serverSource = readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8').replace(/\r\n/g, '\n');
 const routeUtilsSource = readFileSync(path.join(__dirname, '..', 'route-utils.js'), 'utf8');
 const appointmentServiceSource = readFileSync(path.join(__dirname, '..', 'services', 'appointment-service.js'), 'utf8');
 const systemRoutesSource = readFileSync(path.join(__dirname, '..', 'routes', 'system-routes.js'), 'utf8');

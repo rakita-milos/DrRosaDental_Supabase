@@ -90,6 +90,7 @@ let teethTreatments = {};
 let generalTreatments = [];
 let selectedTeeth = new Set();
 let initialConditionEntries = [];
+let toothStateEvents = [];
 let paymentParts = [];
 let patientPaymentHistory = {
   patientId: null,
@@ -599,7 +600,27 @@ const pendingTreatmentList = document.getElementById("pending-treatment-list");
 const teethSummary = document.getElementById("teeth-summary");
 const initialConditionSummary = document.getElementById("initial-condition-summary");
 const showInitialConditionBtn = document.getElementById("show-initial-condition");
-const toothNodes = document.querySelectorAll(".tooth-node");
+let requestedDentition = null;
+const switchNotice = document.getElementById('dentition-switch-notice');
+const entryToothMap = window.DrRosaToothMap.create(document.getElementById('entry-tooth-map'), {
+  beforeChange: next => {
+    if (selectedTeeth.size && (pendingTreatmentItems.length || treatmentActivity.value || treatmentType.value || treatmentNote.value.trim())) {
+      requestedDentition = next;
+      switchNotice.hidden = false;
+      return false;
+    }
+    return true;
+  },
+  onChange: () => {
+    requestedDentition = null;
+    switchNotice.hidden = true;
+    selectedTeeth.clear();
+    resetPendingTreatmentBuilder();
+    refreshSelectedTeethPanel();
+    updateToothHighlights();
+  }
+});
+const toothNodes = entryToothMap.nodes;
 let toothHistoryCollapsed = false;
 let pendingTreatmentItems = [];
 
@@ -1464,17 +1485,6 @@ function updateDiscountCurrencyLabel() {
   if (amountOption) amountOption.textContent = paymentCurrency();
 }
 
-function spreadToothMap() {
-  toothNodes.forEach(toothNode => {
-    const box = toothNode.getBBox();
-    const centerX = box.x + box.width / 2;
-    const centerY = box.y + box.height / 2;
-    const dx = (centerX - 380) * 0.30;
-    const dy = (centerY - 280) * 0.06;
-    toothNode.setAttribute("transform", `translate(${dx.toFixed(1)} ${dy.toFixed(1)})`);
-  });
-}
-
 function refreshSelectedTeethPanel() {
   const teeth = selectedTeethList();
   selectedToothSpan.textContent = teeth.length ? teeth.join(", ") : "-";
@@ -1533,16 +1543,16 @@ addTreatmentItemBtn?.addEventListener("click", () => {
   clearTreatmentInputsAfterAdd();
 });
 
-saveTreatmentBtn.addEventListener("click", () => {
+function commitSelectedTreatments() {
   if (selectedTeeth.size === 0) {
     alert("Odaberite bar jedan zub!");
-    return;
+    return false;
   }
 
   if (treatmentNote.value.trim() && !treatmentType.value) {
     alert("Odaberite postupak za unete detalje rada ili izmenite detalje uz već dodati postupak.");
     treatmentType.focus();
-    return;
+    return false;
   }
   if (treatmentActivity.value && treatmentType.value) {
     pendingTreatmentItems.push(treatmentFromCurrentInputs());
@@ -1551,7 +1561,7 @@ saveTreatmentBtn.addEventListener("click", () => {
   if (!pendingTreatmentItems.length) {
     alert("Dodajte bar jedan postupak pre čuvanja.");
     renderPendingTreatmentItems();
-    return;
+    return false;
   }
 
   selectedTeethList().forEach(tooth => {
@@ -1569,6 +1579,17 @@ saveTreatmentBtn.addEventListener("click", () => {
   updateToothHighlights();
   updatePaymentCalculation();
   updatePreview();
+  return true;
+}
+saveTreatmentBtn.addEventListener('click', commitSelectedTreatments);
+document.getElementById('dentition-switch-save').addEventListener('click', () => {
+  const next = requestedDentition;
+  if (next && commitSelectedTreatments()) entryToothMap.setType(next);
+});
+document.getElementById('dentition-switch-cancel').addEventListener('click', () => {
+  requestedDentition = null;
+  switchNotice.hidden = true;
+  treatmentType.focus();
 });
 
 treatmentActivity.addEventListener("change", () => {
@@ -1790,7 +1811,8 @@ function updateTeethSummary() {
       <span>Za naplatu</span>
       <strong>${formatMoney(currentToothFinalTotal())}</strong>
     </div>
-    ${treatments.map(({ tooth, treatment, index }) => `
+    ${treatments.map(({ tooth, treatment, index }, rowIndex) => `
+    ${rowIndex === 0 || window.DrRosaDental.typeOf(treatments[rowIndex-1].tooth) !== window.DrRosaDental.typeOf(tooth) ? `<h4>${escapeHtml(window.DrRosaDental.labels[window.DrRosaDental.typeOf(tooth)] || 'Ranije oznake zuba')}</h4>` : ''}
     <div class="treatment-item">
       <div>
         <strong>Zub ${escapeHtml(tooth)}:</strong> ${escapeHtml(treatment.type)}
@@ -1871,10 +1893,9 @@ function updateToothHighlights() {
   const history = getPatientToothHistory(inputs.patient.value.trim());
   const highlightedTeeth = new Set([...Object.keys(teethTreatments), ...history.map(item => item.tooth)]);
   const initialConditionTeeth = new Set(initialConditionEntries.map(item => item.toothNumber));
-  const isExtraction = treatment => String(treatment?.type || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("vad");
   const isImplant = treatment => String(treatment?.type || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("implant");
-  const extractedTeeth = new Set(history.filter(isExtraction).map(item => item.tooth));
   const implantTeeth = new Set(history.filter(isImplant).map(item => item.tooth));
+  const latest = window.DrRosaDental.latestStates(toothStateEvents);
 
   toothNodes.forEach(tooth => {
     const toothNumber = tooth.dataset.tooth;
@@ -1882,9 +1903,31 @@ function updateToothHighlights() {
     tooth.classList.toggle("treated", highlightedTeeth.has(toothNumber));
     tooth.classList.toggle("initial-condition", initialConditionTeeth.has(toothNumber));
     tooth.classList.toggle("selected", selectedTeeth.has(toothNumber));
-    tooth.classList.toggle("extracted", extractedTeeth.has(toothNumber) || currentTreatments.some(isExtraction));
+    tooth.setAttribute('aria-pressed', String(selectedTeeth.has(toothNumber)));
+    const presence = latest.get(toothNumber)?.presence || 'unknown';
+    tooth.dataset.presence = presence;
+    tooth.setAttribute('aria-label', `Zub ${toothNumber}: ${window.DrRosaDental.presenceLabels[presence]}`);
+    tooth.classList.toggle("extracted", presence === 'extracted');
     tooth.classList.toggle("implant", implantTeeth.has(toothNumber) || currentTreatments.some(isImplant));
   });
+  entryToothMap.markHistoricalExtractions(window.DrRosaDental.historicalExtractionTeeth(history), latest);
+}
+
+async function loadToothStatesForCurrentPatient() {
+  const patient = selectedPatient();
+  toothStateEvents = [];
+  updateToothHighlights();
+  if (!patient) return;
+  const session = window.DrRosaApi.getSession?.();
+  if (session && session.role !== 'director' && !session.permissions?.includes('clinical:read')) return;
+  try {
+    const events = await window.DrRosaApi.getToothStates(patient.id);
+    if (String(selectedPatient()?.id) !== String(patient.id)) return;
+    toothStateEvents = events;
+    updateToothHighlights();
+  } catch (error) {
+    if (String(selectedPatient()?.id) === String(patient.id)) showAlert(error.message || 'Stanje zuba nije učitano.', 'error');
+  }
 }
 
 function renderInitialConditionSummary() {
@@ -1926,6 +1969,7 @@ async function loadInitialConditionForCurrentPatient() {
 }
 
 inputs.patient.addEventListener("change", () => {
+  loadToothStatesForCurrentPatient();
   initialConditionEntries = [];
   renderInitialConditionSummary();
   refreshPreviousPaymentsForPatient({ force: true });
@@ -1935,6 +1979,7 @@ inputs.patient.addEventListener("change", () => {
 });
 
 inputs.patient.addEventListener("input", () => {
+  toothStateEvents = [];
   if (inputs.patient.readOnly) return;
   inputs.patient.value = inputs.patient.value.replace(/\s+/g, " ");
   initialConditionEntries = [];
@@ -2020,6 +2065,10 @@ form.addEventListener("invalid", (event) => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (selectedTeeth.size && (pendingTreatmentItems.length || treatmentActivity.value || treatmentType.value || treatmentNote.value.trim())) {
+    showAlert('Prvo dodajte započeti rad na izabranim zubima dugmetom za čuvanje rada.', 'error', { persist: true, scroll: true });
+    return;
+  }
   if (!window.DrRosaForms?.validateRequiredTextFields(form, { messageTarget: alertBox })) return;
 
   const patientNameValue = inputs.patient.value.trim();
@@ -2148,6 +2197,7 @@ form.addEventListener("submit", async (event) => {
     lockPatientFromQuery();
     populatePatientList();
     populateDoctors();
+    await loadToothStatesForCurrentPatient();
     populateActivitySelect(inputs.procedureActivity);
     populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
     updateGeneralTreatmentDraftActions();
@@ -2170,5 +2220,17 @@ form.addEventListener("submit", async (event) => {
   updateToothHighlights();
   renderGeneralTreatments();
   updatePaymentCalculation();
-  spreadToothMap();
+  if (recordParam) {
+    const types = Object.keys(teethTreatments).map(window.DrRosaDental.typeOf);
+    entryToothMap.setType(types.includes('permanent') ? 'permanent' : types.includes('primary') ? 'primary' : 'permanent');
+  } else {
+    const requestedTooth = new URLSearchParams(window.location.search).get('tooth');
+    const requestedType = new URLSearchParams(window.location.search).get('dentition');
+    if (window.DrRosaDental.typeOf(requestedTooth)) {
+      entryToothMap.setType(window.DrRosaDental.typeOf(requestedTooth));
+      selectedTeeth.add(requestedTooth);
+      refreshSelectedTeethPanel();
+      updateToothHighlights();
+    } else if (requestedType === 'primary') entryToothMap.setType('primary');
+  }
 })();

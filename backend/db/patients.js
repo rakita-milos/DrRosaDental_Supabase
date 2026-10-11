@@ -146,12 +146,13 @@ function createPostgresPatientsRepository(pool) {
           (SELECT COUNT(*)::int FROM treatment_plans WHERE patient_id = ?) as treatment_plans,
           (SELECT COUNT(*)::int FROM perio_charts WHERE patient_id = ?) as perio_charts,
           (SELECT COUNT(*)::int FROM clinical_chart_entries WHERE patient_id = ?) as clinical_chart_entries,
+          (SELECT COUNT(*)::int FROM tooth_state_events WHERE patient_id = ?) as tooth_state_events,
           (SELECT COUNT(*)::int FROM clinical_notes WHERE patient_id = ?) as clinical_notes,
           (SELECT COUNT(*)::int FROM patient_consents WHERE patient_id = ?) as patient_consents,
           (SELECT COUNT(*)::int FROM invoices WHERE patient_id = ?) as invoices,
           (SELECT COUNT(*)::int FROM insurance_claims WHERE patient_id = ?) as insurance_claims,
           (SELECT COUNT(*)::int FROM patient_ledger_entries WHERE patient_id = ?) as ledger_entries
-      `, [id, id, id, id, id, id, id, id, id, id, id, id, id, id, id]);
+      `, [id, id, id, id, id, id, id, id, id, id, id, id, id, id, id, id]);
       return {
         records: Number(rows?.records || 0),
         appointments: Number(rows?.appointments || 0),
@@ -163,6 +164,7 @@ function createPostgresPatientsRepository(pool) {
         treatmentPlans: Number(rows?.treatment_plans || 0),
         perioCharts: Number(rows?.perio_charts || 0),
         clinicalChartEntries: Number(rows?.clinical_chart_entries || 0),
+        toothStateEvents: Number(rows?.tooth_state_events || 0),
         clinicalNotes: Number(rows?.clinical_notes || 0),
         patientConsents: Number(rows?.patient_consents || 0),
         invoices: Number(rows?.invoices || 0),

@@ -1,5 +1,7 @@
 // Dr Rosa Dental Clinic - Backend API Server
 const path = require('path');
+const dental = require('../src/scripts/dental-notation');
+const { toothStateWriteSchema } = require('./validation');
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config({ path: path.join(__dirname, '.env') });
 }
@@ -3529,6 +3531,15 @@ app.put('/api/records/:id', authenticateToken, requirePermission('records:write'
     const current = await recordsPaymentsRepo.findRecordById(recordId);
     if (!current) return res.status(404).json({ error: 'Record not found' });
 
+    if (req.body.treatments) {
+      const previous = await recordsPaymentsRepo.treatmentsForRecord(recordId);
+      const existingLabels = new Set(previous.map(item => item.tooth_number));
+      const incoming = normalizedTreatments(req.body);
+      if (incoming.some(item => item.toothNumber !== GENERAL_TREATMENT_TOOTH_NUMBER && !dental.isTooth(item.toothNumber) && !existingLabels.has(item.toothNumber))) {
+        return res.status(400).json({ error: 'Nevažeća FDI oznaka zuba.' });
+      }
+    }
+
     const data = { ...current, ...req.body };
     const procedure = cleanText(data.procedure, { max: 255, required: true });
     if (!procedure) {
@@ -4123,6 +4134,30 @@ function serializeSaglasnost(row) {
   };
 }
 
+function serializeToothState(row) {
+  return {
+    id: row.id, patientId: row.patient_id, toothNumber: row.tooth_number,
+    presence: row.presence, effectiveDate: String(row.effective_date instanceof Date ? row.effective_date.toISOString() : row.effective_date).slice(0, 10),
+    notes: row.notes || '', recordedBy: row.recorded_by, recordedByName: row.recorded_by_name || '', createdAt: row.created_at
+  };
+}
+
+app.get('/api/patients/:id/tooth-states', authenticateToken, requirePermission('clinical:read'), asyncRoute(async (req, res) => {
+  const patientId = positiveInteger(req.params.id);
+  if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
+  res.json((await clinicalRepo.toothStateHistory(patientId)).map(serializeToothState));
+}));
+
+app.post('/api/patients/:id/tooth-states', authenticateToken, requirePermission('clinical:write'), validateBody(toothStateWriteSchema), asyncRoute(async (req, res) => {
+  const patientId = positiveInteger(req.params.id);
+  if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
+  const today = clinicDateFromInstant(new Date());
+  if (req.body.events.some(event => event.effectiveDate > today)) return res.status(400).json({ error: 'Datum stanja zuba ne može biti u budućnosti.' });
+  const saved = await clinicalRepo.addToothStateEvents(patientId, req.body.events, req.user.id);
+  await auditLog({ userId: req.user.id, action: 'tooth_state_recorded', entityType: 'patient', entityId: patientId, metadata: { eventIds: saved.map(row => row.id) }, req });
+  res.status(201).json(saved.map(serializeToothState));
+}));
+
 app.get('/api/patients/:id/clinical-chart', authenticateToken, requirePermission('clinical:read'), async (req, res) => {
   const patientId = positiveInteger(req.params.id);
   if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
@@ -4134,6 +4169,7 @@ app.post('/api/patients/:id/clinical-chart', authenticateToken, requirePermissio
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
+    if (!dental.isTooth(req.body.toothNumber || req.body.tooth_number)) return res.status(400).json({ error: 'Nevažeća FDI oznaka zuba.' });
     const row = await clinicalRepo.createClinicalChart(clinicalChartPayloadFromBody(req.body, patientId, req.user.id));
     await auditLog({ userId: req.user.id, action: 'clinical_chart_created', entityType: 'patient', entityId: patientId, req });
     res.status(201).json(serializeClinicalChart(row));
@@ -4148,6 +4184,8 @@ app.put('/api/clinical-chart/:id', authenticateToken, requirePermission('clinica
     const chartId = positiveInteger(req.params.id);
     const existing = await clinicalRepo.findClinicalChart(chartId);
     if (!existing) return res.status(404).json({ error: 'Zubni status entry not found' });
+    const requestedTooth = req.body.toothNumber || req.body.tooth_number || existing.tooth_number;
+    if (requestedTooth !== existing.tooth_number && !dental.isTooth(requestedTooth)) return res.status(400).json({ error: 'Nevažeća FDI oznaka zuba.' });
     const row = await clinicalRepo.updateClinicalChart(chartId, clinicalChartPayloadFromBody(req.body, existing.patient_id, req.user.id, existing));
     await auditLog({ userId: req.user.id, action: 'clinical_chart_updated', entityType: 'clinical_chart', entityId: chartId, req });
     res.json(serializeClinicalChart(row));
@@ -4935,6 +4973,7 @@ app.get('/api/director/legal-export', authenticateToken, requireDirector, requir
       invoices: 'invoices',
       insuranceClaims: 'insurance_claims',
       clinicalChart: 'clinical_chart_entries',
+      toothStates: 'tooth_state_events',
       clinicalNotes: 'clinical_notes',
       consents: 'patient_consents'
     };
@@ -4950,7 +4989,8 @@ app.get('/api/director/legal-export', authenticateToken, requireDirector, requir
       insuranceClaims,
       clinicalChart,
       clinicalNotes,
-      consents
+      consents,
+      toothStates
     ] = await Promise.all([
       legalExportRows(tables.patients, limit),
       legalExportRows(tables.records, limit),
@@ -4959,7 +4999,8 @@ app.get('/api/director/legal-export', authenticateToken, requireDirector, requir
       legalExportRows(tables.insuranceClaims, limit),
       legalExportRows(tables.clinicalChart, limit),
       legalExportRows(tables.clinicalNotes, limit),
-      legalExportRows(tables.consents, limit)
+      legalExportRows(tables.consents, limit),
+      legalExportRows(tables.toothStates, limit)
     ]);
     await auditLog({ userId: req.user.id, action: 'legal_export_generated', entityType: 'legal_export', req, metadata: { limit } });
     res.json({
@@ -4980,6 +5021,7 @@ app.get('/api/director/legal-export', authenticateToken, requireDirector, requir
       invoices,
       insuranceClaims,
       clinicalChart: clinicalChart.map(row => ({ ...row, surfaces: safeJsonParse(row.surfaces, []) })),
+      toothStates,
       clinicalNotes,
       consents
     });

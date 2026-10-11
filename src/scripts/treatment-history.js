@@ -60,6 +60,7 @@
           type: treatment.type || record.procedure,
           activity: treatment.activity || procedureCatalog?.findActivityForProcedure?.(treatment.type || record.procedure) || "",
           date: record.lastVisit,
+          doctor: record.doctor || record.doctorName || '',
           visitId: record.id || `${record.lastVisit}-${record.procedure}`,
           procedure: record.procedure,
           currency: treatment.currency || record.currency || "RSD"
@@ -71,7 +72,7 @@
   function groupEntries(entries, formatMoney) {
     const groups = new Map();
     entries.forEach(item => {
-      const key = JSON.stringify([item.visitId, item.type || "", item.note || "", item.currency || "RSD"]);
+      const key = JSON.stringify([item.visitId, item.type || "", item.note || "", item.currency || "RSD", window.DrRosaDental?.typeOf(item.tooth)]);
       if (!groups.has(key)) {
         groups.set(key, {
           date: item.date,
@@ -81,6 +82,7 @@
           currency: item.currency || "RSD",
           teeth: [],
           notes: [],
+          doctors: new Set(),
           gross: 0,
           discount: 0,
           discountGroups: new Map()
@@ -89,6 +91,7 @@
 
       const group = groups.get(key);
       group.teeth.push(item.tooth);
+      if (item.doctor) group.doctors.add(item.doctor);
       if (item.note && item.note !== "-") group.notes.push(item.note);
       group.gross += Number(item.price || 0);
 
@@ -114,6 +117,13 @@
   }
 
   function renderEntries(entries, options = {}) {
+    if (entries?.length && window.DrRosaDental && !options.dentitionGrouped) {
+      return ['permanent','primary',null].map(type => {
+        const filtered = entries.filter(item => window.DrRosaDental.typeOf(item.tooth) === type);
+        if (!filtered.length) return '';
+        return `<h4>${escapeHtml(window.DrRosaDental.labels[type] || 'Ranije oznake zuba')}</h4>` + renderEntries(filtered, { ...options, dentitionGrouped: true });
+      }).join('');
+    }
     const formatMoney = options.formatMoney || ((amount, currency = "RSD") => (
       window.DrRosaCurrencyUtils
         ? window.DrRosaCurrencyUtils.formatMoney(amount, currency)
@@ -135,6 +145,7 @@
           ${Number(item.discount || 0) > 0 ? `<div style="margin-top: 6px; color: #b45309;">Popust: ${escapeHtml(item.discountLabel || formatMoney(item.discount, item.currency))}</div>` : ""}
           <div style="margin-top: 6px;">${escapeHtml(item.notes.join("; ") || "-")}</div>
           <div style="margin-top: 6px; font-size: 0.9rem; color: #5b6c7d;">${formatDate(item.date)} | ${escapeHtml(item.procedure || "-")}</div>
+          ${item.doctors.size ? `<div class="tooth-work-doctor">Doktor: ${escapeHtml([...item.doctors].join(', '))}</div>` : ''}
         </div>
       </div>
     `).join("");

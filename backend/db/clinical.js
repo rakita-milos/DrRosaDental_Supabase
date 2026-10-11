@@ -12,6 +12,24 @@ function createClinicalRepository({ pgPool }) {
 
 function createPostgresClinicalRepository(pool) {
   return {
+    toothStateHistory(patientId) {
+      return queryMany(pool, `SELECT e.*, e.effective_date::text AS effective_date, u.name AS recorded_by_name FROM tooth_state_events e
+        LEFT JOIN users u ON u.id = e.recorded_by WHERE e.patient_id = ?
+        ORDER BY e.effective_date DESC, e.created_at DESC, e.id DESC`, [patientId]);
+    },
+    async addToothStateEvents(patientId, events, userId) {
+      if (!events.length) return [];
+      return withTransaction(pool, async client => {
+        const values = events.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+        const params = events.flatMap(event => [patientId, event.toothNumber, event.presence, event.effectiveDate, event.notes || '', userId]);
+        return queryMany(client, `WITH inserted AS (
+          INSERT INTO tooth_state_events
+            (patient_id, tooth_number, presence, effective_date, notes, recorded_by)
+          VALUES ${values} RETURNING *
+        ) SELECT e.*, e.effective_date::text AS effective_date, u.name AS recorded_by_name
+          FROM inserted e LEFT JOIN users u ON u.id = e.recorded_by ORDER BY e.id`, params);
+      });
+    },
     treatmentPlansByPatient(patientId) {
       return queryMany(pool, 'SELECT * FROM treatment_plans WHERE patient_id = ? ORDER BY created_at DESC', [patientId]);
     },

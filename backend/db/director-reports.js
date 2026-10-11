@@ -6,6 +6,7 @@ const LEGAL_EXPORT_TABLES = new Set([
   'invoices',
   'insurance_claims',
   'clinical_chart_entries',
+  'tooth_state_events',
   'clinical_notes',
   'patient_consents'
 ]);
@@ -25,7 +26,8 @@ function createPostgresDirectorReportsRepository(pool) {
   return {
     legalExportRows(table, limit) {
       assertLegalTable(table);
-      return queryMany(pool, `SELECT * FROM ${table} ORDER BY id LIMIT ?`, [limit]);
+      const columns = table === 'tooth_state_events' ? '*, effective_date::text AS effective_date' : '*';
+      return queryMany(pool, `SELECT ${columns} FROM ${table} ORDER BY id LIMIT ?`, [limit]);
     },
 
     async legalExportCount(table) {
