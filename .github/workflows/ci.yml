@@ -71,6 +71,8 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
+      - name: Run patient memorandum tests
+        run: node --test tests/patient-memorandum.test.cjs
       - name: Run Playwright tests
         working-directory: ./tests/playwright
         env:

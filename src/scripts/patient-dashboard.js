@@ -2025,6 +2025,13 @@ async function initializeClinicalSection(patientDetails, patientRecords, appoint
   }
 
   title.textContent = selectedPatientName;
+  if (patientDetails) {
+    window.DrRosaMemorandum.bind(
+      document.getElementById("patient-memorandum-btn"),
+      patientFullName(patientDetails),
+      document.getElementById("patient-memorandum-message")
+    );
+  }
   document.getElementById("new-entry-for-patient").href = selectedPatientId
     ? `new-entry.html?patientId=${encodeURIComponent(selectedPatientId)}`
     : `new-entry.html?patient=${encodeURIComponent(selectedPatientName)}`;

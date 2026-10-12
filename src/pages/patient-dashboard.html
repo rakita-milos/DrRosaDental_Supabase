@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Karton pacijenta | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css?v=primary-teeth-refactor-20261009" />
+  <link rel="stylesheet" href="../styles/styles.css?v=memorandum-20261012" />
 </head>
 <body>
   <div class="app-shell">
@@ -40,10 +40,12 @@
           <div class="patient-action-toolbar" aria-label="Akcije pacijenta">
             <a id="new-entry-for-patient" href="new-entry.html" class="primary-btn">Nova poseta</a>
             <a id="schedule-patient-link" href="calendar.html" class="secondary-btn">Zakazi termin</a>
+            <button id="patient-memorandum-btn" class="secondary-btn" type="button" disabled title="Preuzmi Word memorandum za ovog pacijenta">Memorandum</button>
             <a id="edit-patient-link" href="new-patient.html" class="secondary-btn">Uredi</a>
             <button id="delete-patient-btn" class="danger-btn" type="button">Obrisi</button>
           </div>
           <p id="patient-schedule-message" class="form-alert" role="status"></p>
+          <p id="patient-memorandum-message" class="form-alert" role="status" aria-live="polite"></p>
         </div>
         <div class="hero-stats" id="patient-summary-cards"></div>
       </section>
@@ -562,6 +564,7 @@
   <script src="../scripts/treatment-history.js?v=primary-teeth-refactor-20261009"></script>
   <script src="../scripts/appointment-modal.js?v=patient-scheduler-20260804"></script>
   <script src="../scripts/patient-visits.js?v=primary-teeth-refactor-20261009"></script>
-  <script src="../scripts/patient-dashboard.js?v=session-login-refactor-20261012"></script>
+  <script src="../scripts/patient-memorandum.js?v=memorandum-20261012"></script>
+  <script src="../scripts/patient-dashboard.js?v=memorandum-20261012"></script>
 </body>
 </html>
