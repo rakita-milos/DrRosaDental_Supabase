@@ -1,6 +1,11 @@
 const form = document.getElementById("login-form");
 const errorMsg = document.getElementById("error-msg");
 let pendingTwoFactor = false;
+const loginReason = new URLSearchParams(location.search).get('reason');
+if (loginReason === 'session-ended') {
+  errorMsg.textContent = 'Sesija je istekla. Prijavite se ponovo.';
+  errorMsg.style.display = 'block';
+}
 if (localStorage.getItem('drrosa-logout-pending')) {
   errorMsg.textContent = 'Aplikacija je lokalno zaključana. Serverska odjava čeka potvrdu; nova prijava će prvo pokušati da je završi.';
   errorMsg.style.display = 'block';

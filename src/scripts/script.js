@@ -1,7 +1,7 @@
 async function requireAccess(requiredRole) {
   const session = await window.DrRosaApi.verifySession(requiredRole);
   if (!session) {
-    window.location.href = "login.html";
+    window.DrRosaApi.redirectToLogin();
     return null;
   }
 
@@ -15,7 +15,7 @@ async function requireAccess(requiredRole) {
     logoutBtn.addEventListener("click", (event) => {
       event.preventDefault();
       window.DrRosaApi.logout().catch(() => {}).finally(() => {
-        window.location.href = "login.html";
+        window.DrRosaApi.redirectToLogin();
       });
     });
   }

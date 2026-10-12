@@ -56,16 +56,6 @@ test('patient timeline binds record deletion once through its delegated click ha
   assert.doesNotMatch(patientDashboardSource, /document\.querySelectorAll\("\.delete-record-btn"\)\.forEach/);
 });
 
-test('session verification does not clear login state on navigation aborts', () => {
-  assert.match(apiSource, /function apiError\(message, status, code\)/);
-  assert.match(apiSource, /error\.status = status/);
-  assert.match(apiSource, /function isAuthFailure\(error\)/);
-  assert.match(apiSource, /if \(isAuthFailure\(error\)\) \{\s*clearSession\(\);[\s\S]*return null;\s*\}/);
-  assert.match(apiSource, /Fast page changes can abort \/auth\/verify/);
-  assert.match(apiSource, /syncDirectorNavigation\(session\);\s*return session;/);
-  assert.doesNotMatch(apiSource, /catch \(_error\) \{\s*clearSession\(\);\s*return null;\s*\}/);
-});
-
 test('global notifications do not replay old Google sync toasts on app open', () => {
   assert.match(apiSource, /getNotifications\(\{ latest: true, limit: 1 \}\)/);
   assert.match(apiSource, /const startedAt = Date\.now\(\)/);
@@ -101,7 +91,7 @@ test('all records page lists every patient, including patients without visits', 
 
 test('all records debtor dashboard link applies the payment filter before initial load', () => {
   assert.match(indexPageSource, /all-records\.html\?filter=debtors/);
-  assert.match(allRecordsPageSource, /all-records\.js\?v=records-url-debtors-20260815/);
+  assert.match(allRecordsPageSource, /all-records\.js\?v=[^"\s]+/);
   assert.match(allRecordsSource, /function applyUrlFilters\(\)/);
   assert.match(allRecordsSource, /urlParams\.get\("payment"\) \|\| urlParams\.get\("filter"\)/);
   assert.match(allRecordsSource, /paymentParam === "debtors"[\s\S]*paymentFilter\.value = "debtors"/);
@@ -604,7 +594,7 @@ test('dashboard shows debtors above priorities with direct payment actions', () 
   assert.ok(debtorsPanelIndex > -1);
   assert.ok(prioritiesIndex > debtorsPanelIndex);
   assert.match(indexPageSource, /class="dashboard-side-stack"/);
-  assert.match(indexPageSource, /script\.js\?v=dashboard-debtors-persistent-20260818/);
+  assert.match(indexPageSource, /script\.js\?v=[^"\s]+/);
   assert.match(dashboardSource, /return \["dugovanje", "delimično"\]\.includes\(payment\) \|\| Number\(record\.amountDue \|\| 0\) > 0/);
   assert.match(dashboardSource, /function dashboardDebtorRows\(records\)/);
   assert.match(dashboardSource, /records\.filter\(paymentIsDebt\)/);

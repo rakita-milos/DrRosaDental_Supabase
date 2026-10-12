@@ -78,6 +78,14 @@ Selektori i akcije su smesteni u page object klase. Non-login testovi koriste te
 
 ## Pokretanje
 
+Provera navigacije pri isteku sesije bez baze (stvarni pregledač, lokalni fajlovi i simulirani API odgovori):
+
+```bash
+node tests/playwright/node_modules/@playwright/test/cli.js test --config tests/playwright/session-ui.config.js
+```
+
+Ova provera pokriva upozorenje, gubitak nesačuvanog unosa, standardni login, više tabova, maksimalno trajanje sesije i povratak na uspavanu stranicu. Testovi sa pravom izolovanom bazom ostaju u `session-lifecycle.spec.js`.
+
 ```bash
 cd tests/playwright
 npm install

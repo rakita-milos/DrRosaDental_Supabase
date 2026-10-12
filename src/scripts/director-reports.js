@@ -70,13 +70,13 @@ let activeCodebookType = "activity";
 async function checkDirectorAccess() {
   const session = await window.DrRosaApi.verifySession("director");
   if (!session) {
-    window.location.href = "login.html";
+    window.DrRosaApi.redirectToLogin();
     return null;
   }
 
   document.getElementById("logout-btn").addEventListener("click", () => {
     window.DrRosaApi.logout().catch(() => {}).finally(() => {
-      window.location.href = "login.html";
+      window.DrRosaApi.redirectToLogin();
     });
   });
 

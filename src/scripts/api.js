@@ -112,7 +112,7 @@
         }
         throw apiError(data.error || 'API request failed', response.status, data.code);
       } catch (error) {
-        if (isAuthFailure(error) && authEpoch() === epoch) lockSession(error.message);
+        if (isAuthFailure(error) && authEpoch() === epoch) endSession();
         throw error;
       }
     }
@@ -237,11 +237,7 @@
       setSession(data);
       return data.user;
     } catch (error) {
-      if (error.code === 'SESSION_CHANGED') return null;
-      if (isAuthFailure(error)) {
-        clearSession();
-        return null;
-      }
+      if (error.code === 'SESSION_CHANGED' || isAuthFailure(error)) return null;
       // Fast page changes can abort /auth/verify; keep the local session and
       // let protected API routes continue to enforce access server-side.
       syncDirectorNavigation(session);
@@ -249,9 +245,22 @@
     }
   }
 
-  const sessionLock = window.createDrRosaSessionLock({ getSession, advanceAuthEpoch, clearSession, login });
-  const lockSession = (...args) => sessionLock.lock(...args);
-  const unlockSession = () => sessionLock.unlock();
+  let redirectingToLogin = false;
+  function redirectToLogin(reason) {
+    if (redirectingToLogin || location.pathname.endsWith('/login.html')) return;
+    redirectingToLogin = true;
+    const query = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+    location.replace(`/src/pages/login.html${query}`);
+  }
+
+  function endSession(reason = 'session-ended') {
+    if (redirectingToLogin) return;
+    // Invalidate requests already in flight before removing shared login state.
+    advanceAuthEpoch();
+    clearSession();
+    document.getElementById('drrosa-session-warning')?.remove();
+    redirectToLogin(reason);
+  }
 
   async function reportActivity() {
     const before = getSession();
@@ -300,7 +309,7 @@
     function checkDeadline() {
       const session = getSession();
       if (!session) {
-        if (lastKnownSession) lockSession('Prijava je prekinuta. Prijavite se ponovo.', lastKnownSession);
+        if (lastKnownSession) endSession(localStorage.getItem('drrosa-logout-pending') ? 'signed-out' : 'session-ended');
         return;
       }
       if (lastKnownSession && (lastKnownSession.id !== session.id || lastKnownSession.role !== session.role)) {
@@ -311,7 +320,7 @@
       const serverNow = Date.now() + (session.clockOffsetMs || 0);
       const deadline = Math.min(Date.parse(session.idleExpiresAt), Date.parse(session.sessionExpiresAt));
       if (!Number.isFinite(deadline)) return;
-      if (serverNow >= deadline) { lockSession(); return; }
+      if (serverNow >= deadline) { endSession(); return; }
       let warning = document.getElementById('drrosa-session-warning');
       if (deadline - serverNow > 60000) { warning?.remove(); return; }
       if (!warning) {
@@ -327,16 +336,9 @@
         : 'Prijava uskoro ističe zbog neaktivnosti. Nastavite rad da produžite sesiju.';
     }
     window.addEventListener('storage', event => {
-      if (event.key === 'drrosa-session') {
-        rescheduleLifecycle();
-        const previous = event.oldValue ? JSON.parse(event.oldValue) : null;
-        const next = event.newValue ? JSON.parse(event.newValue) : null;
-        if (!next && previous) lockSession('Prijava je prekinuta u drugom tabu.', previous);
-        else if (next && sessionLock.user?.id === next.id && !localStorage.getItem('drrosa-logout-pending')) unlockSession();
-        else if (next && ((previous && previous.id !== next.id) || (sessionLock.user && sessionLock.user.id !== next.id))) location.reload();
-      }
-      if (event.key === 'drrosa-logout-pending' && event.newValue) lockSession('Odjava je pokrenuta u drugom tabu.');
-      if (event.key === 'drrosa-auth-event' && event.newValue) location.replace('login.html');
+      if (event.key === 'drrosa-session') rescheduleLifecycle();
+      if (event.key === 'drrosa-logout-pending' && event.newValue && localStorage.getItem('drrosa-logout-pending')) endSession('signed-out');
+      if (event.key === 'drrosa-auth-event' && event.newValue && !getSession()) endSession('signed-out');
     });
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'hidden') {
@@ -1148,6 +1150,7 @@
     login,
     logout,
     verifySession,
+    redirectToLogin,
     changePassword,
     clearSession,
     getSession,

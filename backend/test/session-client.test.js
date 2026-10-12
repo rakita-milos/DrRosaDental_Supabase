@@ -6,13 +6,14 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname,'../../src/scripts/api.js'),'utf8');
 const session = {id:2,email:'client@example.test',role:'staff',sessionId:'22'};
 const reply=(status,data={})=>({status,ok:status>=200&&status<300,json:async()=>data});
-function client(fetch) {
+function client(fetch, pathname = '/src/pages/index.html') {
+  const redirects = [];
   const store=new Map([['drrosa-session',JSON.stringify(session)]]);
   const document={readyState:'loading',body:null,addEventListener(){},querySelectorAll:()=>[],getElementById:()=>null};
   const window={DrRosaSecurity:{},addEventListener(){},navigator:{}};
-  const context={window,document,location:{pathname:'/src/pages/index.html'},fetch,localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},Map,Date,Math,Error,JSON,URLSearchParams};
-  vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(__dirname,'../../src/scripts/session-lock.js'),'utf8'),context);vm.runInContext(source,context);
-  return {api:window.DrRosaApi,store};
+  const context={window,document,location:{pathname,replace:url=>redirects.push(url)},encodeURIComponent,fetch,localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},Map,Date,Math,Error,JSON,URLSearchParams};
+  vm.createContext(context);vm.runInContext(source,context);
+  return {api:window.DrRosaApi,store,redirects};
 }
 
 test('parallel browser requests share one renewal and keep the login', async()=>{
@@ -33,13 +34,16 @@ test('temporary refresh failure and forbidden action do not clear login',async()
       return kind==='forbidden'?reply(403,{error:'Permission required'}):reply(401,{code:'ACCESS_EXPIRED'});
     });
     assert.equal((await c.api.verifySession()).id,2);assert.equal(c.api.getSession().id,2);
-    assert.equal(refreshes,kind==='forbidden'?0:1);
+    assert.equal(refreshes,kind==='forbidden'?0:1);assert.deepEqual(c.redirects,[]);
   }
 });
 
 test('confirmed expiration clears state and failed logout stays locally blocked',async()=>{
   const expired=client(async()=>reply(401,{code:'SESSION_ENDED',error:'Expired'}));
   assert.equal(await expired.api.verifySession(),null);assert.equal(expired.api.getSession(),null);
+  assert.deepEqual(expired.redirects,['/src/pages/login.html?reason=session-ended']);
+  expired.api.redirectToLogin();
+  assert.deepEqual(expired.redirects,['/src/pages/login.html?reason=session-ended']);
   const offline=client(async()=>{throw new Error('offline');});
   await assert.rejects(offline.api.logout(),/offline/);
   assert.equal(offline.api.getSession(),null);assert.equal(await offline.api.verifySession(),null);
@@ -56,4 +60,41 @@ test('late refresh cannot restore local login after logout',async()=>{
   const verification=c.api.verifySession();await new Promise(r=>setTimeout(r,5));
   await c.api.logout();release();await verification;
   assert.equal(c.api.getSession(),null);
+});
+
+test('expiration on login clears state without a redirect loop',async()=>{
+  const c=client(async()=>reply(401,{code:'SESSION_ENDED'}),'/src/pages/login.html');
+  assert.equal(await c.api.verifySession(),null);
+  assert.equal(c.api.getSession(),null);
+  assert.deepEqual(c.redirects,[]);
+});
+
+test('navigation abort preserves the session without redirecting',async()=>{
+  const c=client(async()=>{throw Object.assign(new Error('Navigation aborted'),{name:'AbortError'});});
+  assert.equal((await c.api.verifySession()).id,session.id);
+  assert.equal(c.api.getSession().id,session.id);
+  assert.deepEqual(c.redirects,[]);
+});
+
+test('page access redirect runs once and does not clear shared login state',()=>{
+  const c=client(async()=>reply(200));
+  c.api.redirectToLogin();
+  c.api.redirectToLogin();
+  assert.deepEqual(c.redirects,['/src/pages/login.html']);
+  assert.equal(c.api.getSession().id,session.id);
+});
+
+test('late refresh cannot restore login after another request confirms expiration',async()=>{
+  let release;const gate=new Promise(r=>release=r);
+  let started;const refreshing=new Promise(r=>started=r);
+  const c=client(async url=>{
+    if(url.endsWith('/auth/refresh')) {started();await gate;return reply(200,{user:session,sessionId:'22'});}
+    if(url.endsWith('/patients')) return reply(401,{code:'SESSION_ENDED'});
+    return reply(401,{code:'ACCESS_EXPIRED'});
+  });
+  const verification=c.api.verifySession();await refreshing;
+  await assert.rejects(c.api.getPatients(),error=>error.code==='SESSION_ENDED');
+  release();await verification;
+  assert.equal(c.api.getSession(),null);
+  assert.deepEqual(c.redirects,['/src/pages/login.html?reason=session-ended']);
 });
