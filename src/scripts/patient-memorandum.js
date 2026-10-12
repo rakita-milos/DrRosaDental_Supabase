@@ -59,11 +59,15 @@
       children: [
         new d.TableCell({
           width: { size: 1800, type: d.WidthType.DXA }, borders,
-          children: [paragraph("", { children: [new d.TextRun({ text: label, bold: true })] })]
+          verticalAlign: d.VerticalAlign.BOTTOM,
+          margins: { top: 0, bottom: 0 },
+          children: [paragraph("", { spacing: { before: 0, after: 0 }, children: [new d.TextRun({ text: label, bold: true })] })]
         }),
         new d.TableCell({
           width: { size: 8667, type: d.WidthType.DXA }, borders: { ...borders, bottom: line },
-          children: [paragraph("")]
+          verticalAlign: d.VerticalAlign.BOTTOM,
+          margins: { top: 0, bottom: 0 },
+          children: [paragraph("", { spacing: { before: 0, after: 0 } })]
         })
       ]
     });
