@@ -293,12 +293,17 @@ function patientName(patient) {
 }
 
 function findPatientByName(name) {
-  return patients.find(patient => patientName(patient).toLowerCase() === name.toLowerCase());
+  const matches = patients.filter(patient => patientName(patient).toLowerCase() === name.toLowerCase());
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function selectedPatient() {
   if (patientIdParam) {
     return patients.find(patient => String(patient.id) === String(patientIdParam));
+  }
+  if (inputs.patient.dataset.patientId) {
+    const patient = patients.find(patient => String(patient.id) === inputs.patient.dataset.patientId);
+    if (patient && patientName(patient) === inputs.patient.value.trim()) return patient;
   }
   return findPatientByName(inputs.patient.value.trim());
 }
@@ -391,15 +396,14 @@ function renderPatientSuggestions(query = inputs.patient.value) {
   if (!list) return;
 
   const normalizedQuery = normalizedPatientQuery(query);
-  const names = patients
-    .map(patientName)
-    .filter(Boolean)
-    .filter(name => !normalizedQuery || normalizedPatientQuery(name).includes(normalizedQuery));
+  const matches = patients.filter(patient => patientName(patient))
+    .filter(patient => !normalizedQuery || normalizedPatientQuery(patientName(patient)).includes(normalizedQuery));
 
-  list.innerHTML = names.length
-    ? names.map(name => `
-      <button class="patient-autocomplete-option" type="button" role="option" data-patient-name="${escapeAttribute(name)}">
-        ${escapeHtml(name)}
+  list.innerHTML = matches.length
+    ? matches.map(patient => `
+      <button class="patient-autocomplete-option" type="button" role="option" data-patient-id="${escapeAttribute(patient.id)}" data-patient-name="${escapeAttribute(patientName(patient))}">
+        ${escapeHtml(patientName(patient))}
+        <small>${escapeHtml([patient.phone, patient.email].filter(Boolean).join(" / ") || `Karton #${patient.id}`)}</small>
       </button>
     `).join("")
     : `<div class="patient-autocomplete-empty">Nema pacijenata za prikaz.</div>`;
@@ -550,6 +554,7 @@ function openRecordInForm(record) {
     return;
   }
   inputs.patient.value = record.patient || "";
+  if (record.patientId) inputs.patient.dataset.patientId = String(record.patientId);
   setVisitDateValue(record.lastVisit || "");
   inputs.procedureActivity.value = record.procedureActivity || procedureCatalog.findActivityForProcedure(record.procedure);
   populateProcedureSelect(inputs.procedureActivity, inputs.procedure);
@@ -1979,6 +1984,7 @@ inputs.patient.addEventListener("change", () => {
 });
 
 inputs.patient.addEventListener("input", () => {
+  delete inputs.patient.dataset.patientId;
   toothStateEvents = [];
   if (inputs.patient.readOnly) return;
   inputs.patient.value = inputs.patient.value.replace(/\s+/g, " ");
@@ -2025,6 +2031,7 @@ document.getElementById("existing-patients")?.addEventListener("click", event =>
   inputs.patient.value = option.dataset.patientName || option.textContent.trim();
   closePatientSuggestions();
   inputs.patient.dispatchEvent(new Event("input", { bubbles: true }));
+  inputs.patient.dataset.patientId = option.dataset.patientId;
   inputs.patient.dispatchEvent(new Event("change", { bubbles: true }));
 });
 
@@ -2126,7 +2133,7 @@ form.addEventListener("submit", async (event) => {
 
   if (hasBackendSession && !patient) {
     setSubmitting(false);
-    showAlert("Pacijent mora postojati u bazi prije unosa zapisa.", "error", { persist: true, scroll: true });
+    showAlert("Odaberite pacijenta iz liste predloga. Ako postoje ista imena, proverite kontakt ili broj kartona.", "error", { persist: true, scroll: true });
     return;
   }
 

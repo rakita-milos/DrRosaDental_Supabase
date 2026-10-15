@@ -114,8 +114,25 @@ test('state history is append-only, date ordered and validates FDI and authentic
     expect(response.status()).toBe(400);
   }
   expect((await request.get(baseURL+endpoint)).status()).toBe(401);
-  const denied = await request.post(baseURL+endpoint,{ headers:{Authorization:`Bearer ${tokenFor('staff')}`}, data:{events:[event]} });
-  expect(denied.status()).toBe(403);
+  const staffSession = await apiPost(request, baseURL, '/api/auth/verify', {}, 'staff', 200);
+  const originalPermissions = staffSession.user.permissions;
+  const permissionEndpoint = `${baseURL}/api/director/security/users/${staffSession.user.id}/permissions`;
+  const permissionHeaders = {
+    Authorization: `Bearer ${tokenFor('director')}`,
+    'x-drrosa-director-password': credentialsFor('director').password
+  };
+  try {
+    const restricted = await request.put(permissionEndpoint, {
+      headers: permissionHeaders,
+      data: { permissions: originalPermissions.filter(permission => permission !== 'clinical:write' && permission !== '*') }
+    });
+    expect(restricted.status()).toBe(200);
+    const denied = await request.post(baseURL+endpoint,{ headers:{Authorization:`Bearer ${tokenFor('staff')}`}, data:{events:[event]} });
+    expect(denied.status()).toBe(403);
+  } finally {
+    const restored = await request.put(permissionEndpoint, { headers: permissionHeaders, data: { permissions: originalPermissions } });
+    expect(restored.status()).toBe(200);
+  }
   expect((await apiGet(request, baseURL, endpoint, 'director'))).toHaveLength(3);
   const batch = await request.post(baseURL+endpoint, { headers:{Authorization:`Bearer ${tokenFor('director')}`}, data:{events:[event,{...event,toothNumber:'56'}]} });
   expect(batch.status()).toBe(400);

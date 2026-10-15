@@ -365,7 +365,10 @@ async function seedDatabase() {
 
 async function ensureRuntimeReady() {
   if (!runtimeReadyPromise) {
-    runtimeReadyPromise = pgPool.query('SELECT 1');
+    runtimeReadyPromise = pgPool.query('SELECT 1').catch(error => {
+      runtimeReadyPromise = null;
+      throw error;
+    });
   }
   return runtimeReadyPromise;
 }
@@ -1142,6 +1145,7 @@ function paginationFromQuery(query, { maxLimit = 200 } = {}) {
   const offset = Number.isInteger(requestedOffset) && requestedOffset > 0 ? requestedOffset : 0;
   return {
     search: cleanText(query.search || query.q, { max: 120 }) || '',
+    patientId: positiveInteger(query.patientId ?? query.patient_id),
     limit,
     offset
   };
@@ -1183,7 +1187,7 @@ function normalizeIsoDateTime(value) {
 }
 
 function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+  return clinicDateFromInstant(new Date());
 }
 
 function addMinutes(date, minutes) {
@@ -1200,21 +1204,21 @@ function roundMoney(value) {
 
 const PAYMENT_ROUNDING_TOLERANCE_RSD = 1;
 
-async function exchangeRateToRsd(currency) {
+async function exchangeRateToRsd(currency, currencyRepository = directorAdmin) {
   const normalized = normalizeCurrency(currency);
   if (normalized === 'RSD') return 1;
-  const local = await localExchangeRate('RSD', normalized);
+  const local = await localExchangeRate('RSD', normalized, currencyRepository);
   if (local?.rate > 0) return 1 / Number(local.rate);
-  const direct = await localExchangeRate(normalized, 'RSD');
+  const direct = await localExchangeRate(normalized, 'RSD', currencyRepository);
   if (direct?.rate > 0) return Number(direct.rate);
   return normalized === 'USD' ? 108 : 117;
 }
 
-async function normalizePaymentPart(part) {
+async function normalizePaymentPart(part, currencyRepository = directorAdmin) {
   const currency = normalizeCurrency(part.currency);
   const amount = money(part.amount);
   const providedRate = Number(part.exchangeRateToRsd ?? part.exchange_rate_to_rsd ?? 0);
-  const rate = providedRate > 0 ? providedRate : await exchangeRateToRsd(currency);
+  const rate = providedRate > 0 ? providedRate : await exchangeRateToRsd(currency, currencyRepository);
   return {
     amount: roundMoney(amount),
     currency,
@@ -1228,13 +1232,13 @@ async function normalizePaymentPart(part) {
 
 const GENERAL_TREATMENT_TOOTH_NUMBER = '__general__';
 
-async function normalizedPaymentParts(record) {
+async function normalizedPaymentParts(record, currencyRepository = directorAdmin) {
   const parts = Array.isArray(record.paymentParts)
     ? record.paymentParts
     : Array.isArray(record.payment_parts)
       ? record.payment_parts
       : null;
-  if (parts) return (await Promise.all(parts.map(normalizePaymentPart))).filter(part => part.amount > 0);
+  if (parts) return (await Promise.all(parts.map(part => normalizePaymentPart(part, currencyRepository)))).filter(part => part.amount > 0);
 
   const amountPaid = money(record.amount_paid ?? record.amountPaid ?? 0);
   if (amountPaid <= 0) return [];
@@ -1243,13 +1247,13 @@ async function normalizedPaymentParts(record) {
     currency: record.currency,
     paymentMethod: record.payment_method,
     paymentDate: record.payment_date
-  })];
+  }, currencyRepository)];
 }
 
-async function calculatePaymentSummary({ amount, currency, paymentParts, paymentStatus }) {
+async function calculatePaymentSummary({ amount, currency, paymentParts, paymentStatus }, currencyRepository = directorAdmin) {
   const total = money(amount);
   const recordCurrency = normalizeCurrency(currency);
-  const recordRate = await exchangeRateToRsd(recordCurrency);
+  const recordRate = await exchangeRateToRsd(recordCurrency, currencyRepository);
   const totalRsd = total * recordRate;
   const paidRsd = paymentParts.reduce((sum, part) => sum + Number(part.amountRsd || 0), 0);
   const paidInRecordCurrency = roundMoney(recordRate > 0 ? paidRsd / recordRate : paidRsd);
@@ -1264,8 +1268,8 @@ async function calculatePaymentSummary({ amount, currency, paymentParts, payment
     ? paidRsd <= 0
       ? 'Dugovanje'
       : debtRsd <= PAYMENT_ROUNDING_TOLERANCE_RSD
-        ? 'PlaÄ‡eno'
-        : 'DelimiÄno'
+        ? 'Plaćeno'
+        : 'Delimično'
     : normalizePaymentStatus(paymentStatus);
   return {
     amountDue: debtInRecordCurrency,
@@ -1274,10 +1278,10 @@ async function calculatePaymentSummary({ amount, currency, paymentParts, payment
   };
 }
 
-async function totalAmountForPayment(record, paymentParts, currency) {
+async function totalAmountForPayment(record, paymentParts, currency, currencyRepository = directorAdmin) {
   const explicit = money(record.totalAmount ?? record.total_amount ?? 0);
   if (explicit > 0) return explicit;
-  const recordRate = await exchangeRateToRsd(currency);
+  const recordRate = await exchangeRateToRsd(currency, currencyRepository);
   const paidInRecordCurrency = paymentParts.reduce((sum, part) => sum + (recordRate > 0 ? Number(part.amountRsd || 0) / recordRate : Number(part.amount || 0)), 0);
   return roundMoney(money(record.amount) + paidInRecordCurrency);
 }
@@ -3452,6 +3456,10 @@ app.get('/api/patients/:id/payment-history', authenticateToken, requirePermissio
 
 app.get('/api/records', authenticateToken, requirePermission('records:read'), async (req, res) => {
   try {
+    const patientIdInput = req.query.patientId ?? req.query.patient_id;
+    if (patientIdInput !== undefined && !positiveInteger(patientIdInput)) {
+      return res.status(400).json({ error: 'Invalid patient id' });
+    }
     const records = await recordsPaymentsRepo.listRecords(paginationFromQuery(req.query, { maxLimit: 300 }));
     res.json(await hydrateVisitRecords(records));
   } catch (error) {
@@ -3528,116 +3536,122 @@ app.post('/api/records', authenticateToken, requirePermission('records:write'), 
 app.put('/api/records/:id', authenticateToken, requirePermission('records:write'), validateBody(recordUpdateSchema), async (req, res) => {
   try {
     const recordId = positiveInteger(req.params.id);
-    const current = await recordsPaymentsRepo.findRecordById(recordId);
-    if (!current) return res.status(404).json({ error: 'Record not found' });
+    await recordsPaymentsRepo.withRecordForUpdate(recordId, async ({ current, records, client }) => {
+      const currencyRepository = createDirectorAdminRepository({ pgPool: client });
+      if (!current) throw Object.assign(new Error('Record not found'), { status: 404 });
 
-    if (req.body.treatments) {
-      const previous = await recordsPaymentsRepo.treatmentsForRecord(recordId);
-      const existingLabels = new Set(previous.map(item => item.tooth_number));
-      const incoming = normalizedTreatments(req.body);
-      if (incoming.some(item => item.toothNumber !== GENERAL_TREATMENT_TOOTH_NUMBER && !dental.isTooth(item.toothNumber) && !existingLabels.has(item.toothNumber))) {
-        return res.status(400).json({ error: 'Nevažeća FDI oznaka zuba.' });
+      if (req.body.treatments) {
+        const previous = await records.treatmentsForRecord(recordId);
+        const existingLabels = new Set(previous.map(item => item.tooth_number));
+        const incoming = normalizedTreatments(req.body);
+        if (incoming.some(item => item.toothNumber !== GENERAL_TREATMENT_TOOTH_NUMBER && !dental.isTooth(item.toothNumber) && !existingLabels.has(item.toothNumber))) {
+          throw Object.assign(new Error('Nevažeća FDI oznaka zuba.'), { status: 400 });
+        }
       }
-    }
 
-    const data = { ...current, ...req.body };
-    const procedure = cleanText(data.procedure, { max: 255, required: true });
-    if (!procedure) {
-      return res.status(400).json({ error: 'Procedure required' });
-    }
+      const data = { ...current, ...req.body };
+      const procedure = cleanText(data.procedure, { max: 255, required: true });
+      if (!procedure) {
+        throw Object.assign(new Error('Procedure required'), { status: 400 });
+      }
 
-    await recordsPaymentsRepo.updateRecord({
-      id: recordId,
-      procedure,
-      status: normalizeStatus(data.status),
-      shift: normalizeShift(data.shift),
-      notes: cleanText(data.notes, { max: 2000 })
+      await records.updateRecord({
+        id: recordId,
+        procedure,
+        status: normalizeStatus(data.status),
+        shift: normalizeShift(data.shift),
+        notes: cleanText(data.notes, { max: 2000 })
+      });
+
+      if (req.body.treatments !== undefined || req.body.generalTreatments !== undefined || req.body.general_treatments !== undefined) {
+        await records.replaceTreatments(recordId, normalizedTreatments({ ...data, ...req.body }));
+      }
+
+      if (
+        req.body.amount !== undefined
+        || req.body.amount_paid !== undefined
+        || req.body.amountPaid !== undefined
+        || req.body.currency !== undefined
+        || req.body.payment_status !== undefined
+        || req.body.paymentParts !== undefined
+        || req.body.payment_parts !== undefined
+      ) {
+        const payment = await records.findPaymentByVisitRecordId(recordId);
+        const patientId = payment?.patient_id || current.patient_id;
+        const amount = req.body.amount ?? payment?.amount ?? 0;
+        const currency = req.body.currency ?? payment?.currency ?? 'RSD';
+        const paymentParts = await normalizedPaymentParts({
+          ...req.body,
+          amount_paid: req.body.amount_paid ?? req.body.amountPaid ?? payment?.amount_paid ?? 0,
+          currency
+        }, currencyRepository);
+        const summary = await calculatePaymentSummary({
+          amount: await totalAmountForPayment({ ...req.body, amount }, paymentParts, currency, currencyRepository),
+          currency,
+          paymentParts,
+          paymentStatus: req.body.payment_status ?? payment?.payment_status
+        }, currencyRepository);
+        await records.upsertPayment({
+          visitRecordId: recordId,
+          patientId,
+          payment,
+          paymentSummary: summary,
+          paymentParts,
+          currency: normalizeCurrency(currency)
+        });
+      }
+
     });
-
-    if (req.body.treatments !== undefined || req.body.generalTreatments !== undefined || req.body.general_treatments !== undefined) {
-      await recordsPaymentsRepo.replaceTreatments(recordId, normalizedTreatments({ ...data, ...req.body }));
-    }
-
-    if (
-      req.body.amount !== undefined
-      || req.body.amount_paid !== undefined
-      || req.body.amountPaid !== undefined
-      || req.body.currency !== undefined
-      || req.body.payment_status !== undefined
-      || req.body.paymentParts !== undefined
-      || req.body.payment_parts !== undefined
-    ) {
-      const payment = await recordsPaymentsRepo.findPaymentByVisitRecordId(recordId);
-      const patientId = payment?.patient_id || current.patient_id;
-      const amount = req.body.amount ?? payment?.amount ?? 0;
-      const currency = req.body.currency ?? payment?.currency ?? 'RSD';
-      const paymentParts = await normalizedPaymentParts({
-        ...req.body,
-        amount_paid: req.body.amount_paid ?? req.body.amountPaid ?? payment?.amount_paid ?? 0,
-        currency
-      });
-      const summary = await calculatePaymentSummary({
-        amount: await totalAmountForPayment({ ...req.body, amount }, paymentParts, currency),
-        currency,
-        paymentParts,
-        paymentStatus: req.body.payment_status ?? payment?.payment_status
-      });
-      await recordsPaymentsRepo.upsertPayment({
-        visitRecordId: recordId,
-        patientId,
-        payment,
-        paymentSummary: summary,
-        paymentParts,
-        currency: normalizeCurrency(currency)
-      });
-    }
 
     res.json({ id: recordId, message: 'Record updated successfully' });
   } catch (error) {
     console.error('Update record error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Server error' });
   }
 });
 
 app.post('/api/records/:id/payment-parts', authenticateToken, requirePermission('records:write'), validateBody(paymentPartAppendSchema), async (req, res) => {
   try {
     const recordId = positiveInteger(req.params.id);
-    const current = await recordsPaymentsRepo.findRecordById(recordId);
-    if (!current) return res.status(404).json({ error: 'Record not found' });
+    await recordsPaymentsRepo.withRecordForUpdate(recordId, async ({ current, records, client }) => {
+      const currencyRepository = createDirectorAdminRepository({ pgPool: client });
+      if (!current) throw Object.assign(new Error('Record not found'), { status: 404 });
 
-    const payment = await recordsPaymentsRepo.findPaymentByVisitRecordId(recordId);
-    const currentDebt = money(payment?.amount || 0);
-    if (currentDebt <= 0) return res.status(400).json({ error: 'Poseta nema dug za dodatnu uplatu.' });
+      const payment = await records.findPaymentByVisitRecordId(recordId);
+      const currentDebt = money(payment?.amount || 0);
+      if (currentDebt <= 0) throw Object.assign(new Error('Poseta nema dug za dodatnu uplatu.'), { status: 400 });
 
-    const currency = normalizeCurrency(payment?.currency || req.body.currency || 'RSD');
-    const existingParts = (await recordsPaymentsRepo.paymentPartsForRecord(recordId)).map(part => ({
-      amount: Number(part.amount || 0),
-      currency: part.currency || currency,
-      exchangeRateToRsd: Number(part.exchange_rate_to_rsd || 0),
-      amountRsd: Number(part.amount_rsd || 0),
-      paymentMethod: part.payment_method || '',
-      paymentDate: part.payment_date || '',
-      notes: part.notes || ''
-    }));
-    const paymentPart = await normalizePaymentPart({
-      ...req.body,
-      paymentDate: req.body.paymentDate || req.body.payment_date || current.visit_date || todayIsoDate()
-    });
-    const allParts = [...existingParts, paymentPart];
-    const totalAmount = roundMoney(currentDebt + money(payment?.amount_paid || 0));
-    const summary = await calculatePaymentSummary({
-      amount: totalAmount,
-      currency,
-      paymentParts: allParts,
-      paymentStatus: payment?.payment_status
-    });
-    await recordsPaymentsRepo.appendPaymentPart({
-      payment,
-      visitRecordId: recordId,
-      patientId: payment?.patient_id || current.patient_id,
-      paymentPart,
-      paymentSummary: summary,
-      currency
+      const currency = normalizeCurrency(payment?.currency || req.body.currency || 'RSD');
+      const existingParts = (await records.paymentPartsForRecord(recordId)).map(part => ({
+        amount: Number(part.amount || 0),
+        currency: part.currency || currency,
+        exchangeRateToRsd: Number(part.exchange_rate_to_rsd || 0),
+        amountRsd: Number(part.amount_rsd || 0),
+        paymentMethod: part.payment_method || '',
+        paymentDate: part.payment_date || '',
+        notes: part.notes || ''
+      }));
+      const paymentPart = await normalizePaymentPart({
+        ...req.body,
+        paymentDate: req.body.paymentDate || req.body.payment_date || current.visit_date || todayIsoDate()
+      }, currencyRepository);
+      const allParts = [...existingParts, paymentPart];
+      const totalAmount = roundMoney(currentDebt + money(payment?.amount_paid || 0));
+      const summary = await calculatePaymentSummary({
+        amount: totalAmount,
+        currency,
+        paymentParts: allParts,
+        paymentStatus: payment?.payment_status
+      }, currencyRepository);
+      await records.appendPaymentPart({
+        payment,
+        visitRecordId: recordId,
+        patientId: payment?.patient_id || current.patient_id,
+        paymentPart,
+        paymentSummary: summary,
+        currency
+      });
+
     });
 
     const record = await recordsPaymentsRepo.recordByIdForList(recordId);
@@ -3645,7 +3659,7 @@ app.post('/api/records/:id/payment-parts', authenticateToken, requirePermission(
     res.status(201).json(serializePaymentHistoryRecord(hydrated));
   } catch (error) {
     console.error('Append record payment part error:', error);
-    res.status(500).json({ error: 'Uplata nije sacuvana.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Uplata nije sacuvana.' });
   }
 });
 
@@ -4004,11 +4018,11 @@ function treatmentPlanItemsFromBody(items = []) {
   }));
 }
 
-app.get('/api/patients/:id/treatment-plans', authenticateToken, requirePermission('clinical:read'), async (req, res) => {
+app.get('/api/patients/:id/treatment-plans', authenticateToken, requirePermission('clinical:read'), asyncRoute(async (req, res) => {
   const patientId = positiveInteger(req.params.id);
   const plans = await clinicalRepo.treatmentPlansByPatient(patientId);
   res.json(await Promise.all(plans.map(serializeTreatmentPlan)));
-});
+}));
 
 app.post('/api/patients/:id/treatment-plans', authenticateToken, requirePermission('clinical:write'), async (req, res) => {
   try {
@@ -4043,7 +4057,7 @@ app.put('/api/treatment-plans/:id', authenticateToken, requirePermission('clinic
   }
 });
 
-app.post('/api/treatment-plans/:id/accept', authenticateToken, requirePermission('clinical:write'), async (req, res) => {
+app.post('/api/treatment-plans/:id/accept', authenticateToken, requirePermission('clinical:write'), asyncRoute(async (req, res) => {
   const planId = positiveInteger(req.params.id);
   const plan = await clinicalRepo.findTreatmentPlan(planId);
   if (!plan) return res.status(404).json({ error: 'Treatment plan not found' });
@@ -4053,15 +4067,15 @@ app.post('/api/treatment-plans/:id/accept', authenticateToken, requirePermission
   });
   await auditLog({ userId: req.user.id, action: 'treatment_plan_accepted', entityType: 'treatment_plan', entityId: planId, req });
   res.json(await serializeTreatmentPlan(updated));
-});
+}));
 
-app.delete('/api/treatment-plans/:id', authenticateToken, requirePermission('clinical:write'), async (req, res) => {
+app.delete('/api/treatment-plans/:id', authenticateToken, requirePermission('clinical:write'), asyncRoute(async (req, res) => {
   const planId = positiveInteger(req.params.id);
   if (!(await clinicalRepo.findTreatmentPlan(planId))) return res.status(404).json({ error: 'Treatment plan not found' });
   await clinicalRepo.deleteTreatmentPlan(planId);
   await auditLog({ userId: req.user.id, action: 'treatment_plan_deleted', entityType: 'treatment_plan', entityId: planId, req });
   res.json({ success: true });
-});
+}));
 
 function serializeClinicalChart(row) {
   return {
@@ -4158,24 +4172,26 @@ app.post('/api/patients/:id/tooth-states', authenticateToken, requirePermission(
   res.status(201).json(saved.map(serializeToothState));
 }));
 
-app.get('/api/patients/:id/clinical-chart', authenticateToken, requirePermission('clinical:read'), async (req, res) => {
+app.get('/api/patients/:id/clinical-chart', authenticateToken, requirePermission('clinical:read'), asyncRoute(async (req, res) => {
   const patientId = positiveInteger(req.params.id);
   if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
   const rows = await clinicalRepo.clinicalChartByPatient(patientId);
   res.json(rows.map(serializeClinicalChart));
-});
+}));
 
 app.post('/api/patients/:id/clinical-chart', authenticateToken, requirePermission('clinical:write'), async (req, res) => {
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
     if (!dental.isTooth(req.body.toothNumber || req.body.tooth_number)) return res.status(400).json({ error: 'Nevažeća FDI oznaka zuba.' });
-    const row = await clinicalRepo.createClinicalChart(clinicalChartPayloadFromBody(req.body, patientId, req.user.id));
+    const payload = clinicalChartPayloadFromBody(req.body, patientId, req.user.id);
+    await assertVisitBelongsToPatient({ visitRecordId: payload.visitRecordId, patientId });
+    const row = await clinicalRepo.createClinicalChart(payload);
     await auditLog({ userId: req.user.id, action: 'clinical_chart_created', entityType: 'patient', entityId: patientId, req });
     res.status(201).json(serializeClinicalChart(row));
   } catch (error) {
     console.error('Create clinical chart error:', error);
-    res.status(500).json({ error: 'Zubni status nije sačuvan.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Zubni status nije sačuvan.' });
   }
 });
 
@@ -4186,24 +4202,26 @@ app.put('/api/clinical-chart/:id', authenticateToken, requirePermission('clinica
     if (!existing) return res.status(404).json({ error: 'Zubni status entry not found' });
     const requestedTooth = req.body.toothNumber || req.body.tooth_number || existing.tooth_number;
     if (requestedTooth !== existing.tooth_number && !dental.isTooth(requestedTooth)) return res.status(400).json({ error: 'Nevažeća FDI oznaka zuba.' });
-    const row = await clinicalRepo.updateClinicalChart(chartId, clinicalChartPayloadFromBody(req.body, existing.patient_id, req.user.id, existing));
+    const payload = clinicalChartPayloadFromBody(req.body, existing.patient_id, req.user.id, existing);
+    await assertVisitBelongsToPatient({ visitRecordId: payload.visitRecordId, patientId: existing.patient_id });
+    const row = await clinicalRepo.updateClinicalChart(chartId, payload);
     await auditLog({ userId: req.user.id, action: 'clinical_chart_updated', entityType: 'clinical_chart', entityId: chartId, req });
     res.json(serializeClinicalChart(row));
   } catch (error) {
     console.error('Update clinical chart error:', error);
-    res.status(500).json({ error: 'Zubni status nije izmenjen.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Zubni status nije izmenjen.' });
   }
 });
 
-app.delete('/api/clinical-chart/:id', authenticateToken, requirePermission('clinical:write'), async (req, res) => {
+app.delete('/api/clinical-chart/:id', authenticateToken, requirePermission('clinical:write'), asyncRoute(async (req, res) => {
   const chartId = positiveInteger(req.params.id);
   if (!(await clinicalRepo.findClinicalChart(chartId))) return res.status(404).json({ error: 'Zubni status entry not found' });
   await clinicalRepo.deleteClinicalChart(chartId);
   await auditLog({ userId: req.user.id, action: 'clinical_chart_deleted', entityType: 'clinical_chart', entityId: chartId, req });
   res.json({ success: true });
-});
+}));
 
-app.get('/api/clinical-note-templates', authenticateToken, requirePermission('clinical:read'), async (_req, res) => {
+app.get('/api/clinical-note-templates', authenticateToken, requirePermission('clinical:read'), asyncRoute(async (_req, res) => {
   const rows = await clinicalRepo.clinicalNoteTemplates();
   res.json(rows.map(row => ({
     id: row.id,
@@ -4211,7 +4229,7 @@ app.get('/api/clinical-note-templates', authenticateToken, requirePermission('cl
     category: row.category,
     body: row.body
   })));
-});
+}));
 
 app.post('/api/director/clinical-note-templates', authenticateToken, requireDirector, async (req, res) => {
   try {
@@ -4228,19 +4246,19 @@ app.post('/api/director/clinical-note-templates', authenticateToken, requireDire
   }
 });
 
-app.get('/api/patients/:id/clinical-notes', authenticateToken, requirePermission('clinical:read'), async (req, res) => {
+app.get('/api/patients/:id/clinical-notes', authenticateToken, requirePermission('clinical:read'), asyncRoute(async (req, res) => {
   const patientId = positiveInteger(req.params.id);
   if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
   const rows = await clinicalRepo.clinicalNotesByPatient(patientId);
   res.json(rows.map(serializeClinicalNote));
-});
+}));
 
-app.get('/api/patients/:id/internal-comments', authenticateToken, requirePermission('patients:read'), async (req, res) => {
+app.get('/api/patients/:id/internal-comments', authenticateToken, requirePermission('patients:read'), asyncRoute(async (req, res) => {
   const patientId = positiveInteger(req.params.id);
   if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
   const rows = await clinicalRepo.internalCommentsByPatient(patientId);
   res.json(rows.map(serializeClinicalNote));
-});
+}));
 
 app.post('/api/patients/:id/internal-comments', authenticateToken, requirePermission('patients:write'), async (req, res) => {
   try {
@@ -4268,9 +4286,11 @@ app.post('/api/patients/:id/clinical-notes', authenticateToken, requirePermissio
   try {
     const patientId = positiveInteger(req.params.id);
     if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
+    const visitRecordId = positiveInteger(req.body.visitRecordId || req.body.visit_record_id);
+    await assertVisitBelongsToPatient({ visitRecordId, patientId });
     const row = await clinicalRepo.createClinicalNote({
       patientId,
-      visitRecordId: positiveInteger(req.body.visitRecordId || req.body.visit_record_id),
+      visitRecordId,
       templateId: positiveInteger(req.body.templateId || req.body.template_id),
       title: cleanText(req.body.title, { max: 160, required: true }),
       body: cleanText(req.body.body, { max: 8000, required: true }),
@@ -4282,7 +4302,7 @@ app.post('/api/patients/:id/clinical-notes', authenticateToken, requirePermissio
     res.status(201).json(serializeClinicalNote(row));
   } catch (error) {
     console.error('Create clinical note error:', error);
-    res.status(500).json({ error: 'Klinicka beleska nije sacuvana.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Klinicka beleska nije sacuvana.' });
   }
 });
 
@@ -4291,8 +4311,10 @@ app.put('/api/clinical-notes/:id', authenticateToken, requirePermission('clinica
     const noteId = positiveInteger(req.params.id);
     const current = await clinicalRepo.findClinicalNote(noteId);
     if (!current) return res.status(404).json({ error: 'Klinicka beleska nije pronadjena' });
+    const visitRecordId = positiveInteger(req.body.visitRecordId || req.body.visit_record_id) || current.visit_record_id;
+    await assertVisitBelongsToPatient({ visitRecordId, patientId: current.patient_id });
     const row = await clinicalRepo.updateClinicalNote(noteId, {
-      visitRecordId: positiveInteger(req.body.visitRecordId || req.body.visit_record_id) || current.visit_record_id,
+      visitRecordId,
       templateId: positiveInteger(req.body.templateId || req.body.template_id) || current.template_id,
       title: cleanText(req.body.title ?? current.title, { max: 160, required: true }),
       body: cleanText(req.body.body ?? current.body, { max: 8000, required: true }),
@@ -4303,7 +4325,7 @@ app.put('/api/clinical-notes/:id', authenticateToken, requirePermission('clinica
     res.json(serializeClinicalNote(row));
   } catch (error) {
     console.error('Update clinical note error:', error);
-    res.status(500).json({ error: 'Klinicka beleska nije sacuvana.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Klinicka beleska nije sacuvana.' });
   }
 });
 
@@ -4334,12 +4356,12 @@ app.post('/api/clinical-notes/:id/sign', authenticateToken, requirePermission('c
   }
 });
 
-app.get('/api/patients/:id/consents', authenticateToken, requirePermission('clinical:read'), async (req, res) => {
+app.get('/api/patients/:id/consents', authenticateToken, requirePermission('clinical:read'), asyncRoute(async (req, res) => {
   const patientId = positiveInteger(req.params.id);
   if (!patientId || !(await patientsRepo.findPatientById(patientId))) return res.status(404).json({ error: 'Patient not found' });
   const rows = await clinicalRepo.consentsByPatient(patientId);
   res.json(rows.map(serializeSaglasnost));
-});
+}));
 
 app.post('/api/patients/:id/consents', authenticateToken, requirePermission('clinical:write'), async (req, res) => {
   try {
@@ -4421,10 +4443,10 @@ async function serializePerioChart(chart) {
   };
 }
 
-app.get('/api/patients/:id/perio-charts', authenticateToken, requirePermission('clinical:read'), async (req, res) => {
+app.get('/api/patients/:id/perio-charts', authenticateToken, requirePermission('clinical:read'), asyncRoute(async (req, res) => {
   const charts = await clinicalRepo.perioChartsByPatient(positiveInteger(req.params.id));
   res.json(await Promise.all(charts.map(serializePerioChart)));
-});
+}));
 
 app.post('/api/patients/:id/perio-charts', authenticateToken, requirePermission('clinical:write'), async (req, res) => {
   try {
@@ -4453,13 +4475,13 @@ app.post('/api/patients/:id/perio-charts', authenticateToken, requirePermission(
   }
 });
 
-app.delete('/api/perio-charts/:id', authenticateToken, requirePermission('clinical:write'), async (req, res) => {
+app.delete('/api/perio-charts/:id', authenticateToken, requirePermission('clinical:write'), asyncRoute(async (req, res) => {
   const chartId = positiveInteger(req.params.id);
   if (!(await clinicalRepo.findPerioChart(chartId))) return res.status(404).json({ error: 'Perio chart not found' });
   await clinicalRepo.deletePerioChart(chartId);
   await auditLog({ userId: req.user.id, action: 'perio_chart_deleted', entityType: 'perio_chart', entityId: chartId, req });
   res.json({ success: true });
-});
+}));
 
 async function serializeInvoice(invoice) {
   const items = await billingRepo.invoiceItems(invoice.id);
@@ -4509,10 +4531,10 @@ function invoiceItemsFromBody(items = []) {
   }));
 }
 
-app.get('/api/patients/:id/invoices', authenticateToken, requirePermission('billing:read'), async (req, res) => {
+app.get('/api/patients/:id/invoices', authenticateToken, requirePermission('billing:read'), asyncRoute(async (req, res) => {
   const invoices = await billingRepo.listInvoicesByPatient(positiveInteger(req.params.id));
   res.json(await Promise.all(invoices.map(serializeInvoice)));
-});
+}));
 
 app.post('/api/patients/:id/invoices', authenticateToken, requirePermission('billing:write'), async (req, res) => {
   try {
@@ -4584,13 +4606,13 @@ app.post('/api/invoices/:id/payments', authenticateToken, requirePermission('bil
   }
 });
 
-app.get('/api/invoices/:id/pdf', authenticateToken, requirePermission('billing:read'), async (req, res) => {
+app.get('/api/invoices/:id/pdf', authenticateToken, requirePermission('billing:read'), asyncRoute(async (req, res) => {
   const invoice = await billingRepo.invoiceForPdf(positiveInteger(req.params.id));
   if (!invoice) return res.status(404).send('Invoice not found');
   const data = await serializeInvoice(invoice);
   const rows = data.items.map(item => `<tr><td>${escapeHtml(item.description)}</td><td>${escapeHtml(item.toothNumber || '-')}</td><td>${escapeHtml(item.quantity)}</td><td>${escapeHtml(item.unitPrice.toFixed(2))}</td><td>${escapeHtml(item.discount.toFixed(2))}</td></tr>`).join('');
   res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(data.invoiceNumber)}</title><style>body{font-family:Arial;padding:32px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ddd;padding:8px;text-align:left}</style></head><body><h1>Racun ${escapeHtml(data.invoiceNumber)}</h1><p>Pacijent: ${escapeHtml(invoice.first_name)} ${escapeHtml(invoice.last_name)}</p><p>Datum: ${escapeHtml(data.issueDate)}</p><table><thead><tr><th>Stavka</th><th>Zub</th><th>Kolicina</th><th>Cena</th><th>Popust</th></tr></thead><tbody>${rows}</tbody></table><h2>Ukupno: ${escapeHtml(data.total.toFixed(2))} ${escapeHtml(data.currency)}</h2><p>Placeno: ${escapeHtml(data.amountPaid.toFixed(2))} ${escapeHtml(data.currency)}</p><script>window.print()</script></body></html>`);
-});
+}));
 
 app.delete('/api/invoices/:id', authenticateToken, requirePermission('billing:write'), async (req, res) => {
   try {
@@ -4654,10 +4676,10 @@ async function serializeClaim(row) {
   };
 }
 
-app.get('/api/patients/:id/insurance-claims', authenticateToken, requirePermission('billing:read'), async (req, res) => {
+app.get('/api/patients/:id/insurance-claims', authenticateToken, requirePermission('billing:read'), asyncRoute(async (req, res) => {
   const rows = await billingRepo.listClaimsByPatient(positiveInteger(req.params.id));
   res.json(await Promise.all(rows.map(serializeClaim)));
-});
+}));
 
 app.post('/api/patients/:id/insurance-claims', authenticateToken, requirePermission('billing:write'), async (req, res) => {
   try {
@@ -4843,13 +4865,13 @@ app.get('/api/patients/:id/ledger', authenticateToken, requirePermission('billin
   }
 });
 
-app.delete('/api/insurance-claims/:id', authenticateToken, requirePermission('billing:write'), async (req, res) => {
+app.delete('/api/insurance-claims/:id', authenticateToken, requirePermission('billing:write'), asyncRoute(async (req, res) => {
   const claimId = positiveInteger(req.params.id);
   if (!(await billingRepo.findClaim(claimId))) return res.status(404).json({ error: 'Insurance claim not found' });
   await billingRepo.deleteClaim(claimId);
   await auditLog({ userId: req.user.id, action: 'insurance_claim_deleted', entityType: 'insurance_claim', entityId: claimId, req });
   res.json({ success: true });
-});
+}));
 
 // ============ BACKUP AND SECURITY ENDPOINTS ============
 
@@ -4862,9 +4884,9 @@ app.get('/api/director/backups/status', authenticateToken, requireDirector, asyn
   }
 });
 
-app.get('/api/director/backups', authenticateToken, requireDirector, async (_req, res) => {
+app.get('/api/director/backups', authenticateToken, requireDirector, asyncRoute(async (_req, res) => {
   res.json([]);
-});
+}));
 
 app.post('/api/director/backups', authenticateToken, requireDirector, async (req, res) => {
   try {
@@ -5807,12 +5829,12 @@ app.get('/api/director/exchange-rate', authenticateToken, requireDirector, async
   }
 });
 
-async function localExchangeRate(base, currency) {
+async function localExchangeRate(base, currency, currencyRepository = directorAdmin) {
   if (!currency) return null;
   if (currency === base) {
     return { base, currency, rate: 1, date: new Date().toISOString().slice(0, 10), source: 'local' };
   }
-  const row = await directorAdmin.activeCurrencyMetadata(currency);
+  const row = await currencyRepository.activeCurrencyMetadata(currency);
   const metadata = safeJsonParse(row?.metadata, null);
   const rate = Number(metadata?.exchangeRate || 0);
   if (metadata?.rateBase === base && rate > 0) {

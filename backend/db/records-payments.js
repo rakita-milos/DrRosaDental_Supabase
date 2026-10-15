@@ -12,7 +12,7 @@ function createRecordsPaymentsRepository({ pgPool }) {
   return createPostgresRecordsRepository(pgPool);
 }
 
-function recordsListSql({ search = '', limit = null, offset = 0 } = {}) {
+function recordsListSql({ search = '', patientId = null, limit = null, offset = 0 } = {}) {
   const params = [];
   let sql = `
     SELECT
@@ -38,17 +38,21 @@ function recordsListSql({ search = '', limit = null, offset = 0 } = {}) {
     LEFT JOIN payments pay ON vr.id = pay.visit_record_id
   `;
   const cleanedSearch = String(search || '').trim();
+  const conditions = [];
+  if (patientId) {
+    conditions.push('vr.patient_id = ?');
+    params.push(patientId);
+  }
   if (cleanedSearch) {
     params.push(`%${cleanedSearch}%`, `%${cleanedSearch}%`, `%${cleanedSearch}%`, `%${cleanedSearch}%`);
-    sql += `
-      WHERE (
+    conditions.push(`(
         p.first_name ILIKE ?
         OR p.last_name ILIKE ?
         OR d.name ILIKE ?
         OR vr.procedure ILIKE ?
-      )
-    `;
+      )`);
   }
+  if (conditions.length) sql += ` WHERE ${conditions.join(' AND ')}`;
   sql += ' ORDER BY vr.visit_date DESC, vr.id DESC';
   if (Number.isInteger(limit) && limit > 0) {
     params.push(limit, Math.max(0, Number(offset) || 0));
@@ -247,8 +251,15 @@ function patientSummariesSql(options = {}) {
   };
 }
 
-function createPostgresRecordsRepository(pool) {
+function createPostgresRecordsRepository(pool, inTransaction = false) {
+  const transaction = callback => inTransaction ? callback(pool) : withTransaction(pool, callback);
   return {
+    withRecordForUpdate(id, callback) {
+      return transaction(async client => {
+        const current = await queryOne(client, 'SELECT * FROM visit_records WHERE id = ? FOR UPDATE', [id]);
+        return callback({ current, records: createPostgresRecordsRepository(client, true), client });
+      });
+    },
     listRecords(options = {}) {
       const { sql, params } = recordsListSql(options);
       return queryMany(pool, sql, params);
@@ -316,7 +327,7 @@ function createPostgresRecordsRepository(pool) {
     },
 
     createRecord({ record, paymentSummary, paymentParts, treatments }) {
-      return withTransaction(pool, async client => {
+      return transaction(async client => {
         const visitId = await insertReturningId(client, `
           INSERT INTO visit_records (patient_id, doctor_id, visit_date, procedure, status, shift, notes)
           VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -343,9 +354,11 @@ function createPostgresRecordsRepository(pool) {
       `, [procedure, status, shift, notes, id]);
     },
 
-    async replaceTreatments(visitRecordId, treatments) {
-      await execute(pool, 'DELETE FROM treatments WHERE visit_record_id = ?', [visitRecordId]);
-      await insertTreatmentsPostgres(pool, visitRecordId, treatments);
+    replaceTreatments(visitRecordId, treatments) {
+      return transaction(async client => {
+        await execute(client, 'DELETE FROM treatments WHERE visit_record_id = ?', [visitRecordId]);
+        await insertTreatmentsPostgres(client, visitRecordId, treatments);
+      });
     },
 
     async upsertPayment({ visitRecordId, patientId, payment, paymentSummary, paymentParts, currency }) {
@@ -366,7 +379,7 @@ function createPostgresRecordsRepository(pool) {
     },
 
     appendPaymentPart({ payment, visitRecordId, patientId, paymentPart, paymentSummary, currency }) {
-      return withTransaction(pool, async client => {
+      return transaction(async client => {
         let paymentId = payment?.id;
         if (!paymentId) {
           paymentId = await insertReturningId(client, `

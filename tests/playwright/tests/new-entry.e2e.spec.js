@@ -5,6 +5,39 @@ const { createPatient } = require("../utils/api");
 
 const TEST_PREFIX = "E2ENewEntry";
 
+test('new entry: same-name autocomplete saves the selected patient id', async ({ page, request, baseURL }) => {
+  const stamp = Date.now();
+  const firstName = `${TEST_PREFIX}${stamp}`;
+  const first = await createPatient(request, baseURL, {
+    firstName, lastName: 'SameName', birthDate: '1980-01-01', phone: '0601234001', email: `first.${stamp}@example.com`
+  });
+  const second = await createPatient(request, baseURL, {
+    firstName, lastName: 'SameName', birthDate: '1990-01-01', phone: '0601234002', email: `second.${stamp}@example.com`
+  });
+  await authenticate(page, 'staff');
+  await page.goto('/src/pages/new-entry.html');
+  await expect.poll(() => page.locator('#doctor option').count()).toBeGreaterThan(0);
+  await page.locator('#patient-name').fill(`${firstName} SameName`);
+  const options = page.locator('.patient-autocomplete-option');
+  await expect(options).toHaveCount(2);
+  await page.locator(`.patient-autocomplete-option[data-patient-id="${second.id}"]`).click();
+  const note = `${TEST_PREFIX} selected identity ${stamp}`;
+  await page.locator('#note').fill(note);
+  await saveEntryButton(page).click();
+  await expect(page).toHaveURL(new RegExp(`patient-dashboard\\.html\\?patientId=${second.id}`));
+  const response = await request.get(`${baseURL}/api/records?patientId=${second.id}`, {
+    headers: { Authorization: `Bearer ${tokenFor('staff')}` }
+  });
+  expect(response.ok()).toBeTruthy();
+  const records = await response.json();
+  expect(records).toHaveLength(1);
+  expect(records[0]).toMatchObject({ patient_id: second.id, notes: note });
+  const untouched = await request.get(`${baseURL}/api/records?patientId=${first.id}`, {
+    headers: { Authorization: `Bearer ${tokenFor('staff')}` }
+  });
+  expect(await untouched.json()).toHaveLength(0);
+});
+
 test.beforeEach(async ({ page, request, baseURL }) => {
   await cleanupRegressionData(request, baseURL, [TEST_PREFIX]);
   await page.goto("/src/pages/login.html");

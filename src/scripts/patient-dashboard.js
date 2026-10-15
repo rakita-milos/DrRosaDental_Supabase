@@ -37,8 +37,7 @@ function patientFullName(patient) {
 }
 
 function isDebt(record) {
-  const payment = String(record.paymentStatus || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  return Number(record.amountDue || 0) > 0 && ["dugovanje", "delimično"].includes(payment);
+  return Number(record.amountDue || 0) > 0;
 }
 
 function formatMoney(amount, currency = "RSD") {
@@ -1999,7 +1998,7 @@ async function initializeClinicalSection(patientDetails, patientRecords, appoint
   try {
     if (queryPatientId) {
       [records, patientDetails, appointments] = await Promise.all([
-        window.DrRosaApi.getRecords(),
+        window.DrRosaApi.getRecords({ patientId: queryPatientId }),
         window.DrRosaApi.getPatient(queryPatientId),
         window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : []
       ]);

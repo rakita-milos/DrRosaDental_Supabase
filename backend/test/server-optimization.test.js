@@ -112,7 +112,7 @@ test('record debt payment endpoint appends one payment part without replacing hi
   assert.match(appendPaymentRoute, /Poseta nema dug za dodatnu uplatu/);
   assert.match(appendPaymentRoute, /existingParts/);
   assert.match(appendPaymentRoute, /const allParts = \[\.\.\.existingParts, paymentPart\]/);
-  assert.match(appendPaymentRoute, /recordsPaymentsRepo\.appendPaymentPart/);
+  assert.match(appendPaymentRoute, /records\.appendPaymentPart/);
   assert.doesNotMatch(appendPaymentRoute, /recordsPaymentsRepo\.upsertPayment/);
 });
 
@@ -148,7 +148,7 @@ test('patients and records list endpoints support bounded pagination search para
   assert.match(serverSource, /patientsRepo\.listPatients\(paginationFromQuery\(req\.query/);
   assert.match(serverSource, /recordsPaymentsRepo\.listRecords\(paginationFromQuery\(req\.query/);
   assert.match(patientsRepoSource, /listPatients\(\{ search = '', limit = null, offset = 0 \} = \{\}\)/);
-  assert.match(recordsRepoSource, /function recordsListSql\(\{ search = '', limit = null, offset = 0 \} = \{\}\)/);
+  assert.match(recordsRepoSource, /function recordsListSql\(\{ search = '', patientId = null, limit = null, offset = 0 \} = \{\}\)/);
   assert.match(patientsRepoSource, /LIMIT \? OFFSET \?/);
   assert.match(recordsRepoSource, /LIMIT \? OFFSET \?/);
 });
