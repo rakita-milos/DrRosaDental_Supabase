@@ -122,9 +122,7 @@ function activeUpcomingAppointments(appointments = []) {
   });
 }
 
-function renderDirectorKpis({ records = [], patients = [], doctors = [], appointments = [] } = {}) {
-  const revenue = records.reduce((sum, record) => sum + Number(record.amountPaid || 0), 0);
-  const debt = records.reduce((sum, record) => sum + Number(record.amountDue || 0), 0);
+function renderDirectorKpis({ records = [], patients = [], doctors = [], appointments = [], financialReport = null } = {}) {
   const debtorPatients = new Set(records.filter(isDebt).map(record => record.patientId || record.patient).filter(Boolean));
   const upcoming = activeUpcomingAppointments(appointments);
   const weekEnd = Date.now() + 7 * 24 * 60 * 60 * 1000;
@@ -135,8 +133,8 @@ function renderDirectorKpis({ records = [], patients = [], doctors = [], appoint
     : Array.from(new Set(records.map(record => record.patientId).filter(Boolean).map(String)));
   const noFollowup = patientIds.filter(id => !patientIdsWithUpcoming.has(id)).length;
   const values = {
-    "director-kpi-revenue": window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(revenue, "RSD") : `${revenue.toFixed(2)} RSD`,
-    "director-kpi-debt": window.DrRosaCurrencyUtils ? window.DrRosaCurrencyUtils.formatMoney(debt, "RSD") : `${debt.toFixed(2)} RSD`,
+    "director-kpi-revenue": financialReport ? formatCurrencyAmounts(financialReport.revenueByCurrency) : "Nedostupno",
+    "director-kpi-debt": financialReport ? formatCurrencyAmounts(financialReport.debtByCurrency) : "Nedostupno",
     "director-kpi-patients": String(patients.length || new Set(records.map(record => record.patient).filter(Boolean)).size),
     "director-kpi-doctors": String(doctors.length || new Set(records.map(record => record.doctor).filter(Boolean)).size),
     "director-kpi-no-followup": String(noFollowup),
@@ -147,6 +145,11 @@ function renderDirectorKpis({ records = [], patients = [], doctors = [], appoint
     const element = document.getElementById(id);
     if (element) element.textContent = value;
   });
+}
+
+function renderFinancialKpis(report) {
+  document.getElementById('director-kpi-revenue').textContent = formatCurrencyAmounts(report.revenueByCurrency);
+  document.getElementById('director-kpi-debt').textContent = formatCurrencyAmounts(report.debtByCurrency);
 }
 
 function showReports() {
@@ -186,7 +189,7 @@ function initializeReports() {
     { id: "financial-report", tone: "blue", icon: "RSD", title: "Finansijski Izveštaj", description: "Prihodi, naplata i dugovanja" },
     { id: "patients-report", tone: "green", icon: "PAC", title: "Pacijenti", description: "Rast, retencija i statusi pacijenata" },
     { id: "doctors-report", tone: "teal", icon: "DR", title: "Doktori", description: "Produktivnost i opterecenje tima" },
-    { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosečna naplata" },
+    { id: "procedures-report", tone: "orange", icon: "ORD", title: "Postupci", description: "Usluge, ucestalost i prosečna cena posete" },
     { id: "excel-report", tone: "blue", icon: "TAB", title: "Izveštaji po tabovima", description: "PAZARI, hirurgija, protetika, ortodoncija, troškovi i ukupno" },
     { id: "daily-cash-report", tone: "green", icon: "KAS", title: "Dnevna kasa", description: "Fizicki novac, izlazi i ostatak po danu" },
     { id: "public-booking-report", tone: "green", icon: "ONL", title: "Onlajn zakazivanje", description: "Uključi ili isključi javnu formu za termine" },
@@ -283,60 +286,34 @@ async function getReport(type) {
 }
 
 async function loadFinancialReport() {
-  const apiReport = await getReport("financial");
-  if (apiReport && cachedRecords.length === 0) {
-    document.getElementById("total-revenue").textContent = `${Number(apiReport.totalRevenue || 0).toFixed(2)} RSD`;
-    document.getElementById("total-debt").textContent = `${Number(apiReport.totalDebt || 0).toFixed(2)} RSD`;
-    document.getElementById("paid-percentage").textContent = `${apiReport.paymentPercentage || 0}%`;
+  const table = document.getElementById("payment-table");
+  const exportButtons = document.querySelectorAll("#financial-report .export-report-excel, #financial-report .export-report-pdf");
+  exportButtons.forEach(button => { button.disabled = true; });
+  currentReportExport = { title: "Finansijski izve\u0161taj", headers: [], rows: [] };
+  table.innerHTML = '<tr><td colspan="6" class="empty-row">U\u010ditavanje...</td></tr>';
+  const report = await getReport("financial");
+  if (!report || !Array.isArray(report.patients)) {
+    ['director-kpi-revenue', 'director-kpi-debt'].forEach(id => { document.getElementById(id).textContent = 'Nedostupno'; });
+    ["total-revenue", "total-debt", "paid-percentage"].forEach(id => { document.getElementById(id).textContent = "Nedostupno"; });
+    table.innerHTML = '<tr><td colspan="6" class="empty-row" role="alert">Finansijski izve\u0161taj nije u\u010ditan. Proverite vezu i kurseve valuta. <button type="button" class="secondary-btn" data-retry-financial-report>Poku\u0161aj ponovo</button></td></tr>';
+    table.querySelector('[data-retry-financial-report]').onclick = loadFinancialReport;
+    return;
   }
-
-  const patientPayments = {};
-  cachedRecords.forEach(record => {
-    if (!patientPayments[record.patient]) {
-      patientPayments[record.patient] = { visits: 0, amount: {}, paid: {}, debt: {}, amountTotal: 0, paidTotal: 0 };
-    }
-    const amount = Number(record.amountDue || 0);
-    const price = recordTotal(record);
-    const currency = record.currency || "RSD";
-    patientPayments[record.patient].visits += 1;
-    patientPayments[record.patient].amountTotal += price;
-    addCurrencyAmount(patientPayments[record.patient].amount, currency, price);
-    if (isDebt(record)) {
-      addCurrencyAmount(patientPayments[record.patient].debt, currency, amount);
-    } else {
-      patientPayments[record.patient].paidTotal += price;
-      addCurrencyAmount(patientPayments[record.patient].paid, currency, price);
-    }
-  });
-
-  const totalRevenueByCurrency = {};
-  const totalDebtByCurrency = {};
-  let totalRevenueComparable = 0;
-  let totalPaidComparable = 0;
-  Object.values(patientPayments).forEach(data => {
-    Object.entries(data.amount).forEach(([currency, amount]) => addCurrencyAmount(totalRevenueByCurrency, currency, amount));
-    Object.entries(data.debt).forEach(([currency, amount]) => addCurrencyAmount(totalDebtByCurrency, currency, amount));
-    totalRevenueComparable += data.amountTotal;
-    totalPaidComparable += data.paidTotal;
-  });
-  document.getElementById("total-revenue").textContent = formatCurrencyAmounts(totalRevenueByCurrency);
-  document.getElementById("total-debt").textContent = formatCurrencyAmounts(totalDebtByCurrency);
-  document.getElementById("paid-percentage").textContent = `${totalRevenueComparable ? ((totalPaidComparable / totalRevenueComparable) * 100).toFixed(1) : 0}%`;
-
-  const paymentRows = Object.entries(patientPayments);
-  document.getElementById("payment-table").innerHTML = paymentRows.length ? paymentRows.map(([patient, data]) => {
-    const percentage = data.amountTotal > 0 ? ((data.paidTotal / data.amountTotal) * 100).toFixed(0) : 0;
-    return `<tr><td>${escapeHtml(patient)}</td><td>${data.visits}</td><td>${formatCurrencyAmounts(data.amount)}</td><td>${formatCurrencyAmounts(data.paid)}</td><td>${formatCurrencyAmounts(data.debt)}</td><td>${percentage}%</td></tr>`;
-  }).join("") : `<tr><td colspan="6" class="empty-row">Nema podataka za prikaz.</td></tr>`;
-
+  document.getElementById("total-revenue").textContent = formatCurrencyAmounts(report.revenueByCurrency);
+  document.getElementById("total-debt").textContent = formatCurrencyAmounts(report.debtByCurrency);
+  document.getElementById("paid-percentage").textContent = report.paymentPercentage + "%";
+  renderFinancialKpis(report);
+  const rows = report.patients;
+  table.innerHTML = rows.length ? rows.map(row =>
+    `<tr data-patient-id="${escapeAttribute(row.patientId)}"><td>${escapeHtml(row.patient)}<small> Karton #${escapeHtml(row.patientId)}</small></td><td>${row.visits}</td><td>${escapeHtml(formatCurrencyAmounts(row.amount))}</td><td>${escapeHtml(formatCurrencyAmounts(row.paid))}</td><td>${escapeHtml(formatCurrencyAmounts(row.debt))}</td><td>${row.percentage}%</td></tr>`
+  ).join("") : '<tr><td colspan="6" class="empty-row">Nema podataka za prikaz.</td></tr>';
   currentReportExport = {
-    title: "Finansijski izveštaj",
-    headers: ["Pacijent", "Broj pregleda", "Ukupan iznos", "Plaćeno", "Dugovanje", "Procenat"],
-    rows: paymentRows.length ? paymentRows.map(([patient, data]) => {
-      const percentage = data.amountTotal > 0 ? ((data.paidTotal / data.amountTotal) * 100).toFixed(0) : 0;
-      return [patient, data.visits, formatCurrencyAmounts(data.amount), formatCurrencyAmounts(data.paid), formatCurrencyAmounts(data.debt), `${percentage}%`];
-    }) : [["Nema podataka", "-", "-", "-", "-", "-"]]
+    title: "Finansijski izve\u0161taj",
+    headers: ["Pacijent", "Broj pregleda", "Ukupan iznos", "Pla\u0107eno", "Dugovanje", "Procenat"],
+    rows: rows.length ? rows.map(row => [row.patient + " (#" + row.patientId + ")", row.visits, formatCurrencyAmounts(row.amount), formatCurrencyAmounts(row.paid), formatCurrencyAmounts(row.debt), row.percentage + "%"])
+      : [["Nema podataka", "-", "-", "-", "-", "-"]]
   };
+  exportButtons.forEach(button => { button.disabled = false; });
 }
 
 async function loadPatientsReport() {
@@ -772,23 +749,14 @@ function initializeDoctorAdmin() {
 
 async function loadProceduresReport() {
   const apiReport = await getReport("procedures");
-  const rows = apiReport || Object.entries(cachedRecords.reduce((acc, record) => {
-    recordTreatmentEntries(record).forEach(entry => {
-      const procedure = entry.type || record.procedure || "Ostalo";
-      const activity = procedureCatalog.findActivityForProcedure(procedure) || "Ostalo";
-      const key = `${activity}|||${procedure}`;
-      if (!acc[key]) acc[key] = { activity, procedure, count: 0, totalAmount: 0 };
-      acc[key].count += 1;
-      acc[key].totalAmount += Number(entry.amount || record.amountDue || 0);
-    });
-    return acc;
-  }, {})).map(([, data]) => ({
-    activity: data.activity,
-    procedure: data.procedure,
-    count: data.count,
-    percentage: cachedRecords.length ? (data.count / cachedRecords.length) * 100 : 0,
-    avgCost: data.count ? data.totalAmount / data.count : 0
-  })).sort((a, b) => a.activity.localeCompare(b.activity) || a.procedure.localeCompare(b.procedure));
+  const exportButtons = document.querySelectorAll("#procedures-report .export-report-excel, #procedures-report .export-report-pdf");
+  exportButtons.forEach(button => { button.disabled = !apiReport; });
+  if (!apiReport) {
+    currentReportExport = { title: "Postupci", headers: [], rows: [] };
+    document.getElementById("procedures-table").innerHTML = '<tr><td colspan="5" class="empty-row" role="alert">Izve\u0161taj nije u\u010ditan. Proverite vezu i kurseve valuta.</td></tr>';
+    return;
+  }
+  const rows = apiReport;
 
   document.getElementById("procedures-table").innerHTML = rows.length ? rows.map(row => `
     <tr><td>${escapeHtml(row.procedure)}</td><td>${escapeHtml(row.activity || procedureCatalog.findActivityForProcedure(row.procedure) || "-")}</td><td>${row.count}</td><td>${Number(row.percentage || 0).toFixed(1)}%</td><td>${Number(row.avgCost || 0).toFixed(2)} RSD</td></tr>
@@ -796,7 +764,7 @@ async function loadProceduresReport() {
 
   currentReportExport = {
     title: "Izveštaj o postupcima",
-    headers: ["Postupak", "Delatnost", "Broj izvrsenih", "Procenat", "Prosečna naplata"],
+    headers: ["Postupak", "Delatnost", "Broj izvrsenih", "Procenat", "Prosečna cena posete"],
     rows: rows.length ? rows.map(row => [
       row.procedure,
       row.activity || procedureCatalog.findActivityForProcedure(row.procedure) || "-",
@@ -2433,14 +2401,15 @@ function initializeDailyCashReport() {
   initializeGoogleCalendarSettings();
   initializeBackupSecurity();
   try {
-    const [records, patients, doctors, appointments] = await Promise.all([
+    const [records, patients, doctors, appointments, financialReport] = await Promise.all([
       window.DrRosaApi.getRecords(),
       window.DrRosaApi.getPatients ? window.DrRosaApi.getPatients().catch(() => []) : [],
       window.DrRosaApi.getDirectorDoctors ? window.DrRosaApi.getDirectorDoctors().catch(() => []) : [],
-      window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : []
+      window.DrRosaApi.getAppointments ? window.DrRosaApi.getAppointments().catch(() => []) : [],
+      getReport("financial")
     ]);
     cachedRecords = records;
-    renderDirectorKpis({ records, patients, doctors, appointments });
+    renderDirectorKpis({ records, patients, doctors, appointments, financialReport });
   } catch (error) {
     console.error("Director records load error:", error);
     cachedRecords = [];

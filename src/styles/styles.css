@@ -3928,6 +3928,14 @@ tbody tr:hover {
   margin-top: 14px;
 }
 
+#financial-report .financial-summary {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}
+
+#financial-report .financial-summary .stat-number {
+  overflow-wrap: anywhere;
+}
+
 td {
   color: #232f3e;
 }

@@ -23,6 +23,7 @@ const { createPatientDocumentsRepository } = require('./db/patient-documents');
 const { createRecordsPaymentsRepository } = require('./db/records-payments');
 const { createCalendarRepository } = require('./db/calendar');
 const { createDirectorReportsRepository } = require('./db/director-reports');
+const { buildFinancialReport, buildProceduresReport } = require('./services/financial-report-service');
 const { createDirectorAdminRepository } = require('./db/director-admin');
 const { createClinicalRepository } = require('./db/clinical');
 const { createBillingRepository } = require('./db/billing');
@@ -40,6 +41,7 @@ const {
 const { createGoogleCalendarSyncService } = require('./services/google-calendar-sync-service');
 const { createDocumentStorage, normalizeDriver } = require('./services/document-storage-service');
 const { clinicDateFromInstant } = require('./utils/clinic-time');
+const { DEFAULT_RSD_RATES } = require('./utils/currency-rates');
 const {
   validateBody,
   loginSchema,
@@ -1211,7 +1213,7 @@ async function exchangeRateToRsd(currency, currencyRepository = directorAdmin) {
   if (local?.rate > 0) return 1 / Number(local.rate);
   const direct = await localExchangeRate(normalized, 'RSD', currencyRepository);
   if (direct?.rate > 0) return Number(direct.rate);
-  return normalized === 'USD' ? 108 : 117;
+  return DEFAULT_RSD_RATES[normalized] || DEFAULT_RSD_RATES.EUR;
 }
 
 async function normalizePaymentPart(part, currencyRepository = directorAdmin) {
@@ -5524,21 +5526,10 @@ app.post('/api/director/google-calendar/test-sync', authenticateToken, requireDi
 app.get('/api/director/reports/financial', authenticateToken, requireDirector, async (_req, res) => {
   try {
     const data = await directorReports.financialReport();
-    res.json({
-      totalRevenue: Number(data.total_revenue || 0),
-      totalDebt: Number(data.total_debt || 0),
-      totalPatients: Number(data.total_patients || 0),
-      totalVisits: Number(data.total_visits || 0),
-      paymentPercentage: Number(data.payment_percentage || 0).toFixed(1),
-      details: {
-        revenue: Number(data.total_revenue || 0).toFixed(2),
-        debt: Number(data.total_debt || 0).toFixed(2),
-        paidPercentage: Number(data.payment_percentage || 0).toFixed(1)
-      }
-    });
+    res.json(buildFinancialReport(data));
   } catch (error) {
     console.error('Financial report error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Server error', ...(error.code && error.status ? { code: error.code } : {}) });
   }
 });
 
@@ -5573,16 +5564,10 @@ app.get('/api/director/reports/doctors', authenticateToken, requireDirector, asy
 
 app.get('/api/director/reports/procedures', authenticateToken, requireDirector, async (_req, res) => {
   try {
-    const { totalVisits, rows } = await directorReports.proceduresReport();
-    res.json(rows.map(row => ({
-      procedure: row.procedure,
-      count: Number(row.count || 0),
-      percentage: totalVisits ? Number(((row.count / totalVisits) * 100).toFixed(1)) : 0,
-      avgCost: Number(row.avg_cost || 0)
-    })));
+    res.json(buildProceduresReport(await directorReports.proceduresReport()));
   } catch (error) {
     console.error('Procedures report error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Server error', ...(error.code && error.status ? { code: error.code } : {}) });
   }
 });
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Direktor panel | Dr Rosa</title>
-  <link rel="stylesheet" href="../styles/styles.css?v=session-refactor-20261005" />
+  <link rel="stylesheet" href="../styles/styles.css?v=financial-reports-20261016" />
 </head>
 <body>
   <div class="app-shell">
@@ -83,7 +83,7 @@
         </article>
         <article class="stat-card gradient-orange" data-report-id="procedures-report" style="cursor:pointer;">
           <h3>Postupci</h3>
-          <p>Raspodela usluga i prosečna naplata.</p>
+          <p>Raspodela usluga i prosečna cena posete.</p>
         </article>
       </section>
 
@@ -96,21 +96,22 @@
           </div>
         </div>
 
-        <div class="cards-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+        <div class="cards-grid financial-summary">
           <article class="stat-card gradient-blue">
-            <h3>Ukupan Prihod</h3>
-            <p class="stat-number" id="total-revenue">0.00 €</p>
+            <h3>Primljene uplate</h3>
+            <p class="stat-number" id="total-revenue">—</p>
           </article>
           <article class="stat-card gradient-green">
             <h3>Ukupno Dugovanja</h3>
-            <p class="stat-number" id="total-debt">0.00 €</p>
+            <p class="stat-number" id="total-debt">—</p>
           </article>
           <article class="stat-card gradient-orange">
-            <h3>Naplaćeno</h3>
+            <h3>Naplaćeno od cene poseta</h3>
             <p class="stat-number" id="paid-percentage">0%</p>
           </article>
         </div>
 
+        <p id="financial-valuation-note">Prihod obuhvata uplate za posete. Uplate su odvojene po valuti plaćanja, a tabela po valuti posete. Procenat naplate i dug preračunavaju se po važećim kursevima; za nepodešene EUR/USD koriste se podrazumevane vrednosti ordinacije. Starije uplate bez sačuvanog kursa koriste važeći kurs.</p>
         <div class="list-section">
           <div class="section-header">
             <div>
@@ -309,7 +310,7 @@
                 <th>Delatnost</th>
                 <th>Broj Izvršenih</th>
                 <th>Procenat</th>
-                <th>Prosečna Naplata</th>
+                <th>Prosečna cena posete</th>
               </tr>
             </thead>
             <tbody id="procedures-table"></tbody>
@@ -890,6 +891,6 @@
   <script src="../scripts/currency-utils.js"></script>
   <script src="../scripts/export-utils.js"></script>
   <script src="../scripts/procedure-catalog.js"></script>
-  <script src="../scripts/director-reports.js?v=session-login-refactor-20261012"></script>
+  <script src="../scripts/director-reports.js?v=financial-reports-20261015"></script>
 </body>
 </html>

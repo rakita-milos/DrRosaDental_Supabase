@@ -57,15 +57,17 @@ jobs:
         working-directory: ./backend
         run: |
           npm audit --audit-level=moderate
-      - name: Run backend tests
-        working-directory: ./backend
-        run: |
-          npm test
       - name: Apply isolated test database migrations and seed data
         working-directory: ./backend
         run: |
           npm run db:migrate:local
           npm run seed:runtime
+      - name: Run backend tests including PostgreSQL and HTTP integration
+        working-directory: ./backend
+        env:
+          SESSION_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          npm test
       - name: Install Playwright dependencies
         working-directory: ./tests/playwright
         run: |

@@ -22,6 +22,36 @@ function assertLegalTable(table) {
   }
 }
 
+// One statement gives balances, receipts and currency metadata from the same
+// PostgreSQL snapshot. Aggregate parts before joining so split payments do not
+// multiply visit counts or outstanding balances.
+function readFinancialSnapshot(pool) {
+  return queryOne(pool, `
+    WITH receipt_parts AS (
+      SELECT payment_id, jsonb_agg(jsonb_build_object(
+        'amount', amount, 'currency', currency, 'amount_rsd', amount_rsd,
+        'exchange_rate_to_rsd', exchange_rate_to_rsd
+      ) ORDER BY payment_date, id) AS parts
+      FROM payment_parts GROUP BY payment_id
+    ), report_records AS (
+      SELECT vr.id AS visit_id, p.id AS patient_id,
+        p.first_name || ' ' || p.last_name AS patient_name, vr.procedure,
+        COALESCE(pay.amount, 0) AS amount_due,
+        COALESCE(pay.amount_paid, 0) AS amount_paid,
+        COALESCE(pay.currency, 'RSD') AS currency,
+        COALESCE(rp.parts, '[]'::jsonb) AS payment_parts
+      FROM visit_records vr
+      JOIN patients p ON p.id = vr.patient_id
+      LEFT JOIN payments pay ON pay.visit_record_id = vr.id
+      LEFT JOIN receipt_parts rp ON rp.payment_id = pay.id
+    )
+    SELECT (SELECT COUNT(*)::int FROM patients) AS total_patients,
+      COALESCE((SELECT jsonb_agg(r ORDER BY visit_id) FROM report_records r), '[]'::jsonb) AS records,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('value', value, 'metadata', metadata) ORDER BY id)
+        FROM codebook_items WHERE type = 'currency' AND is_active = true), '[]'::jsonb) AS currencies
+  `);
+}
+
 function createPostgresDirectorReportsRepository(pool) {
   return {
     legalExportRows(table, limit) {
@@ -41,15 +71,7 @@ function createPostgresDirectorReportsRepository(pool) {
     },
 
     financialReport() {
-      return queryOne(pool, `
-        SELECT
-          (SELECT COUNT(*)::int FROM patients) as total_patients,
-          COALESCE(SUM(CASE WHEN payment_status IN ('Plaćeno', 'Plaćeno') THEN amount ELSE 0 END), 0) as total_revenue,
-          COALESCE(SUM(CASE WHEN payment_status IN ('Dugovanje', 'Delimično', 'Delimično') THEN amount ELSE 0 END), 0) as total_debt,
-          (SELECT COUNT(*)::int FROM visit_records) as total_visits,
-          COALESCE(AVG(CASE WHEN payment_status IN ('Plaćeno', 'Plaćeno') THEN 1.0 ELSE 0.0 END) * 100, 0) as payment_percentage
-        FROM payments
-      `);
+      return readFinancialSnapshot(pool);
     },
 
     patientsReport() {
@@ -79,19 +101,8 @@ function createPostgresDirectorReportsRepository(pool) {
       return { totalVisits: Number(total?.count || 0), rows };
     },
 
-    async proceduresReport() {
-      const total = await queryOne(pool, 'SELECT COUNT(*)::int as count FROM visit_records');
-      const rows = await queryMany(pool, `
-        SELECT
-          vr.procedure,
-          COUNT(*)::int as count,
-          AVG(COALESCE(pay.amount, 0)) as avg_cost
-        FROM visit_records vr
-        LEFT JOIN payments pay ON vr.id = pay.visit_record_id
-        GROUP BY vr.procedure
-        ORDER BY count DESC
-      `);
-      return { totalVisits: Number(total?.count || 0), rows };
+    proceduresReport() {
+      return readFinancialSnapshot(pool);
     },
 
     doctors({ activeOnly = true } = {}) {
