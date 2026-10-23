@@ -27,6 +27,7 @@ const { buildFinancialReport, buildProceduresReport } = require('./services/fina
 const { createDirectorAdminRepository } = require('./db/director-admin');
 const { createClinicalRepository } = require('./db/clinical');
 const { createBillingRepository } = require('./db/billing');
+const { createFinancialPaymentService } = require('./services/financial-payment-service');
 const { createRuntimeSettingsRepository } = require('./db/runtime-settings');
 const { createStartupSeedRepository } = require('./db/startup-seed');
 const { createPool } = require('./db/postgres');
@@ -51,6 +52,8 @@ const {
   patientDocumentSchema,
   recordCreateSchema,
   paymentPartAppendSchema,
+  invoicePaymentSchema,
+  insuranceEraSchema,
   publicBookingSchema,
   appointmentWriteSchema,
   appointmentStatusSchema,
@@ -163,6 +166,11 @@ const clinicalRepo = createClinicalRepository({ pgPool });
 const billingRepo = createBillingRepository({ pgPool });
 const runtimeSettings = createRuntimeSettingsRepository({ pgPool });
 const startupSeed = createStartupSeedRepository({ pgPool });
+const financialPayments = createFinancialPaymentService({
+  pgPool, cleanText, todayIsoDate, money, roundMoney, normalizeCurrency,
+  normalizePaymentPart, calculatePaymentSummary, hydrateVisitRecords,
+  serializePaymentHistoryRecord, serializeInvoice, serializeClaim
+});
 const appointmentService = createAppointmentService({
   calendarRepo,
   procedureByInput,
@@ -3287,11 +3295,11 @@ app.post('/api/documents/:id/imaging/analyze', authenticateToken, requirePermiss
 
 // ============ VISIT RECORDS ENDPOINTS ============
 
-async function hydrateVisitRecords(records) {
+async function hydrateVisitRecords(records, repository = recordsPaymentsRepo) {
   const recordIds = records.map(record => Number(record.id)).filter(Boolean);
   const [allTreatmentRows, allPaymentRows] = await Promise.all([
-    recordsPaymentsRepo.treatmentsForRecords(recordIds),
-    recordsPaymentsRepo.paymentPartsForRecords(recordIds)
+    repository.treatmentsForRecords(recordIds),
+    repository.paymentPartsForRecords(recordIds)
   ]);
   const treatmentsByRecord = new Map();
   const paymentsByRecord = new Map();
@@ -3615,50 +3623,8 @@ app.put('/api/records/:id', authenticateToken, requirePermission('records:write'
 app.post('/api/records/:id/payment-parts', authenticateToken, requirePermission('records:write'), validateBody(paymentPartAppendSchema), async (req, res) => {
   try {
     const recordId = positiveInteger(req.params.id);
-    await recordsPaymentsRepo.withRecordForUpdate(recordId, async ({ current, records, client }) => {
-      const currencyRepository = createDirectorAdminRepository({ pgPool: client });
-      if (!current) throw Object.assign(new Error('Record not found'), { status: 404 });
-
-      const payment = await records.findPaymentByVisitRecordId(recordId);
-      const currentDebt = money(payment?.amount || 0);
-      if (currentDebt <= 0) throw Object.assign(new Error('Poseta nema dug za dodatnu uplatu.'), { status: 400 });
-
-      const currency = normalizeCurrency(payment?.currency || req.body.currency || 'RSD');
-      const existingParts = (await records.paymentPartsForRecord(recordId)).map(part => ({
-        amount: Number(part.amount || 0),
-        currency: part.currency || currency,
-        exchangeRateToRsd: Number(part.exchange_rate_to_rsd || 0),
-        amountRsd: Number(part.amount_rsd || 0),
-        paymentMethod: part.payment_method || '',
-        paymentDate: part.payment_date || '',
-        notes: part.notes || ''
-      }));
-      const paymentPart = await normalizePaymentPart({
-        ...req.body,
-        paymentDate: req.body.paymentDate || req.body.payment_date || current.visit_date || todayIsoDate()
-      }, currencyRepository);
-      const allParts = [...existingParts, paymentPart];
-      const totalAmount = roundMoney(currentDebt + money(payment?.amount_paid || 0));
-      const summary = await calculatePaymentSummary({
-        amount: totalAmount,
-        currency,
-        paymentParts: allParts,
-        paymentStatus: payment?.payment_status
-      }, currencyRepository);
-      await records.appendPaymentPart({
-        payment,
-        visitRecordId: recordId,
-        patientId: payment?.patient_id || current.patient_id,
-        paymentPart,
-        paymentSummary: summary,
-        currency
-      });
-
-    });
-
-    const record = await recordsPaymentsRepo.recordByIdForList(recordId);
-    const [hydrated] = await hydrateVisitRecords([record]);
-    res.status(201).json(serializePaymentHistoryRecord(hydrated));
+    const result = await financialPayments.appendVisitPayment({ recordId, key: req.get('Idempotency-Key'), payload: req.body });
+    res.status(201).json(result.body);
   } catch (error) {
     console.error('Append record payment part error:', error);
     res.status(error.status || 500).json({ error: error.status ? error.message : 'Uplata nije sacuvana.' });
@@ -3957,12 +3923,6 @@ app.post('/api/public/booking', publicBookingWriteLimiter, requirePublicBookingE
 });
 
 // ============ ADVANCED PATIENT WORKFLOW ENDPOINTS ============
-
-async function invoiceNumber() {
-  const year = new Date().getFullYear();
-  const count = await billingRepo.invoiceCountForYear(year) + 1;
-  return `DR-${year}-${String(count).padStart(5, '0')}`;
-}
 
 async function serializeTreatmentPlan(plan) {
   const items = await clinicalRepo.treatmentPlanItems(plan.id);
@@ -4485,9 +4445,9 @@ app.delete('/api/perio-charts/:id', authenticateToken, requirePermission('clinic
   res.json({ success: true });
 }));
 
-async function serializeInvoice(invoice) {
-  const items = await billingRepo.invoiceItems(invoice.id);
-  const payments = await billingRepo.invoicePayments(invoice.id);
+async function serializeInvoice(invoice, repository = billingRepo) {
+  const items = await repository.invoiceItems(invoice.id);
+  const payments = await repository.invoicePayments(invoice.id);
   return {
     id: invoice.id,
     patientId: invoice.patient_id,
@@ -4535,7 +4495,7 @@ function invoiceItemsFromBody(items = []) {
 
 app.get('/api/patients/:id/invoices', authenticateToken, requirePermission('billing:read'), asyncRoute(async (req, res) => {
   const invoices = await billingRepo.listInvoicesByPatient(positiveInteger(req.params.id));
-  res.json(await Promise.all(invoices.map(serializeInvoice)));
+  res.json(await Promise.all(invoices.map(invoice => serializeInvoice(invoice))));
 }));
 
 app.post('/api/patients/:id/invoices', authenticateToken, requirePermission('billing:write'), async (req, res) => {
@@ -4551,7 +4511,7 @@ app.post('/api/patients/:id/invoices', authenticateToken, requirePermission('bil
       invoice: {
         patientId,
         visitRecordId,
-        invoiceNumber: cleanText(req.body.invoiceNumber || await invoiceNumber(), { max: 80, required: true }),
+        invoiceNumber: cleanText(req.body.invoiceNumber, { max: 80 }) || null,
         issueDate: cleanText(req.body.issueDate || req.body.issue_date || todayIsoDate(), { max: 20, required: true }),
         dueDate: cleanText(req.body.dueDate || req.body.due_date, { max: 20 }),
         currency: normalizeCurrency(req.body.currency),
@@ -4574,37 +4534,19 @@ app.post('/api/patients/:id/invoices', authenticateToken, requirePermission('bil
     res.status(201).json(await serializeInvoice(invoice));
   } catch (error) {
     console.error('Create invoice error:', error);
+    if (error.code === '23505') return res.status(409).json({ error: 'Broj računa već postoji.' });
     res.status(error.status || 500).json({ error: error.status ? error.message : 'Racun nije sacuvan.' });
   }
 });
 
-app.post('/api/invoices/:id/payments', authenticateToken, requirePermission('billing:write'), async (req, res) => {
+app.post('/api/invoices/:id/payments', authenticateToken, requirePermission('billing:write'), validateBody(invoicePaymentSchema), async (req, res) => {
   try {
     const invoiceId = positiveInteger(req.params.id);
-    if (!(await billingRepo.findInvoice(invoiceId))) return res.status(404).json({ error: 'Invoice not found' });
-    const paymentType = ['payment', 'advance', 'installment', 'refund'].includes(req.body.paymentType || req.body.payment_type) ? (req.body.paymentType || req.body.payment_type) : 'payment';
-    const amount = money(req.body.amount);
-    const invoice = await billingRepo.addInvoicePayment({
-      invoiceId,
-      payment: {
-        amount,
-        paymentMethod: cleanText(req.body.paymentMethod || req.body.payment_method, { max: 80 }),
-        paymentDate: cleanText(req.body.paymentDate || req.body.payment_date || todayIsoDate(), { max: 20, required: true }),
-        paymentType,
-        notes: cleanText(req.body.notes, { max: 1000 })
-      },
-      ledger: {
-        entryType: paymentType === 'refund' ? 'refund' : 'patient_payment',
-        amount: paymentType === 'refund' ? amount : -amount,
-        source: 'invoice_payment',
-        entryDate: todayIsoDate(),
-        userId: req.user.id
-      }
-    });
-    res.status(201).json(await serializeInvoice(invoice));
+    const result = await financialPayments.addInvoicePayment({ invoiceId, key: req.get('Idempotency-Key'), payload: req.body, userId: req.user.id });
+    res.status(201).json(result.body);
   } catch (error) {
     console.error('Invoice payment error:', error);
-    res.status(500).json({ error: 'Uplata nije sacuvana.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Uplata nije sacuvana.' });
   }
 });
 
@@ -4632,12 +4574,12 @@ app.delete('/api/invoices/:id', authenticateToken, requirePermission('billing:wr
     res.json({ success: true });
   } catch (error) {
     console.error('Delete invoice error:', error);
-    res.status(500).json({ error: 'Racun nije obrisan.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'Racun nije obrisan.' });
   }
 });
 
-async function serializeClaim(row) {
-  const attachments = await billingRepo.claimAttachments(row.id);
+async function serializeClaim(row, repository = billingRepo) {
+  const attachments = await repository.claimAttachments(row.id);
   return {
     id: row.id,
     patientId: row.patient_id,
@@ -4680,7 +4622,7 @@ async function serializeClaim(row) {
 
 app.get('/api/patients/:id/insurance-claims', authenticateToken, requirePermission('billing:read'), asyncRoute(async (req, res) => {
   const rows = await billingRepo.listClaimsByPatient(positiveInteger(req.params.id));
-  res.json(await Promise.all(rows.map(serializeClaim)));
+  res.json(await Promise.all(rows.map(row => serializeClaim(row))));
 }));
 
 app.post('/api/patients/:id/insurance-claims', authenticateToken, requirePermission('billing:write'), async (req, res) => {
@@ -4790,52 +4732,15 @@ app.post('/api/insurance-claims/:id/submit', authenticateToken, requirePermissio
   }
 });
 
-app.post('/api/insurance-claims/:id/era', authenticateToken, requirePermission('billing:write'), async (req, res) => {
+app.post('/api/insurance-claims/:id/era', authenticateToken, requirePermission('billing:write'), validateBody(insuranceEraSchema), async (req, res) => {
   try {
     const claimId = positiveInteger(req.params.id);
-    const claim = await billingRepo.findClaim(claimId);
-    if (!claim) return res.status(404).json({ error: 'Insurance claim not found' });
-    const paidAmount = money(req.body.paidAmount || req.body.paid_amount || req.body.approvedAmount || req.body.approved_amount);
-    const approvedAmount = money(req.body.approvedAmount || req.body.approved_amount || paidAmount);
-    const denialReason = cleanText(req.body.denialReason || req.body.denial_reason, { max: 1000 });
-    const status = denialReason ? 'denied' : (paidAmount >= Number(claim.requested_amount || 0) ? 'paid' : 'partially_approved');
-    const eob = {
-      payer: claim.provider,
-      payerControlNumber: claim.payer_control_number || `EOB-${claimId}`,
-      approvedAmount,
-      paidAmount,
-      adjustment: Math.max(0, Number(claim.requested_amount || 0) - approvedAmount),
-      denialReason: denialReason || '',
-      receivedAt: new Date().toISOString()
-    };
-    const updated = await billingRepo.postEra({
-      claim,
-      era: {
-        status,
-        approvedAmount,
-        paidAmount,
-        decisionAt: new Date().toISOString(),
-        denialReason,
-        eobJson: JSON.stringify(eob)
-      },
-      ledger: {
-        patientId: claim.patient_id,
-        invoiceId: claim.invoice_id,
-        claimId,
-        entryType: 'insurance_payment',
-        amount: -paidAmount,
-        currency: 'RSD',
-        description: `ERA uplata ${claim.provider}`,
-        source: 'era',
-        entryDate: todayIsoDate(),
-        userId: req.user.id
-      }
-    });
-    await auditLog({ userId: req.user.id, action: 'insurance_era_posted', entityType: 'insurance_claim', entityId: claimId, req });
-    res.json(await serializeClaim(updated));
+    const result = await financialPayments.postEra({ claimId, key: req.get('Idempotency-Key'), payload: req.body, userId: req.user.id });
+    if (!result.replayed) await auditLog({ userId: req.user.id, action: 'insurance_era_posted', entityType: 'insurance_claim', entityId: claimId, req });
+    res.json(result.body);
   } catch (error) {
     console.error('ERA posting error:', error);
-    res.status(500).json({ error: 'ERA/EOB nije proknjizen.' });
+    res.status(error.status || 500).json({ error: error.status ? error.message : 'ERA/EOB nije proknjizen.' });
   }
 });
 

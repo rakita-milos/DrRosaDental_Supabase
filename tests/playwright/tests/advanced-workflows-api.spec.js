@@ -1,5 +1,8 @@
 const { test, expect } = require("@playwright/test");
 const { cleanupRegressionData } = require("../utils/cleanup");
+const { authenticate } = require('../utils/auth');
+const { NewEntryPage } = require('../pages/NewEntryPage');
+const { PatientDashboardPage } = require('../pages/PatientDashboardPage');
 const {
   authHeaders,
   apiGet,
@@ -19,6 +22,148 @@ const {
 
 const TEST_PREFIX = "ADVAPI";
 const ONE_PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+
+async function loseFirstPaymentResponse(page, pattern, failure) {
+  const keys = [];
+  await page.route(pattern, async route => {
+    keys.push(route.request().headers()['idempotency-key']);
+    if (keys.length === 1) {
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      if (failure === 'network') await route.abort('failed');
+      else await route.fulfill({ response, body: '{"incomplete":' });
+    } else await route.continue();
+  });
+  return keys;
+}
+
+for (const failure of ['network', 'json']) {
+  test(`visit payment controls recover a committed but lost ${failure} response${failure === 'json' ? ' on mobile' : ''}`, async ({ page, request, baseURL }) => {
+    if (failure === 'json') await page.setViewportSize({ width: 390, height: 844 });
+    const stamp = Date.now();
+    const patient = await createPatient(request, baseURL, { firstName: `${TEST_PREFIX}${stamp}`, lastName: 'Retry', email: `retry.${stamp}@example.com` });
+    const record = await createRecord(request, baseURL, { patientId: patient.id, amount: 300, totalAmount: 300, currency: 'RSD', paymentParts: [], note: `${TEST_PREFIX} lost response` });
+    await authenticate(page, 'staff');
+    const entry = new NewEntryPage(page);
+    await entry.gotoPatient(patient.id);
+    const keys = await loseFirstPaymentResponse(page, `**/api/records/${record.id}/payment-parts`, failure);
+    await entry.openDebtPayment(record.id);
+    await entry.debtPaymentAmount.fill('100');
+    await entry.debtPaymentSubmit.click();
+    await expect(entry.debtPaymentSubmit).toHaveText('Proveri uplatu');
+    await expect(entry.debtPaymentContext).toContainText('nije potvrđen');
+    await expect(entry.debtPaymentAmount).toBeDisabled();
+    await entry.debtPaymentSubmit.click();
+    await expect(entry.debtPaymentPanel).toBeHidden();
+    let saved = await apiGet(request, baseURL, `/api/records/${record.id}`);
+    expect(Number(saved.amount_due)).toBe(200);
+    expect(saved.paymentParts).toHaveLength(1);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).toBe(keys[0]);
+    await entry.openDebtPayment(record.id);
+    await expect(entry.debtPaymentAmount).toBeEnabled();
+    await entry.debtPaymentAmount.fill('100');
+    await entry.debtPaymentSubmit.click();
+    await expect(entry.debtPaymentPanel).toBeHidden();
+    saved = await apiGet(request, baseURL, `/api/records/${record.id}`);
+    expect(Number(saved.amount_due)).toBe(100);
+    expect(saved.paymentParts).toHaveLength(2);
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+
+  test(`invoice payment controls recover a committed but lost ${failure} response${failure === 'json' ? ' on mobile' : ''}`, async ({ page, request, baseURL }) => {
+    if (failure === 'json') await page.setViewportSize({ width: 390, height: 844 });
+    const stamp = Date.now();
+    const patient = await createPatient(request, baseURL, { firstName: `${TEST_PREFIX}${stamp}`, lastName: 'InvoiceRetry', email: `invoice.retry.${stamp}@example.com` });
+    const invoice = await createInvoice(request, baseURL, patient.id, { currency: 'RSD', items: [{ description: 'Synthetic exam', quantity: 1, unitPrice: 300 }] });
+    await authenticate(page, 'staff');
+    const dashboard = new PatientDashboardPage(page);
+    await dashboard.gotoPatient(patient.id);
+    const keys = await loseFirstPaymentResponse(page, `**/api/invoices/${invoice.id}/payments`, failure);
+    await dashboard.payInvoice(invoice.id, 100);
+    await expect(dashboard.invoiceMessage).toContainText('nije potvrđen');
+    await expect(dashboard.invoicePaymentButton(invoice.id)).toHaveText('Proveri uplatu');
+    await dashboard.payInvoice(invoice.id);
+    await expect(dashboard.invoiceMessage).toContainText('Uplata je sačuvana');
+    await expect(dashboard.invoicePaymentButton(invoice.id)).toBeEnabled();
+    let saved = (await apiGet(request, baseURL, `/api/patients/${patient.id}/invoices`)).find(row => row.id === invoice.id);
+    expect(saved.amountPaid).toBe(100);
+    expect(saved.payments).toHaveLength(1);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).toBe(keys[0]);
+    await dashboard.payInvoice(invoice.id, 100);
+    await expect.poll(async () => (await apiGet(request, baseURL, `/api/patients/${patient.id}/invoices`)).find(row => row.id === invoice.id).amountPaid).toBe(200);
+    saved = (await apiGet(request, baseURL, `/api/patients/${patient.id}/invoices`)).find(row => row.id === invoice.id);
+    expect(saved.payments).toHaveLength(2);
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+}
+
+for (const outcome of ['success', 'network']) {
+  for (const action of ['close', 'switch']) {
+    test(`visit payment ${outcome} response respects a ${action === 'close' ? 'closed' : 'switched'} form`, async ({ page, request, baseURL }) => {
+      const stamp = Date.now();
+      const patient = await createPatient(request, baseURL, { firstName: `${TEST_PREFIX}${stamp}`, lastName: 'FormRace', email: `race.${stamp}@example.com` });
+      const record = await createRecord(request, baseURL, { patientId: patient.id, amount: 300, totalAmount: 300, currency: 'RSD', paymentParts: [], note: `${TEST_PREFIX} original payment` });
+      const other = action === 'switch'
+        ? await createRecord(request, baseURL, { patientId: patient.id, amount: 250, totalAmount: 250, currency: 'RSD', paymentParts: [], note: `${TEST_PREFIX} other visit` })
+        : null;
+      await authenticate(page, 'staff');
+      const entry = new NewEntryPage(page);
+      await entry.gotoPatient(patient.id);
+      await entry.openDebtPayment(record.id);
+      await entry.debtPaymentAmount.fill('100');
+      const errors = [], keys = [];
+      page.on('pageerror', error => errors.push(error.message));
+      let release, committed;
+      const gate = new Promise(resolve => { release = resolve; });
+      const commit = new Promise(resolve => { committed = resolve; });
+      await page.route(`**/api/records/${record.id}/payment-parts`, async route => {
+        keys.push(route.request().headers()['idempotency-key']);
+        if (keys.length > 1) return route.continue();
+        const response = await route.fetch();
+        committed(response.status());
+        await gate;
+        if (outcome === 'network') await route.abort('failed');
+        else await route.fulfill({ response });
+      });
+      try {
+        await entry.debtPaymentSubmit.click();
+        expect(await commit).toBe(201);
+        await entry.debtPaymentCancel.click();
+        if (other) {
+          await entry.openDebtPayment(other.id);
+          await entry.debtPaymentAmount.fill('77.25');
+        }
+        release();
+        await expect(entry.alert).toContainText(outcome === 'network' ? 'Ishod uplate' : 'Uplata je dodata');
+        if (other) {
+          await expect(entry.debtPaymentPanel).toBeVisible();
+          await expect(entry.debtPaymentRecordId).toHaveValue(String(other.id));
+          await expect(entry.debtPaymentAmount).toHaveValue('77.25');
+          await expect(entry.debtPaymentSubmit).toBeEnabled();
+        } else await expect(entry.debtPaymentPanel).toBeHidden();
+        if (outcome === 'network') {
+          await entry.openDebtPayment(record.id);
+          await expect(entry.debtPaymentSubmit).toHaveText('Proveri uplatu');
+          await expect(entry.debtPaymentAmount).toBeDisabled();
+          await expect(entry.debtPaymentAmount).toHaveValue('100');
+          await entry.debtPaymentSubmit.click();
+          await expect(entry.debtPaymentPanel).toBeHidden();
+          expect(keys).toHaveLength(2);
+          expect(keys[1]).toBe(keys[0]);
+        }
+        const saved = await apiGet(request, baseURL, `/api/records/${record.id}`);
+        expect(saved.paymentParts).toHaveLength(1);
+        expect(Number(saved.amount_due)).toBe(200);
+        if (other) expect((await apiGet(request, baseURL, `/api/records/${other.id}`)).paymentParts).toHaveLength(0);
+        expect(errors).toEqual([]);
+      } finally { release(); }
+    });
+  }
+}
 
 function dateKeyInBelgrade(value) {
   const parts = new Intl.DateTimeFormat("en", {
@@ -49,9 +194,14 @@ test("api: public booking creates an appointment and patient", async ({ request,
   const options = await publicBookingOptions(request, baseURL);
   const procedureName = options.procedures[0]?.label;
   expect(procedureName).toBeTruthy();
+  const future = new Date(`${dateKeyInBelgrade(Date.now())}T12:00:00Z`);
+  future.setUTCDate(future.getUTCDate() + 7);
+  while ([0, 6].includes(future.getUTCDay())) future.setUTCDate(future.getUTCDate() + 1);
+  const bookingDate = dateKeyInBelgrade(future);
+  const nextDay = new Date(future); nextDay.setUTCDate(nextDay.getUTCDate() + 1);
   const availability = await publicAvailability(request, baseURL, {
-    date: "2026-07-01",
-    doctor_id: 1,
+    date: bookingDate,
+    doctor_id: options.doctors[0].id,
     duration: 30
   });
   expect(availability.slots.length).toBeGreaterThan(0);
@@ -75,7 +225,7 @@ test("api: public booking creates an appointment and patient", async ({ request,
     patientId: expect.any(Number)
   });
 
-  const appointments = await apiGet(request, baseURL, "/api/appointments?from=2026-07-01T00:00:00.000Z&to=2026-07-02T00:00:00.000Z", "staff");
+  const appointments = await apiGet(request, baseURL, `/api/appointments?from=${bookingDate}T00:00:00.000Z&to=${dateKeyInBelgrade(nextDay)}T00:00:00.000Z`, "staff");
   expect(appointments.find(item => item.id === booking.appointmentId)).toMatchObject({
     patientId: booking.patientId,
     doctorId: slot.doctorId,

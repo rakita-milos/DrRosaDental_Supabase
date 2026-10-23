@@ -1773,10 +1773,28 @@ async function initializeAdvancedWorkflows(patientId) {
     const button = event.target.closest(".invoice-payment-btn");
     const pdf = event.target.closest(".invoice-pdf-btn");
     if (button) {
-      const amount = Number(prompt("Iznos uplate:") || 0);
+      const pending = window.DrRosaApi.getPendingInvoicePayment(button.dataset.invoiceId);
+      const amount = pending ? pending.amount : Number(prompt("Iznos uplate:") || 0);
       if (amount <= 0) return;
-      await window.DrRosaApi.addInvoicePayment(button.dataset.invoiceId, { amount, paymentType: "payment", paymentDate: today(), paymentMethod: "cash" });
-      await refreshInvoices();
+      button.disabled = true;
+      try {
+        await window.DrRosaApi.addInvoicePayment(button.dataset.invoiceId, pending || { amount, paymentType: "payment", paymentDate: today(), paymentMethod: "cash" });
+        button.textContent = 'Dodaj uplatu';
+        setMessage('invoice-message', 'Uplata je sačuvana.');
+      } catch (error) {
+        if (window.DrRosaApi.getPendingInvoicePayment(button.dataset.invoiceId)) {
+          button.textContent = 'Proveri uplatu';
+          setMessage('invoice-message', `Ishod uplate od ${amount} nije potvrđen. Kliknite „Proveri uplatu” da proverite isti pokušaj.`, true);
+        } else setMessage('invoice-message', error.message || 'Uplata nije sačuvana.', true);
+        return;
+      } finally {
+        button.disabled = false;
+      }
+      try {
+        await refreshInvoices();
+      } catch (error) {
+        setMessage('invoice-message', 'Uplata je sačuvana, ali prikaz nije osvežen. Osvežite prikaz pre nove uplate.', true);
+      }
     }
     if (pdf) {
       const response = await fetch(`/api/invoices/${pdf.dataset.invoiceId}/pdf`, {

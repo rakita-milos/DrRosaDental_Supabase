@@ -11,10 +11,108 @@ function client(fetch, pathname = '/src/pages/index.html') {
   const store=new Map([['drrosa-session',JSON.stringify(session)]]);
   const document={readyState:'loading',body:null,addEventListener(){},querySelectorAll:()=>[],getElementById:()=>null};
   const window={DrRosaSecurity:{},addEventListener(){},navigator:{}};
-  const context={window,document,location:{pathname,replace:url=>redirects.push(url)},encodeURIComponent,fetch,localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},Map,Date,Math,Error,JSON,URLSearchParams};
+  const context={window,document,location:{pathname,replace:url=>redirects.push(url)},crypto:require('node:crypto').webcrypto,encodeURIComponent,fetch,localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},Map,Date,Math,Error,JSON,URLSearchParams};
   vm.createContext(context);vm.runInContext(source,context);
   return {api:window.DrRosaApi,store,redirects};
 }
+
+test('payment double submit shares an in-flight request; equal completed payments get distinct keys', async () => {
+  const calls = [];
+  let release;
+  const c = client(async (url, options) => {
+    calls.push({ url, ...options });
+    if (calls.length === 1) await new Promise(resolve => { release = resolve; });
+    return reply(201, { id: calls.length });
+  });
+  const payment = { amount: 10, currency: 'RSD' };
+  const one = c.api.addRecordPaymentPart(12, payment);
+  const two = c.api.addRecordPaymentPart(12, payment);
+  assert.equal(calls.length, 1);
+  release();
+  assert.deepEqual(await one, await two);
+  await c.api.addRecordPaymentPart(12, payment);
+  assert.equal(calls.length, 2);
+  assert.notEqual(calls[0].headers['Idempotency-Key'], calls[1].headers['Idempotency-Key']);
+});
+
+test('payment retry after response loss reuses its key; changed input and login use new keys', async () => {
+  const calls = [];
+  const c = client(async (url, options) => {
+    calls.push(options);
+    if (calls.length === 1) throw new Error('Response lost');
+    return reply(201, { amountPaid: 10 });
+  });
+  const payment = { amount: 10, paymentDate: '2026-10-16' };
+  await assert.rejects(c.api.addInvoicePayment(5, payment), /Response lost/);
+  await c.api.addInvoicePayment(5, payment);
+  assert.equal(calls[0].headers['Idempotency-Key'], calls[1].headers['Idempotency-Key']);
+  await c.api.addInvoicePayment(5, { ...payment, amount: 20 });
+  assert.notEqual(calls[1].headers['Idempotency-Key'], calls[2].headers['Idempotency-Key']);
+  c.store.set('drrosa-auth-epoch', 'new-login');
+  await c.api.addInvoicePayment(5, payment);
+  assert.notEqual(calls[1].headers['Idempotency-Key'], calls[3].headers['Idempotency-Key']);
+});
+
+test('an interrupted successful payment body keeps the original retry key', async () => {
+  const calls = [];
+  const c = client(async (url, options) => {
+    calls.push(options);
+    return calls.length === 1
+      ? { ok: true, status: 201, json: async () => { throw new Error('body interrupted'); } }
+      : reply(201, { id: 5, amountPaid: 100 });
+  });
+  await assert.rejects(c.api.addInvoicePayment(5, { amount: 100 }));
+  await c.api.addInvoicePayment(5, { amount: 100 });
+  assert.equal(calls[0].headers['Idempotency-Key'], calls[1].headers['Idempotency-Key']);
+});
+
+test('empty successful payment responses remain unresolved; pending data is a copy and logout clears it', async () => {
+  for (const body of [{}, null, []]) {
+    const c = client(async () => reply(201, body));
+    await assert.rejects(c.api.addInvoicePayment(5, { amount: 10 }), { code: 'PAYMENT_RESPONSE_INCOMPLETE' });
+    const pending = c.api.getPendingInvoicePayment(5);
+    assert.equal(pending.amount, 10);
+    pending.amount = 999;
+    assert.equal(c.api.getPendingInvoicePayment(5).amount, 10);
+    c.api.clearSession();
+    assert.equal(c.api.getPendingInvoicePayment(5), null);
+  }
+});
+
+test('an uncertain payment must be resolved before changing its input or starting a new payment', async () => {
+  const calls = [], receipts = new Map();
+  let total = 0;
+  const c = client(async (url, options) => {
+    calls.push(options);
+    const key = options.headers['Idempotency-Key'];
+    if (!receipts.has(key)) {
+      total += JSON.parse(options.body).amount;
+      receipts.set(key, { id: 5, amountPaid: total });
+    }
+    if (calls.length === 1) throw new Error('response lost after commit');
+    return reply(201, receipts.get(key));
+  });
+  await assert.rejects(c.api.addInvoicePayment(5, { amount: 100, paymentType: 'payment' }));
+  await assert.rejects(c.api.addInvoicePayment(5, { amount: 200 }), { code: 'PAYMENT_UNRESOLVED' });
+  assert.equal(calls.length, 1);
+  // Object property order does not create a different action.
+  assert.equal((await c.api.addInvoicePayment(5, { paymentType: 'payment', amount: 100 })).amountPaid, 100);
+  assert.equal((await c.api.addInvoicePayment(5, { amount: 200 })).amountPaid, 300);
+  assert.equal((await c.api.addInvoicePayment(5, { amount: 100 })).amountPaid, 400);
+  assert.equal(calls[0].headers['Idempotency-Key'], calls[1].headers['Idempotency-Key']);
+  assert.notEqual(calls[0].headers['Idempotency-Key'], calls[3].headers['Idempotency-Key']);
+});
+
+test('rejected payment input can be corrected without an unresolved attempt', async () => {
+  const calls = [];
+  const c = client(async (url, options) => {
+    calls.push(options);
+    return calls.length === 1 ? reply(400, { error: 'Invalid amount' }) : reply(201, { id: 5 });
+  });
+  await assert.rejects(c.api.addInvoicePayment(5, { amount: -1 }));
+  await c.api.addInvoicePayment(5, { amount: 10 });
+  assert.notEqual(calls[0].headers['Idempotency-Key'], calls[1].headers['Idempotency-Key']);
+});
 
 test('parallel browser requests share one renewal and keep the login', async()=>{
   let renewed=false,refreshes=0;

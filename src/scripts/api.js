@@ -2,6 +2,7 @@
   const API_BASE = window.DRROSA_API_BASE || "/api";
   const { escapeHtml, escapeAttribute } = window.DrRosaSecurity;
   let refreshPromise = null;
+  const pendingPayments = new Map();
   let rescheduleLifecycle = () => {};
   const authEpoch = () => localStorage.getItem('drrosa-auth-epoch') || '';
   const advanceAuthEpoch = () => localStorage.setItem('drrosa-auth-epoch', `${Date.now()}-${Math.random()}`);
@@ -39,6 +40,7 @@
   }
 
   function clearSession() {
+    pendingPayments.clear();
     localStorage.removeItem("drrosa-token");
     localStorage.removeItem("drrosa-refresh-token");
     localStorage.removeItem("drrosa-session");
@@ -88,6 +90,7 @@
   }
 
   async function request(path, options = {}, retry = true) {
+    const { requireJson = false, ...fetchOptions } = options;
     const epoch = authEpoch();
     if (localStorage.getItem('drrosa-logout-pending')) throw apiError('Odjava čeka potvrdu servera.', 401, 'SESSION_CHANGED');
     const headers = {
@@ -96,13 +99,19 @@
     };
 
     const response = await fetch(`${API_BASE}${path}`, {
-      ...options,
+      ...fetchOptions,
       headers,
       cache: "no-store",
       credentials: 'include'
     });
 
-    const data = await response.json().catch(() => ({}));
+    const data = await response.json().catch(() => {
+      if (response.ok && requireJson) throw apiError('Odgovor uplate nije primljen u celosti. Ponovite istu uplatu radi provere.', null, 'PAYMENT_RESPONSE_INCOMPLETE');
+      return {};
+    });
+    if (response.ok && requireJson && (!data || typeof data !== 'object' || Array.isArray(data) || !Object.keys(data).length)) {
+      throw apiError('Odgovor uplate nije potpun. Ponovite istu uplatu radi provere.', null, 'PAYMENT_RESPONSE_INCOMPLETE');
+    }
     if (authEpoch() !== epoch) throw apiError('Prijava je promenjena.', 401, 'SESSION_CHANGED');
     if (!response.ok) {
       try {
@@ -824,11 +833,51 @@
     });
   }
 
+  // One unresolved action per resource. A retry must resolve that action before
+  // a different payment can start; completed actions never reuse old receipts.
+  function pendingPayment(path) {
+    const attempt = pendingPayments.get(`${authEpoch()}:${path}`);
+    return attempt ? JSON.parse(attempt.body) : null;
+  }
+  function getPendingInvoicePayment(invoiceId) {
+    return pendingPayment(`/invoices/${invoiceId}/payments`);
+  }
+  function getPendingRecordPaymentPart(recordId) {
+    return pendingPayment(`/records/${recordId}/payment-parts`);
+  }
+  function canonicalPayment(value) {
+    if (Array.isArray(value)) return value.map(canonicalPayment);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalPayment(value[key])]));
+    }
+    return value;
+  }
+  function paymentRequest(path, payload) {
+    const body = JSON.stringify(canonicalPayment(payload));
+    const signature = `${authEpoch()}:${path}`;
+    let attempt = pendingPayments.get(signature);
+    if (attempt && attempt.body !== body) {
+      return Promise.reject(apiError('Prethodna uplata nije potvrđena. Najpre ponovite uplatu sa prethodno unetim podacima.', null, 'PAYMENT_UNRESOLVED'));
+    }
+    if (!attempt) {
+      attempt = { key: crypto.randomUUID(), body, promise: null };
+      pendingPayments.set(signature, attempt);
+    }
+    if (attempt.promise) return attempt.promise;
+    attempt.promise = request(path, { method: 'POST', body, requireJson: true, headers: { 'Idempotency-Key': attempt.key } })
+      .then(result => { pendingPayments.delete(signature); return result; })
+      .catch(error => {
+        // A rejected request did not commit. Network/server failures have an
+        // unknown outcome and retain the action for an explicit retry.
+        if (error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status)) pendingPayments.delete(signature);
+        throw error;
+      })
+      .finally(() => { attempt.promise = null; });
+    return attempt.promise;
+  }
+
   async function addInvoicePayment(invoiceId, payment) {
-    return request(`/invoices/${invoiceId}/payments`, {
-      method: "POST",
-      body: JSON.stringify(payment)
-    });
+    return paymentRequest(`/invoices/${invoiceId}/payments`, payment);
   }
 
   async function getInsuranceClaims(patientId) {
@@ -907,10 +956,7 @@
   }
 
   async function addRecordPaymentPart(recordId, paymentPart) {
-    return request(`/records/${recordId}/payment-parts`, {
-      method: "POST",
-      body: JSON.stringify(paymentPart)
-    });
+    return paymentRequest(`/records/${recordId}/payment-parts`, paymentPart);
   }
 
   async function createRecord(record) {
@@ -1147,6 +1193,8 @@
   };
 
   window.DrRosaApi = {
+    getPendingInvoicePayment,
+    getPendingRecordPaymentPart,
     login,
     logout,
     verifySession,

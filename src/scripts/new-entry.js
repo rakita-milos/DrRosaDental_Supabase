@@ -102,6 +102,7 @@ let patientPaymentHistory = {
   expanded: false
 };
 let selectedDebtPaymentRecord = null;
+const previousDebtPaymentsInFlight = new Set();
 let paymentMethodItems = [
   { value: "Gotovina", label: "Gotovina" },
   { value: "Kartica", label: "Kartica" },
@@ -740,6 +741,21 @@ function openPreviousDebtPaymentForm(record) {
     inputs.previousDebtPaymentContext.textContent = `Poseta ${formatDate(record.visitDate)} - dug ${formatMoney(record.debt || 0, record.currency || "RSD")}`;
   }
   setPreviousDebtPaymentControlsEnabled(true);
+  const pending = window.DrRosaApi.getPendingRecordPaymentPart(record.recordId);
+  const submit = document.querySelector("button[type='submit'][form='previous-debt-payment-form']")
+    || inputs.previousDebtPaymentForm?.querySelector("button[type='submit']");
+  if (submit) {
+    submit.disabled = previousDebtPaymentsInFlight.has(String(record.recordId));
+    submit.textContent = submit.disabled ? 'Čuvanje...' : pending ? 'Proveri uplatu' : 'Sačuvaj uplatu';
+  }
+  if (pending) {
+    inputs.previousDebtPaymentAmount.value = pending.amount;
+    inputs.previousDebtPaymentCurrency.value = pending.currency;
+    inputs.previousDebtPaymentMethod.value = pending.paymentMethod;
+    setDateInputValue(inputs.previousDebtPaymentDate, pending.paymentDate);
+    setPreviousDebtPaymentControlsEnabled(false);
+    if (inputs.previousDebtPaymentContext) inputs.previousDebtPaymentContext.textContent = `Ishod uplate od ${formatMoney(pending.amount, pending.currency)} nije potvrđen. Proverite prethodni pokušaj pre nove uplate.`;
+  }
   if (inputs.previousDebtPaymentPanel) {
     inputs.previousDebtPaymentPanel.hidden = false;
     inputs.previousDebtPaymentAmount?.focus();
@@ -1720,6 +1736,12 @@ inputs.previousDebtPaymentForm?.addEventListener("submit", async event => {
   event.preventDefault();
   const recordId = inputs.previousDebtRecordId?.value || selectedDebtPaymentRecord?.recordId;
   if (!recordId || !window.DrRosaApi.addRecordPaymentPart) return;
+  const recordKey = String(recordId);
+  if (previousDebtPaymentsInFlight.has(recordKey)) return;
+  const submittedRecord = selectedDebtPaymentRecord ? { ...selectedDebtPaymentRecord } : null;
+  const submittedPatientId = String(selectedPatient()?.id || '');
+  const isCurrentPatient = () => String(selectedPatient()?.id || '') === submittedPatientId;
+  const isCurrentForm = () => isCurrentPatient() && String(selectedDebtPaymentRecord?.recordId || '') === recordKey;
   const amount = Number(inputs.previousDebtPaymentAmount?.value || 0);
   if (amount <= 0) {
     showAlert("Unesite iznos uplate veći od 0.", "error", { persist: true, scroll: true });
@@ -1727,29 +1749,40 @@ inputs.previousDebtPaymentForm?.addEventListener("submit", async event => {
   }
   const submitButton = document.querySelector("button[type='submit'][form='previous-debt-payment-form']")
     || inputs.previousDebtPaymentForm.querySelector("button[type='submit']");
-  const oldText = submitButton?.textContent;
+  previousDebtPaymentsInFlight.add(recordKey);
   if (submitButton) {
     submitButton.disabled = true;
     submitButton.textContent = "Čuvanje...";
   }
   try {
-    await window.DrRosaApi.addRecordPaymentPart(recordId, {
+    await window.DrRosaApi.addRecordPaymentPart(recordId, window.DrRosaApi.getPendingRecordPaymentPart(recordId) || {
       amount,
       currency: inputs.previousDebtPaymentCurrency?.value || selectedDebtPaymentRecord?.currency || "RSD",
       paymentMethod: inputs.previousDebtPaymentMethod?.value || "Gotovina",
       paymentDate: inputs.previousDebtPaymentDate?.value || selectedDebtPaymentRecord?.visitDate || todayInputDate()
     });
-    closePreviousDebtPaymentForm();
+    if (isCurrentForm()) closePreviousDebtPaymentForm();
     patientPaymentHistory.cache.clear();
     patientPaymentHistory.hasMoreByPage.clear();
-    await loadPreviousPaymentsPage(patientPaymentHistory.page);
-    showAlert("Uplata je dodata na prethodnu posetu.", "success");
+    if (isCurrentPatient()) {
+      await loadPreviousPaymentsPage(patientPaymentHistory.page);
+      if (isCurrentPatient()) showAlert("Uplata je dodata na prethodnu posetu.", "success");
+    }
   } catch (error) {
-    showAlert(error.message || "Uplata nije sačuvana.", "error", { persist: true, scroll: true });
+    if (!isCurrentPatient()) return;
+    if (window.DrRosaApi.getPendingRecordPaymentPart(recordId)) {
+      if (isCurrentForm() && submittedRecord) {
+        openPreviousDebtPaymentForm(submittedRecord);
+        showAlert('Ishod uplate nije potvrđen. Kliknite „Proveri uplatu” da proverite isti pokušaj.', 'error', { persist: true, scroll: true });
+      } else {
+        showAlert(`Ishod uplate za posetu ${formatDate(submittedRecord?.visitDate)} nije potvrđen. Otvorite tu posetu i izaberite „Proveri uplatu”.`, 'error', { persist: true, scroll: true });
+      }
+    } else showAlert(error.message || "Uplata nije sačuvana.", "error", { persist: true, scroll: true });
   } finally {
-    if (submitButton) {
+    previousDebtPaymentsInFlight.delete(recordKey);
+    if (submitButton && isCurrentForm()) {
       submitButton.disabled = false;
-      submitButton.textContent = oldText || "Sacuvaj uplatu";
+      submitButton.textContent = window.DrRosaApi.getPendingRecordPaymentPart(recordId) ? 'Proveri uplatu' : 'Sačuvaj uplatu';
     }
   }
 });

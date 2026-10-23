@@ -4366,6 +4366,8 @@ td:nth-child(5) {
 
 .payment-builder {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 14px;
   padding: 16px;
   border: 1px solid #d7e0eb;
@@ -4473,9 +4475,15 @@ td:nth-child(5) {
 
 .previous-payments-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 12px;
   padding-top: 6px;
   border-top: 1px solid #dbe7f3;
+}
+
+#previous-payments-content {
+  min-width: 0;
 }
 
 .previous-payments-header,

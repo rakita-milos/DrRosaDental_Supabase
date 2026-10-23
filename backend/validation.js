@@ -1,5 +1,6 @@
 const Joi = require('joi');
 const dental = require('../src/scripts/dental-notation');
+const { financialAmount, requestKey } = require('./db/financial-requests');
 
 const fdiTooth = Joi.string().trim().custom((value, helpers) => dental.isTooth(value) ? value : helpers.error('any.invalid'));
 const toothStateWriteSchema = Joi.object({
@@ -46,6 +47,43 @@ function requiredText(max) {
 function optionalText(max) {
   return Joi.string().trim().max(max).allow('', null);
 }
+
+function monetaryAmount(positive = false) {
+  return Joi.any().custom((value, helpers) => {
+    try { return financialAmount(value, { positive }); }
+    catch { return helpers.error('any.invalid'); }
+  });
+}
+
+const paymentDate = Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).custom((value, helpers) => {
+  const date = new Date(`${value}T12:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : helpers.error('any.invalid');
+});
+const paymentType = Joi.string().valid('payment', 'advance', 'installment', 'refund');
+const invoicePaymentSchema = Joi.object({
+  amount: monetaryAmount(true).required(),
+  paymentType,
+  payment_type: paymentType,
+  paymentMethod: optionalText(80),
+  payment_method: optionalText(80),
+  paymentDate,
+  payment_date: paymentDate,
+  notes: optionalText(1000)
+});
+const eraEventId = Joi.string().custom((value, helpers) => {
+  try { return requestKey(value) || helpers.error('any.invalid'); }
+  catch { return helpers.error('any.invalid'); }
+});
+const insuranceEraSchema = Joi.object({
+  eventId: eraEventId,
+  event_id: eraEventId,
+  paidAmount: monetaryAmount(),
+  paid_amount: monetaryAmount(),
+  approvedAmount: monetaryAmount(),
+  approved_amount: monetaryAmount(),
+  denialReason: optionalText(1000),
+  denial_reason: optionalText(1000)
+}).or('paidAmount', 'paid_amount', 'approvedAmount', 'approved_amount');
 
 const loginSchema = Joi.object({
   email: requiredText(255).email(),
@@ -123,7 +161,9 @@ const paymentPartSchema = Joi.object({
 });
 
 const paymentPartAppendSchema = paymentPartSchema.keys({
-  amount: Joi.number().greater(0).required()
+  amount: monetaryAmount(true).required(),
+  paymentDate,
+  payment_date: paymentDate
 });
 
 const recordCreateSchema = Joi.object({
@@ -376,6 +416,8 @@ const dailyCashReportSchema = Joi.object({
 }).or('date', 'reportDate');
 
 module.exports = {
+  invoicePaymentSchema,
+  insuranceEraSchema,
   toothStateWriteSchema,
   validateBody,
   loginSchema,

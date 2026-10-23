@@ -16,7 +16,7 @@ test('new entry: same-name autocomplete saves the selected patient id', async ({
   });
   await authenticate(page, 'staff');
   await page.goto('/src/pages/new-entry.html');
-  await expect.poll(() => page.locator('#doctor option').count()).toBeGreaterThan(0);
+  await expect(page.locator(`.patient-autocomplete-option[data-patient-id="${second.id}"]`)).toHaveCount(1);
   await page.locator('#patient-name').fill(`${firstName} SameName`);
   const options = page.locator('.patient-autocomplete-option');
   await expect(options).toHaveCount(2);

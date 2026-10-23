@@ -93,7 +93,7 @@ Rezultat push-a, udaljenog CI-ja i eventualnog automatskog deploymenta proverava
 
 ## Operativni plan daljeg rada — 2026-10-16
 
-Ovaj odeljak određuje redosled narednog rada; prethodni pregled ostaje veza sa nalazima prvobitne analize. Status svih narednih faza je **planirano**, osim već navedenih završenih paketa. Izrada ovog plana ne predstavlja sprovedenu refaktorizaciju.
+Ovaj odeljak određuje redosled narednog rada; prethodni pregled ostaje veza sa nalazima prvobitne analize. Faza 1 je naknadno završena lokalno, kako je navedeno ispod; Faze 2–7 ostaju planirane. Izrada plana sama po sebi ne predstavlja sprovedenu refaktorizaciju.
 
 ### Cilj i pravila
 
@@ -110,9 +110,11 @@ Ovaj odeljak određuje redosled narednog rada; prethodni pregled ostaje veza sa 
 
 **Završeno kada:** poznat je tačan obuhvat paketa i sva odstupanja imaju zaseban zadatak; mobilni prikaz nema prelivanje ili neupotrebljive kontrole; API, tabela i izvoz daju usklađene iznose za delimične uplate, mešovite valute i istoimene pacijente. Ranije uspešne backend provere ostaju dokaz prethodne revizije; ponavljaju se kada nova izmena utiče na njih.
 
-**Baza:** bez planirane migracije. Trenutna grana je `refactor/financial-reports-20261015`; rad nije objavljen.
+**Baza:** bez migracije za taj paket. Finansijski paket je objavljen na `main` kao `71d7f74`; desktop i mobilne provere su završene. Pregled preostalih mesečnih tabela ostaje zaseban otvoren zadatak.
 
 ### Faza 1 — pouzdanost računa i knjiženja (T06–T07, T05)
+
+**Status 2026-10-16:** implementirana lokalno na `refactor/billing-integrity-phase1-20261016`, od `71d7f74`; rezultat i granice su navedeni u završnom odeljku ovog dokumenta. Objavljivanje i produkciona migracija nisu deo ovog statusa.
 
 **Redosled:**
 
@@ -181,4 +183,108 @@ Pre migracija: proveriti ciljni projekat, istoriju migracija i kompatibilnost sa
 - Backend/DB testove i Playwright pokretati redom nad istom izolovanom bazom ili koristiti zasebne baze; isključivo sintetički podaci.
 - Pokretati relevantne provere posle svake celine, a puni backend suite i dogovorene ključne E2E tokove pre zatvaranja paketa. Sintaksa i `git diff --check` su dopunske provere, ne dokaz poslovne ispravnosti.
 - U ovaj dokument zapisati obuhvat, rezultat, preskočene provere, migracije i šta ostaje. Broj ranije uspešnih testova ne predstavljati kao rezultat nove revizije.
-- Naredni konkretan korak je **Faza 0**, pa **Faza 1**. Ne otvarati paralelno više velikih refaktoringa nad istim finansijskim tokom.
+- Posle lokalno završene Faze 1 naredni razvojni korak je **Faza 2**. Ne otvarati paralelno više velikih refaktoringa nad istim finansijskim tokom.
+
+## Rezultat Faze 1 — 2026-10-16
+
+Ovaj odeljak beleži stanje i provere od 16.10.2026. Naknadne ispravke i aktuelni rezultati navedeni su u odeljku „Dorada nakon pregleda” od 21.10.2026; ranije brojeve testova ne treba predstavljati kao rezultate nove revizije.
+
+### Implementacija i pravila
+
+- Numeracija više ne koristi `COUNT+1`. Baza dodeljuje `DR-YYYY-NNNNN` pri INSERT-u, preko godišnjeg brojača u istoj transakciji sa računom, stavkama i knjiženjem. Godina je trenutna poslovna godina u Europe/Belgrade, kao nastavak ranijeg pravila tekuće godine; datiranje računa unazad ne prebacuje brojač u raniju godinu.
+- Ručni brojevi ostaju podržani; postojeće globalno UNIQUE ograničenje ostaje na snazi, a duplikat vraća 409. Ručni broj u standardnom DR formatu podiže odgovarajući brojač. Brojevi duži od pet cifara se ne skraćuju.
+- Migracija inicijalizuje brojače iz postojećih računa i sačuvanih charge/storno opisa u knjizi. Istorijske brojeve i iznose ne prepisuje. Broj posle uspešnog kreiranja i naknadnog brisanja računa se ne koristi ponovo; neuspešna transakcija ne troši broj. Ranije praznine ostaju dozvoljene. Brojeve za koje više ne postoji nikakav sačuvani trag nije moguće rekonstruisati; njih treba proveriti iz spoljne evidencije pre produkcione primene ako je takva evidencija postojala.
+- `financial_requests` čuva identitet, hash sadržaja i originalni JSON ishod. Identitet i finansijski upis se potvrđuju ili vraćaju zajedno. Isti ključ/sadržaj vraća sačuvani odgovor, a isti ključ sa drugim sadržajem daje 409. Naknadna uplata ne menja već sačuvani odgovor prethodne uplate.
+- Uplate poseta i računa prihvataju `Idempotency-Key` (1–128 vidljivih ASCII znakova). Novi frontend šalje nasumičan ključ, spaja istovremeno slanje istog zahteva i zadržava ključ neuspelog pokušaja za ponovno slanje na istoj stranici. Nova uspešno završena uplata, čak i istog iznosa, dobija novi ključ.
+- Zbog kompatibilnosti stari API klijenti mogu slati uplatu bez ključa; takav zahtev nema zaštitu od ponovnog slanja. Klijenti moraju sačuvati i ponovo poslati isti ključ kada ishod nije poznat. Frontend trenutno čuva pokušaj u memoriji stranice, bez čuvanja obrazaca; ponovno učitavanje stranice gubi taj ključ i ne predstavlja automatski bezbedan retry.
+- Postojeći ERA ekran tretira jedan EOB kao kumulativni obračun za zahtev. Slanje bez identiteta koristi jedan stabilan legacy događaj po claim-u; ponavljanje ne knjiži ponovo. Korekcija zahteva novi `eventId`/`event_id` ili `Idempotency-Key`. `paidAmount` je novi kumulativni iznos, a u knjigu ide samo razlika u odnosu na prethodni iznos, uključujući povrat na nulu. Ponovljen stari događaj vraća svoj originalni odgovor. Ovo nije integracija sa spoljnim ERA providerom niti automatsko uređivanje događaja po datumu; korekcije se primenjuju redom prijema.
+- Istorijski ERA obračun bez novog receipt-a prepoznaje se po postojećem stanju. Stara duplirana ili neusaglašena knjiženja se ne popravljaju automatski; njihov pregled ostaje posao provere podataka.
+- Uplate računa i brisanje računa zaključavaju isti račun; dodatne uplate posete zadržavaju postojeće zaključavanje posete. Serijalizacija odgovora koristi istu transakcijsku vezu, uključujući `PG_POOL_MAX=1`.
+- Precizna Joi validacija svih finansijskih operacija ostaje u Fazi 2; ovaj paket odbija neispravne/negativne ERA iznose i nepozitivne uplate računa.
+
+### Provere
+
+- Puna backend provera: **232 prolazi, 0 pada, 0 preskočenih** na izolovanoj bazi.
+- Sintaksa: **126 JavaScript fajlova** bez grešaka; `git diff --check` prolazi.
+- Novi PostgreSQL/HTTP scenariji pokrivaju nezavisne konekcione grupe, paralelne iste/različite ključeve, ručne brojeve, brisanje, rollback brojača i uplata, ERA korekcije, vraćanje na nulu, konflikt sadržaja, refund i ponavljanje posle odbačenog odgovora.
+- Client testovi proveravaju zajednički zahtev pri dvostrukom slanju, isti ključ posle mrežne greške i novi ključ za novu uplatu/izmenjen sadržaj/prijavu.
+- Browser provera: **16 scenarija prolazi** (`advanced-workflows-api` i `new-entry`). Dodati scenario prvo potvrđuje uplatu na serveru, namerno prekida odgovor browseru i proverava da retry ne pravi novu uplatu. To je odabrani skup, ne kompletan E2E suite.
+- Provereno podizanje stare šeme kroz sve ranije migracije i nadogradnja sa sintetičkim istorijskim računima/knjigom: redovi istorije ostaju identični; broj obrisanog računa iz knjige je rezervisan; godišnji brojači su odvojeni; prelaz preko 99999 radi.
+- Na novoj lokalnoj bazi postoje sintetičke `anon`, `authenticated` i `service_role` uloge radi provere privilegija. Novi objekti imaju RLS, anonimne uloge nemaju SELECT, a serverska uloga može pristupiti. Supabase CLI security advisors za tu lokalnu bazu: **No issues found**. To nije provera produkcionog Supabase projekta.
+- Tokom browser provere ažuriran je postojeći fixture javnog zakazivanja: budući radni dan i doktor iz API opcija umesto fiksnog datuma 2026-07-01 i ID-ja 1.
+- Baza: novi Docker kontejner `drrosa-billing-phase1-20261016`, `drrosa_test`, `127.0.0.1:55416`. Backend i browser provere se izvršavaju redom; podaci su sintetički.
+
+### Migracija i objavljivanje
+
+Nova aditivna migracija: `supabase/migrations/20261015223148_billing_request_integrity.sql` (ime generisano Supabase CLI-jem). Primenjena je samo lokalno. Nema novih paketa ili produkcionih promenljivih okruženja.
+
+Pre objavljivanja ove verzije aplikacije potrebna je migracija na nameravanom Supabase projektu. Proveriti migracionu istoriju, istorijsku numeraciju, privilegije stvarne DB uloge aplikacije i plan oporavka. Migracija kratko zaključava upis u `invoices` dok inicijalizuje brojač i postavlja trigger. Internim tabelama ne davati javni pristup; prilagođena serverska uloga zahteva odgovarajuće eksplicitne privilegije. Receipt-e ne čistiti rutinski: njihovo brisanje uklanja zaštitu od kasnih ponavljanja. Pre retencione politike potreban je poseban dogovor o roku podrške za retry i zaštiti podataka.
+
+U ovoj fazi nisu izvršeni commit/push, udaljeni CI, deployment niti migracija produkcije. **Lokalna implementacija i navedene provere Faze 1 su završene.**
+
+### Sledeće
+
+Sledeća razvojna celina je **Faza 2 — valute, finansijske validacije i kliničke veze**. Prvo proveriti saldo po valuti i pravila konverzije/zaokruživanja, zatim Joi šeme i DB zaštitu veze pacijent–poseta; vremenske granice i limiter ostaju deo te faze. POM i veće izdvajanje modula slede u Fazama 3–5. Pre produkcionog korišćenja Faze 1 odvojeno završiti migraciju i postupak objavljivanja iznad.
+
+## Dorada nakon pregleda — 2026-10-21
+
+### Obuhvat i ponašanje
+
+- Ispravljena su tri nalaza lokalnog pregleda: nepotpun uspešan odgovor više ne završava pokušaj uplate; stari neuspešan pokušaj više ne može neprimetno zameniti novu uplatu istog iznosa; finansijski iznosi ne prihvataju boolean, niz, objekat, heksadecimalni zapis, eksponent u stringu ili prekoračenje `NUMERIC(12,2)`.
+- Klijent čuva jedan nerazrešen pokušaj po resursu i prijavi. Istovremena ista slanja dele zahtev, a redosled ključeva u objektu ne menja identitet. Izmena sadržaja blokira se dok se prethodni pokušaj ne razreši; potvrđeni pokušaj se uklanja i naredna uplata dobija nov ključ. Kontrolisano odbijanje zahteva dozvoljava ispravku unosa; mrežne i serverske greške zadržavaju pokušaj.
+- Oba ekrana nude „Proveri uplatu” nakon nepoznatog ishoda. Ponavlja se sačuvan sadržaj, uključujući datum i iznos. Kod prethodne posete polja su zaključana do potvrde; ponovno otvaranje forme na istoj stranici vraća nerazrešen pokušaj. Greška osvežavanja liste računa nakon potvrđene uplate prikazuje da je uplata sačuvana.
+- Podaci pokušaja ostaju samo u memoriji stranice i brišu se pri čišćenju prijave. Ponovno učitavanje ili napuštanje stranice i dalje gubi ovu zaštitu klijenta; istoriju treba proveriti pre novog unosa kada ishod ostane nepoznat. Nije uvedeno čuvanje obrazaca niti promenjen standardni tok isteka sesije.
+- `backend/services/financial-payment-service.js` izdvaja uplatu računa, doplatu posete i ERA obračun iz `server.js`. Servis upravlja transakcijom i poslovnom odlukom, repository SQL-om, a rute zadržavaju ovlašćenja, HTTP odgovor i kontekst audit zapisa. Koriste se postojeći obračuni i serializer-i preko prosleđenih zavisnosti.
+- Svi transakcijski metodi billing repository-ja poštuju `inTransaction`, uključujući brisanje računa, priloge i slanje zahteva osiguranju. Pozivalac koji već ima transakciju ne pokušava da otvori novu preko `pg.Client`.
+- Dodate su Joi šeme za uplatu računa i ERA, kao i stroža validacija dodatne uplate posete. Proveravaju tip i opseg iznosa, stvaran kalendarski datum uplate, podržan tip uplate i identitet ERA događaja. Postojeći camelCase/snake_case nazivi ostaju podržani. Ova promena ne predstavlja validaciju svih finansijskih operacija iz Faze 2.
+- Prošireni su postojeći `NewEntryPage` i `PatientDashboardPage`; novi browser scenariji koriste stvarna dugmad i obrasce. Mrežni prekidi i priprema sintetičkih podataka ostaju u testovima.
+
+### Ponovljive provere
+
+- Puna backend provera na izolovanom PostgreSQL 17: **241 prolazi, 0 pada, 0 preskočenih**.
+- Posebna finansijska PostgreSQL/HTTP provera sa `BILLING_TEST_POOL_MAX=1`: **16 prolazi, 0 pada, 0 preskočenih**; obuhvata i servis i repository koji ulazi u već otvorenu transakciju.
+- Novi automatski test migracije kreira zasebnu privremenu bazu na prethodno potvrđenom lokalnom test serveru. Primenjuje sve ranije migracije, unosi sintetičku istoriju, zatim proverava novu migraciju. Istorijski redovi ostaju identični, obrisani broj iz knjige se rezerviše, godine ostaju odvojene, brojevi preko 99999 rade, a rollback vraća brojač. Proveravaju se RLS i privilegije sintetičkih uloga. Privremena baza se uklanja nakon testa; ne resetuje se zajednička integraciona baza.
+- Odabrani browser skup `advanced-workflows-api` i `new-entry.e2e`: **19 prolazi**. Četiri testa proveravaju gubitak celog odgovora i neispravan JSON posle potvrđenog upisa, proveru iste uplate i novu uplatu istog iznosa, za račune i posete.
+- Završna ponovljena provera uplata: **4 prolazi**, uključujući oba ekrana na širini **390 px**. Mobilna provera je otkrila širenje payment-builder grid-a zbog tabele istorije; kolone su ograničene na širinu roditelja, a tabela zadržava svoj horizontalni skrol. Dodata je provera granice prikaza pre klika na dugme. Prvi dodatni pokušaj računa vratio je `403` zbog izostavljenih testnih billing ovlašćenja; završna provera koristi istu eksplicitnu konfiguraciju kao prethodni uspešan skup.
+- Sintaksa: **130 JavaScript/CJS fajlova**, bez grešaka; završni `git diff --check` prolazi. Backend provera je izvršena pre završne CSS ispravke, a relevantni browser scenariji ponovljeni su posle nje.
+- Testovi su izvršavani redom nad zasebnim Docker kontejnerom `drrosa-billing-review-20261021`, bazom `drrosa_test`, na `127.0.0.1:55439`. Podaci i pristupni podaci su sintetički. Ovo nisu rezultati udaljenog CI-ja ili produkcionog Supabase projekta.
+
+### Baza, objavljivanje i preostali plan
+
+Ova dorada ne dodaje migraciju, zavisnosti ili produkcione promenljive. Paket i dalje zahteva postojeću necommitovanu migraciju `20261015223148_billing_request_integrity.sql` pre objavljivanja odgovarajućeg backenda. Migracija je u ovoj proveri primenjena samo na potrošnim lokalnim bazama.
+
+Nisu izvršeni commit/push, udaljeni CI, produkciona migracija ili deployment. Pre objavljivanja proveriti ciljnu bazu, migracionu istoriju, istorijsku numeraciju i stvarnu serversku DB ulogu; lokalne sintetičke uloge ne dokazuju produkcione privilegije.
+
+Zatvorene su ispravke pouzdanosti i ciljano izdvajanje servisa iz plana pregleda. **Faza 2 ostaje naredni zaseban paket:** saldo po valuti i konverzije/zaokruživanje, preostale finansijske šeme, DB zaštita dodatnih kliničkih veza, vremenske granice i atomski limiter. Širi POM i modularizacija ostaju Faze 3–5. Ovaj status ih ne predstavlja kao završene.
+
+## Ispravke dva nalaza ponovljenog pregleda — 2026-10-23
+
+### Decimalno zaokruživanje
+
+`financialAmount` zaokružuje decimalne cifre pomoću celobrojnog iznosa u stotinkama. Time se izbegava binarno množenje koje je za `10.075` davalo `10.07`; rezultat je sada `10.08`, u skladu sa PostgreSQL `NUMERIC(12,2)`. Zadržane su provere tipa, opsega i pozitivnog iznosa. Decimalni string ostaje precizan i kada ima više cifara nego što `Number` može sačuvati; mali numerički iznosi u eksponentnom zapisu obrađuju se bez greške konverzije.
+
+Unit test proverava decimalne polovine, iznose ispod pola stotinke, vodeće nule, precizne stringove i granicu opsega. Novi PostgreSQL/HTTP scenario poredi rezultate sa stvarnim kastovanjem u `NUMERIC(12,2)` i proverava sačuvane uplate, povraćaje, ERA knjiženja i delove uplate posete. Istorijski iznosi se ne prepisuju.
+
+### Odgovor nakon zatvaranja ili promene obrasca
+
+Slanje dodatne uplate čuva originalni zapis i identitet pacijenta. Zakašnjeli odgovor zatvara ili ponovo popunjava obrazac samo ako je i dalje otvorena odgovarajuća poseta istog pacijenta. Zatvoren obrazac ostaje zatvoren, a drugi otvoreni obrazac i njegov unos ostaju sačuvani. Poruke odgovora ne prikazuju se za drugog trenutno odabranog pacijenta.
+
+Slanja koja još traju prate se po ID-ju posete; ponovno otvaranje iste posete ne omogućava novo paralelno slanje. Nakon nepoznatog ishoda sačuvani pokušaj ostaje dostupan kroz „Proveri uplatu”, sa istim ključem i sadržajem. Dugme „Otkaži” zatvara obrazac i ne predstavlja otkazivanje upisa koji je server već potvrdio.
+
+Dodate su četiri browser regresije: uspešan ili izgubljen odgovor nakon zatvaranja obrasca ili prelaska na drugu posetu. Proveravaju odsustvo JavaScript grešaka, očuvanje drugog unosa, jedan finansijski upis i ponovno slanje istog ključa.
+
+### Provere i granice
+
+- Puna backend provera nad novim izolovanim PostgreSQL 17: **243 prolazi, 0 pada, 0 preskočenih**.
+- Sintaksa: **130 JavaScript/CJS fajlova**, bez grešaka.
+- Završni odabrani browser skup `advanced-workflows-api` i `new-entry.e2e`: **23 prolazi, 0 pada**, uključujući četiri nove regresije zatvaranja/promene obrasca i postojeće mobilne provere na 390 px. To je odabrani skup, ne kompletan E2E suite. `git diff --check` prolazi.
+- Prvi širi browser prolaz dao je 22 prolaza i jedan pad u postojećem testu istoimenih pacijenata. Test je čekao unapred postojeću opciju doktora umesto učitavanja pacijenata. Čekanje je vezano za stvarno prikazanu opciju ciljnog pacijenta; provere sačuvanog ID-ja i netaknute istorije drugog pacijenta ostaju iste. Nije promenjena logika autocomplete-a radi ovog testa.
+- Provere su koristile samo sintetičke podatke u potrošnom kontejneru `drrosa-billing-fixes-20261023`, `drrosa_test`, na `127.0.0.1:55441`; kontejner se uklanja nakon završenih provera.
+
+Ove ispravke ne dodaju migraciju ili zavisnosti. Paket i dalje zahteva ranije dodatu migraciju `20261015223148_billing_request_integrity.sql` pre produkcionog korišćenja odgovarajućeg backenda. Commit/push, udaljeni CI, produkciona migracija i deployment nisu izvršeni. Preostala Faza 2 nije obuhvaćena ovim zatvaranjem dva konkretna nalaza.
+
+## Priprema Git objavljivanja — 2026-10-23
+
+Nakon zatvaranja oba nalaza paket se objavljuje na radnoj grani `refactor/billing-integrity-phase1-20261016`, sa prethodno navedenim rezultatima lokalnih provera: 243 backend testa, 23 odabrana browser scenarija i sintaksa 130 JS/CJS fajlova. Obuhvat uključuje novu SQL migraciju, novi repository/helper i finansijski servis, kao i prateće regresione testove; samo `git diff` nad praćenim fajlovima ne prikazuje ceo paket.
+
+Objavljivanje radne grane ne predstavlja merge u `main`, potvrdu udaljenog CI-ja, primenu Supabase migracije ili proveru produkcije. Postojeći CI workflow pokreće se na push u `main`/`master` ili pull request prema tim granama. Pre objavljivanja backenda na produkciju zasebno primeniti i proveriti migraciju na nameravanom projektu i privilegije stvarne serverske DB uloge. Preostala Faza 2 ostaje zaseban paket.

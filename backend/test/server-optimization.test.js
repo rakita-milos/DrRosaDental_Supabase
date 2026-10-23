@@ -9,6 +9,7 @@ const appointmentServiceSource = readFileSync(path.join(__dirname, '..', 'servic
 const systemRoutesSource = readFileSync(path.join(__dirname, '..', 'routes', 'system-routes.js'), 'utf8');
 const clinicalRepoSource = readFileSync(path.join(__dirname, '..', 'db', 'clinical.js'), 'utf8');
 const recordsRepoSource = readFileSync(path.join(__dirname, '..', 'db', 'records-payments.js'), 'utf8');
+const financialPaymentServiceSource = readFileSync(path.join(__dirname, '..', 'services', 'financial-payment-service.js'), 'utf8');
 const patientsRepoSource = readFileSync(path.join(__dirname, '..', 'db', 'patients.js'), 'utf8');
 const calendarRepoSource = readFileSync(path.join(__dirname, '..', 'db', 'calendar.js'), 'utf8');
 const postgresSchemaSource = readFileSync(path.join(__dirname, '..', 'database.postgres.sql'), 'utf8');
@@ -73,8 +74,8 @@ test('system routes are registered from a dedicated route module', () => {
 
 test('records endpoint hydrates treatments and payments in batches', () => {
   const recordsRoute = serverSource.match(/app\.get\('\/api\/records'[\s\S]*?\n\}\);/)?.[0] || '';
-  const hydrateFunction = serverSource.match(/async function hydrateVisitRecords\(records\)[\s\S]*?return hydrated;\n\}/)?.[0] || '';
-  assert.match(serverSource, /async function hydrateVisitRecords\(records\)/);
+  const hydrateFunction = serverSource.match(/async function hydrateVisitRecords\(records, repository = recordsPaymentsRepo\)[\s\S]*?return hydrated;\n\}/)?.[0] || '';
+  assert.match(serverSource, /async function hydrateVisitRecords\(records, repository = recordsPaymentsRepo\)/);
   assert.match(serverSource, /app\.get\('\/api\/records\/:id'/);
   assert.match(recordsRepoSource, /recordByIdForList\(id\)/);
   assert.match(recordsRepoSource, /treatmentsForRecords\(visitRecordIds\)/);
@@ -108,11 +109,12 @@ test('record debt payment endpoint appends one payment part without replacing hi
   assert.match(recordsRepoSource, /appendPaymentPart\(\{ payment, visitRecordId, patientId, paymentPart, paymentSummary, currency \}\)/);
   assert.match(recordsRepoSource, /paymentPartInsertSql\(\), paymentPartParams/);
   assert.doesNotMatch(recordsRepoSource.match(/appendPaymentPart[\s\S]*?deleteRecord/)?.[0] || '', /DELETE FROM payment_parts/);
-  assert.match(appendPaymentRoute, /currentDebt <= 0/);
-  assert.match(appendPaymentRoute, /Poseta nema dug za dodatnu uplatu/);
-  assert.match(appendPaymentRoute, /existingParts/);
-  assert.match(appendPaymentRoute, /const allParts = \[\.\.\.existingParts, paymentPart\]/);
-  assert.match(appendPaymentRoute, /records\.appendPaymentPart/);
+  assert.match(appendPaymentRoute, /financialPayments\.appendVisitPayment/);
+  assert.match(financialPaymentServiceSource, /currentDebt <= 0/);
+  assert.match(financialPaymentServiceSource, /Poseta nema dug za dodatnu uplatu/);
+  assert.match(financialPaymentServiceSource, /existingParts/);
+  assert.match(financialPaymentServiceSource, /const allParts = \[\.\.\.existingParts, paymentPart\]/);
+  assert.match(financialPaymentServiceSource, /records\.appendPaymentPart/);
   assert.doesNotMatch(appendPaymentRoute, /recordsPaymentsRepo\.upsertPayment/);
 });
 

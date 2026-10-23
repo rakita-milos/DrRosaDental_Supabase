@@ -17,6 +17,24 @@ class NewEntryPage {
     this.note = page.locator("#note");
     this.submit = page.getByRole("button", { name: /Sačuvaj unos|Sacuvaj unos/i });
     this.alert = page.locator("#save-status");
+    this.previousPaymentsToggle = page.locator('#toggle-previous-payments');
+    this.debtPaymentAmount = page.locator('#previous-debt-payment-amount');
+    this.debtPaymentSubmit = page.locator("button[type='submit'][form='previous-debt-payment-form']");
+    this.debtPaymentPanel = page.locator('#previous-debt-payment-panel');
+    this.debtPaymentContext = page.locator('#previous-debt-payment-context');
+    this.debtPaymentCancel = page.locator('#cancel-previous-debt-payment');
+    this.debtPaymentRecordId = page.locator('#previous-debt-record-id');
+  }
+
+  async gotoPatient(patientId) {
+    await this.page.goto(`/src/pages/new-entry.html?patientId=${patientId}`);
+  }
+
+  async openDebtPayment(recordId) {
+    if (await this.previousPaymentsToggle.getAttribute('aria-expanded') !== 'true') await this.previousPaymentsToggle.click();
+    const bounds = await this.page.locator('.payment-builder').boundingBox();
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(this.page.viewportSize().width);
+    await this.page.locator(`.previous-debt-payment-btn[data-record-id="${recordId}"]`).click();
   }
 
   async goto(recordId, patientName) {

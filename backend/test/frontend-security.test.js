@@ -392,7 +392,7 @@ test('new entry adds debt payments only from indebted previous visit rows', () =
   assert.match(newEntrySource, /function openPreviousDebtPaymentForm\(record\)/);
   assert.match(newEntrySource, /window\.DrRosaApi\.addRecordPaymentPart\(recordId/);
   assert.match(apiSource, /async function addRecordPaymentPart\(recordId, paymentPart\)/);
-  assert.match(apiSource, /request\(`\/records\/\$\{recordId\}\/payment-parts`/);
+  assert.match(apiSource, /paymentRequest\(`\/records\/\$\{recordId\}\/payment-parts`/);
   assert.match(newEntrySource, /patientPaymentHistory\.cache\.clear\(\)/);
   assert.match(newEntrySource, /paymentParts: paymentParts\.map\(normalizedPaymentPart\)\.filter/);
 });

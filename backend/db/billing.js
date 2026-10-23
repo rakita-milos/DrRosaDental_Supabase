@@ -5,17 +5,14 @@ const {
   queryOne,
   withTransaction
 } = require('./postgres');
-function createBillingRepository({ pgPool }) {
+function createBillingRepository({ pgPool, inTransaction = false }) {
   if (!pgPool) throw new Error('pgPool is required for postgres billing repository.');
-  return createPostgresBillingRepository(pgPool);
+  return createPostgresBillingRepository(pgPool, inTransaction);
 }
 
-function createPostgresBillingRepository(pool) {
+function createPostgresBillingRepository(pool, inTransaction = false) {
+  const transaction = callback => inTransaction ? callback(pool) : withTransaction(pool, callback);
   return {
-    async invoiceCountForYear(year) {
-      const row = await queryOne(pool, "SELECT COUNT(*)::int as count FROM invoices WHERE invoice_number LIKE ?", [`DR-${year}-%`]);
-      return Number(row?.count || 0);
-    },
     invoiceItems(invoiceId) {
       return queryMany(pool, 'SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY sort_order, id', [invoiceId]);
     },
@@ -32,7 +29,7 @@ function createPostgresBillingRepository(pool) {
       return queryOne(pool, 'SELECT i.*, p.first_name, p.last_name, p.email, p.phone FROM invoices i JOIN patients p ON p.id = i.patient_id WHERE i.id = ?', [id]);
     },
     async createInvoice({ invoice, items, ledger }) {
-      return withTransaction(pool, async (client) => {
+      return transaction(async (client) => {
         const invoiceId = await insertReturningId(client, `
           INSERT INTO invoices (patient_id, visit_record_id, invoice_number, status, issue_date, due_date, currency, discount, tax, notes, created_by)
           VALUES (?, ?, ?, 'issued', ?, ?, ?, ?, ?, ?, ?)
@@ -56,7 +53,9 @@ function createPostgresBillingRepository(pool) {
       });
     },
     async addInvoicePayment({ invoiceId, payment, ledger }) {
-      return withTransaction(pool, async (client) => {
+      return transaction(async (client) => {
+        const current = await queryOne(client, 'SELECT * FROM invoices WHERE id = ? FOR UPDATE', [invoiceId]);
+        if (!current) throw Object.assign(new Error('Invoice not found'), { status: 404 });
         await execute(client, 'INSERT INTO invoice_payments (invoice_id, amount, payment_method, payment_date, payment_type, notes) VALUES (?, ?, ?, ?, ?, ?)', [
           invoiceId,
           payment.amount,
@@ -78,7 +77,9 @@ function createPostgresBillingRepository(pool) {
       });
     },
     async deleteInvoice({ invoice, ledger }) {
-      return withTransaction(pool, async (client) => {
+      return transaction(async (client) => {
+        const current = await queryOne(client, 'SELECT id FROM invoices WHERE id = ? FOR UPDATE', [invoice.id]);
+        if (!current) throw Object.assign(new Error('Invoice not found'), { status: 404 });
         const row = await queryOne(client, 'SELECT COALESCE(SUM(amount), 0) as amount FROM patient_ledger_entries WHERE invoice_id = ?', [invoice.id]);
         const ledgerBalance = Number(row?.amount || 0);
         if (ledgerBalance !== 0) {
@@ -112,6 +113,9 @@ function createPostgresBillingRepository(pool) {
     findClaim(id) {
       return queryOne(pool, 'SELECT * FROM insurance_claims WHERE id = ?', [id]);
     },
+    findClaimForUpdate(id) {
+      return queryOne(pool, 'SELECT * FROM insurance_claims WHERE id = ? FOR UPDATE', [id]);
+    },
     async createClaim(claim) {
       const id = await insertReturningId(pool, `
         INSERT INTO insurance_claims (
@@ -134,7 +138,7 @@ function createPostgresBillingRepository(pool) {
       return queryOne(pool, 'SELECT * FROM patient_documents WHERE id = ? AND patient_id = ? AND is_deleted = false', [documentId, patientId]);
     },
     async addClaimAttachment({ claimId, documentId, attachmentType, clearinghouseRef, notes, createdBy }) {
-      return withTransaction(pool, async (client) => {
+      return transaction(async (client) => {
         const id = await insertReturningId(client, `
           INSERT INTO insurance_claim_attachments (claim_id, document_id, attachment_type, clearinghouse_ref, status, notes, created_by)
           VALUES (?, ?, ?, ?, 'attached', ?, ?)
@@ -148,7 +152,7 @@ function createPostgresBillingRepository(pool) {
       return Number(row?.count || 0);
     },
     async submitClaim({ claimId, submittedAt, clearinghouseRef, notes }) {
-      return withTransaction(pool, async (client) => {
+      return transaction(async (client) => {
         await execute(client, `
           UPDATE insurance_claims
           SET status = 'submitted', submitted_at = ?, clearinghouse_ref = ?, notes = ?, updated_at = now()
@@ -159,7 +163,10 @@ function createPostgresBillingRepository(pool) {
       });
     },
     async postEra({ claim, era, ledger }) {
-      return withTransaction(pool, async (client) => {
+      return transaction(async (client) => {
+        const current = await queryOne(client, 'SELECT * FROM insurance_claims WHERE id = ? FOR UPDATE', [claim.id]);
+        if (!current) throw Object.assign(new Error('Insurance claim not found'), { status: 404 });
+        const delta = Math.round((era.paidAmount - Number(current.paid_amount || 0)) * 100) / 100;
         await execute(client, `
           UPDATE insurance_claims
           SET status = ?, approved_amount = ?, paid_amount = ?, decision_at = ?,
@@ -167,8 +174,8 @@ function createPostgresBillingRepository(pool) {
               updated_at = now()
           WHERE id = ?
         `, [era.status, era.approvedAmount, era.paidAmount, era.decisionAt, era.denialReason, era.eobJson, claim.id]);
-        if (era.paidAmount > 0) {
-          await insertLedgerEntryPostgres(client, ledger);
+        if (delta !== 0) {
+          await insertLedgerEntryPostgres(client, { ...ledger, amount: -delta });
         }
         return queryOne(client, 'SELECT * FROM insurance_claims WHERE id = ?', [claim.id]);
       });

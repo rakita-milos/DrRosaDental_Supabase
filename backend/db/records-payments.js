@@ -7,9 +7,9 @@ const {
 } = require('./postgres');
 const ROW_EXISTS_TABLES = new Set(['patients']);
 
-function createRecordsPaymentsRepository({ pgPool }) {
+function createRecordsPaymentsRepository({ pgPool, inTransaction = false }) {
   if (!pgPool) throw new Error('pgPool is required for postgres records repository.');
-  return createPostgresRecordsRepository(pgPool);
+  return createPostgresRecordsRepository(pgPool, inTransaction);
 }
 
 function recordsListSql({ search = '', patientId = null, limit = null, offset = 0 } = {}) {

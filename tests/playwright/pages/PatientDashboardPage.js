@@ -14,6 +14,7 @@ class PatientDashboardPage {
     this.invoicesTab = page.locator('.patient-group-tab[data-patient-group="finance"]');
     this.insuranceTab = page.locator('.patient-group-tab[data-patient-group="admin"]');
     this.invoicesBody = page.locator("#invoices-body");
+    this.invoiceMessage = page.locator('#invoice-message');
     this.claimsBody = page.locator("#insurance-claims-body");
     this.documentsTab = page.locator('.patient-group-tab[data-patient-group="documents"]');
     this.documentsBody = page.locator("#patient-documents-body");
@@ -23,6 +24,20 @@ class PatientDashboardPage {
 
   async expectLoaded(name) {
     await expect(this.title).toContainText(name);
+  }
+
+  async gotoPatient(patientId) {
+    await this.page.goto(`/src/pages/patient-dashboard.html?patientId=${patientId}`);
+    await this.openAdvancedTab('invoices');
+  }
+
+  invoicePaymentButton(invoiceId) {
+    return this.invoicesBody.locator(`.invoice-payment-btn[data-invoice-id="${invoiceId}"]`);
+  }
+
+  async payInvoice(invoiceId, amount) {
+    if (amount !== undefined) this.page.once('dialog', dialog => dialog.accept(String(amount)));
+    await this.invoicePaymentButton(invoiceId).click();
   }
 
   async goto(patientName) {
